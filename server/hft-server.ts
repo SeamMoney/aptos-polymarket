@@ -26,13 +26,19 @@ import {
 const CONTRACT_ADDRESS = '0x64a81cb9cbd14d45b87bb32ef73107a44f00069b6a96e70d75369fb7e3da5e68';
 const MODULE = `${CONTRACT_ADDRESS}::market`;
 
-const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
+// Use API key to bypass rate limits
+const API_KEY = process.env.APTOS_API_KEY || '';
+const aptos = new Aptos(new AptosConfig({
+  network: Network.TESTNET,
+  clientConfig: API_KEY ? { API_KEY } : undefined,
+}));
 
 // Config
 const PORT = 3001;
-// Sustain ~1 TPS to stay under 40k compute units / 5 min rate limit
-const BASE_DELAY_MS = 800;   // ~1.25 TPS base rate
-const MAX_DELAY_MS = 1200;   // Don't slow down too much
+// Sustain ~0.5 TPS to stay well under 40k compute units / 5 min rate limit
+// Each trade uses ~3-5 API calls (build tx, sign, submit, check balance, etc.)
+const BASE_DELAY_MS = 1500;   // ~0.6 TPS base rate (safer for no API key)
+const MAX_DELAY_MS = 3000;    // Slow down more when hitting limits
 const HEARTBEAT_INTERVAL = 15000; // 15 second heartbeat
 
 // Unique ID counter
@@ -279,10 +285,20 @@ async function executeTrade(
     const latency = Date.now() - startTime;
     const errorMsg = error.message || 'Unknown error';
 
-    // Detect rate limit errors
+    // Detect different error types
     const isRateLimited = errorMsg.includes('429') ||
       errorMsg.includes('Too Many Requests') ||
       errorMsg.includes('rate limit');
+
+    const isInsufficientFunds = errorMsg.includes('INSUFFICIENT') ||
+      errorMsg.includes('insufficient') ||
+      errorMsg.includes('balance') ||
+      errorMsg.includes('not enough') ||
+      errorMsg.includes('EINSUFFICIENT');
+
+    let errorType = errorMsg.slice(0, 100);
+    if (isRateLimited) errorType = 'RATE_LIMITED';
+    if (isInsufficientFunds) errorType = 'INSUFFICIENT_FUNDS';
 
     return {
       id,
@@ -292,11 +308,14 @@ async function executeTrade(
       amount: amountAPT,
       latency,
       success: false,
-      error: isRateLimited ? 'RATE_LIMITED' : errorMsg.slice(0, 100),
+      error: errorType,
       timestamp: Date.now(),
     };
   }
 }
+
+// Minimum balance to keep trading (covers gas + small trades)
+const MIN_BALANCE_APT = 0.5;
 
 // Main trading loop with adaptive throttling
 async function tradingLoop() {
@@ -304,10 +323,38 @@ async function tradingLoop() {
   console.log(`📊 Market: ${state.marketInfo?.question || 'Unknown'}`);
   console.log(`📍 Address: ${state.marketAddress?.slice(0, 20)}...`);
 
+  let consecutiveInsufficientFunds = 0;
+
   while (state.isRunning && state.account && state.marketAddress) {
+    // Check balance every 20 trades or after failures
+    if (state.totalTrades % 20 === 0 || consecutiveInsufficientFunds > 0) {
+      const newBalance = await fetchBotBalance(state.account.accountAddress.toString());
+
+      // Only update if we got a valid balance (not rate limited)
+      if (newBalance >= 0) {
+        state.botBalance = newBalance;
+
+        if (state.botBalance < MIN_BALANCE_APT) {
+          console.log(`\n⚠️ LOW BALANCE: ${state.botBalance.toFixed(4)} APT - pausing trading`);
+          broadcast({
+            type: 'low_balance',
+            message: `Bot balance too low: ${state.botBalance.toFixed(4)} APT. Add funds to continue.`,
+            botBalance: state.botBalance,
+          });
+          state.isRunning = false;
+          break;
+        }
+      }
+    }
+
     const botName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
     const action = getRandomAction();
-    const amount = getRandomAmount();
+    // Limit trade size based on available balance
+    let amount = getRandomAmount();
+    if (state.botBalance > 0 && state.botBalance < 5) {
+      // When low on funds, cap trade size
+      amount = Math.min(amount, state.botBalance * 0.1);
+    }
 
     const result = await executeTrade(
       state.account,
@@ -335,16 +382,34 @@ async function tradingLoop() {
       state.failedTrades++;
       state.consecutiveFailures++;
 
-      // On ANY failure, just slow down slightly and keep going
-      // No long pauses - maintain steady throughput
+      // Handle different failure types
       if (result.error === 'RATE_LIMITED') {
         state.consecutiveRateLimits++;
-        // Just slow down a bit, don't pause
+        consecutiveInsufficientFunds = 0;
         state.currentDelay = MAX_DELAY_MS;
         console.log(`⚠️ Rate limited (${state.consecutiveRateLimits}x) - slowing to ${MAX_DELAY_MS}ms`);
+      } else if (result.error === 'INSUFFICIENT_FUNDS') {
+        consecutiveInsufficientFunds++;
+        state.consecutiveRateLimits = 0;
+        console.log(`💸 Insufficient funds (${consecutiveInsufficientFunds}x)`);
+
+        // After 3 consecutive insufficient funds errors, force balance check
+        if (consecutiveInsufficientFunds >= 3) {
+          state.botBalance = await fetchBotBalance(state.account!.accountAddress.toString());
+          if (state.botBalance < MIN_BALANCE_APT) {
+            console.log(`\n⚠️ LOW BALANCE CONFIRMED: ${state.botBalance.toFixed(4)} APT - stopping`);
+            broadcast({
+              type: 'low_balance',
+              message: `Bot balance too low: ${state.botBalance.toFixed(4)} APT. Add funds to continue.`,
+              botBalance: state.botBalance,
+            });
+            state.isRunning = false;
+            break;
+          }
+        }
       } else {
         state.consecutiveRateLimits = 0;
-        // Small slowdown on other failures
+        consecutiveInsufficientFunds = 0;
         state.currentDelay = Math.min(MAX_DELAY_MS, state.currentDelay + 100);
       }
     }
@@ -434,15 +499,14 @@ async function initAccount(privateKey: string): Promise<Account> {
 // Fetch bot's APT balance
 async function fetchBotBalance(address: string): Promise<number> {
   try {
-    const result = await aptos.view({
-      payload: {
-        function: '0x1::coin::balance',
-        typeArguments: ['0x1::aptos_coin::AptosCoin'],
-        functionArguments: [address],
-      },
-    });
-    return Number(result[0]) / 100_000_000;
-  } catch {
+    const balance = await aptos.getAccountAPTAmount({ accountAddress: address });
+    return balance / 100_000_000;
+  } catch (e: any) {
+    // If rate limited, return -1 to indicate unknown (don't report as 0)
+    if (e.message?.includes('429') || e.message?.includes('rate limit')) {
+      console.log('⚠️ Rate limited when checking balance');
+      return state.botBalance > 0 ? state.botBalance : -1; // Keep last known balance
+    }
     return 0;
   }
 }

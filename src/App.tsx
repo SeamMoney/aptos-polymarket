@@ -1,11 +1,13 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
-import { Header, MarketCard, StressTest, VisualizerEmbed, FeatureShowcase, CreateMarket, HFTVisualizer } from './components';
+import { Header, MarketCard, StressTest, VisualizerEmbed, FeatureShowcase, CreateMarket, HFTVisualizer, TurboVisualizer } from './components';
+import { MultiOutcomeMarketCard } from './components/MultiOutcomeMarketCard';
 import type { Market } from './components';
 import { PREDICTION_MARKET_ADDRESS } from './utils/contracts';
 import { useMarkets } from './hooks/useMarkets';
+import { useMultiMarkets } from './hooks/useMultiMarkets';
 
 const aptosConfig = new AptosConfig({ network: Network.TESTNET });
 const aptos = new Aptos(aptosConfig);
@@ -18,9 +20,44 @@ function App() {
   const { connected, account, signAndSubmitTransaction } = useWallet();
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
   const [txStatus, setTxStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
+  const [walletBalance, setWalletBalance] = useState<number>(0);
+  const [turboExpanded, setTurboExpanded] = useState(false);
+
+  // Fetch wallet APT balance
+  const fetchWalletBalance = useCallback(async () => {
+    if (!account?.address) {
+      setWalletBalance(0);
+      return;
+    }
+    try {
+      const resources = await aptos.getAccountResource({
+        accountAddress: account.address,
+        resourceType: '0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>',
+      });
+      const balance = parseInt((resources as { coin: { value: string } }).coin.value) / 100_000_000;
+      setWalletBalance(balance);
+    } catch {
+      // Try fungible asset balance
+      try {
+        const balance = await aptos.getAccountAPTAmount({ accountAddress: account.address });
+        setWalletBalance(balance / 100_000_000);
+      } catch {
+        setWalletBalance(0);
+      }
+    }
+  }, [account?.address]);
+
+  useEffect(() => {
+    fetchWalletBalance();
+    const interval = setInterval(fetchWalletBalance, 5000);
+    return () => clearInterval(interval);
+  }, [fetchWalletBalance]);
 
   // Fetch real on-chain markets
   const { markets: onChainMarkets, loading: marketsLoading, refetch: refetchMarkets } = useMarkets();
+
+  // Fetch multi-outcome markets
+  const { markets: multiMarkets, loading: multiMarketsLoading, refresh: refreshMultiMarkets } = useMultiMarkets();
 
   // Convert on-chain markets to Market format for display
   const realMarkets: Market[] = onChainMarkets.map((m) => ({
@@ -133,6 +170,77 @@ function App() {
       refetchMarkets();
     } catch (error) {
       console.error('Sell transaction failed:', error);
+      setTxStatus('error');
+    }
+  };
+
+  // Multi-outcome trading handlers
+  const handleMultiBuy = async (marketAddress: string, outcomeIndex: number, amount: string) => {
+    if (!connected || !account) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    setTxStatus('pending');
+    try {
+      const amountInUnits = Math.floor(parseFloat(amount) * 100_000_000);
+
+      const response = await signAndSubmitTransaction({
+        data: {
+          function: `${CONTRACT_ADDRESS}::multi_outcome_market::buy_outcome`,
+          functionArguments: [marketAddress, outcomeIndex, amountInUnits, 0],
+        },
+      });
+
+      try {
+        await aptos.waitForTransaction({
+          transactionHash: response.hash,
+          options: { timeoutSecs: 10, checkSuccess: true }
+        });
+      } catch {
+        console.log(`Tx ${response.hash} submitted, may still be propagating...`);
+      }
+
+      setLastTxHash(response.hash);
+      setTxStatus('success');
+      refreshMultiMarkets();
+    } catch (error) {
+      console.error('Multi-outcome buy failed:', error);
+      setTxStatus('error');
+    }
+  };
+
+  const handleMultiSell = async (marketAddress: string, outcomeIndex: number, amount: string) => {
+    if (!connected || !account) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    setTxStatus('pending');
+    try {
+      const amountInUnits = Math.floor(parseFloat(amount) * 100_000_000);
+
+      const response = await signAndSubmitTransaction({
+        data: {
+          function: `${CONTRACT_ADDRESS}::multi_outcome_market::sell_outcome`,
+          functionArguments: [marketAddress, outcomeIndex, amountInUnits, 0],
+        },
+      });
+
+      try {
+        await aptos.waitForTransaction({
+          transactionHash: response.hash,
+          options: { timeoutSecs: 10, checkSuccess: true }
+        });
+      } catch {
+        console.log(`Tx ${response.hash} submitted, may still be propagating...`);
+      }
+
+      setLastTxHash(response.hash);
+      setTxStatus('success');
+      refreshMultiMarkets();
+    } catch (error) {
+      console.error('Multi-outcome sell failed:', error);
       setTxStatus('error');
     }
   };
@@ -340,8 +448,108 @@ function App() {
         </div>
       </section>
 
+      {/* Multi-Outcome Markets Section */}
+      <section id="multi-markets" className="py-16 px-4 bg-poly-card/30">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="text-3xl font-bold text-white">Multi-Outcome Markets</h2>
+              <p className="text-gray-400">Markets with 3+ outcomes - Presidential elections, sports, and more</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse" />
+              <span className="text-sm text-purple-400 font-medium">{multiMarkets.length} markets</span>
+            </div>
+          </div>
+
+          {multiMarketsLoading ? (
+            <div className="p-12 text-center">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400"></div>
+              <p className="text-gray-400 mt-3">Loading multi-outcome markets...</p>
+            </div>
+          ) : multiMarkets.length > 0 ? (
+            <div className="grid md:grid-cols-2 gap-6">
+              {multiMarkets.map((market) => (
+                <MultiOutcomeMarketCard
+                  key={market.address}
+                  address={market.address}
+                  question={market.question}
+                  category={market.category}
+                  outcomes={market.outcomes}
+                  endDate={new Date(market.endTime * 1000).toLocaleDateString()}
+                  totalVolume={`${market.totalCollateral.toFixed(2)} APT`}
+                  resolved={market.resolved}
+                  winningOutcome={market.winningOutcome}
+                  walletBalance={walletBalance}
+                  onBuy={(outcomeIndex, amount) => handleMultiBuy(market.address, outcomeIndex, amount)}
+                  onSell={(outcomeIndex, amount) => handleMultiSell(market.address, outcomeIndex, amount)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="p-12 text-center border border-dashed border-purple-500/30 rounded-2xl">
+              <div className="text-4xl mb-3">🗳️</div>
+              <h3 className="text-xl font-bold text-white mb-2">No Multi-Outcome Markets Yet</h3>
+              <p className="text-gray-400 mb-4">Multi-outcome markets support elections, tournaments, and complex events</p>
+              <p className="text-xs text-gray-500">
+                Use the create-multi-market script to deploy a market
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* TURBO MODE - Collapsible Section */}
+      <section id="turbo-demo" className="py-4 px-4">
+        <div className="max-w-4xl mx-auto">
+          <motion.button
+            onClick={() => setTurboExpanded(!turboExpanded)}
+            className="w-full flex items-center justify-between p-4 bg-poly-dark/50 rounded-xl border border-poly-border hover:border-orange-500/30 transition-colors group"
+            whileHover={{ scale: 1.005 }}
+            whileTap={{ scale: 0.995 }}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🔥</span>
+              <div className="text-left">
+                <div className="text-sm font-semibold text-gray-300 group-hover:text-orange-400 transition-colors">
+                  TURBO MODE
+                </div>
+                <div className="text-xs text-gray-500">
+                  Legacy parallel transaction demo
+                </div>
+              </div>
+            </div>
+            <motion.div
+              animate={{ rotate: turboExpanded ? 180 : 0 }}
+              transition={{ duration: 0.2 }}
+              className="text-gray-500 group-hover:text-orange-400"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </motion.div>
+          </motion.button>
+
+          <AnimatePresence>
+            {turboExpanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                className="overflow-hidden"
+              >
+                <div className="pt-4 bg-gradient-to-b from-orange-500/5 to-transparent rounded-b-xl">
+                  <TurboVisualizer />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </section>
+
       {/* HFT Visualization Section */}
-      <section id="hft-demo" className="py-8 md:py-16 px-4 bg-poly-card/30">
+      <section id="hft-demo" className="py-8 md:py-16 px-4">
         <div className="max-w-6xl mx-auto">
           <HFTVisualizer />
         </div>

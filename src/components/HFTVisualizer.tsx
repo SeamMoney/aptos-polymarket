@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { OrderBook } from './OrderBook';
 
 const HFT_SERVER_URL = 'http://localhost:3001';
 const HFT_WS_URL = 'ws://localhost:3001';
@@ -25,6 +26,8 @@ interface Stats {
   successRate: number;
   avgLatency: number;
   currentDelay?: number;
+  currentTps?: number;
+  peakTps?: number;
 }
 
 interface MarketInfo {
@@ -32,6 +35,11 @@ interface MarketInfo {
   question: string;
   yesPrice: number;
   noPrice: number;
+  // Multi-outcome data
+  isMultiOutcome?: boolean;
+  outcomeCount?: number;
+  outcomePrices?: number[];
+  outcomeLabels?: string[];
 }
 
 interface Position {
@@ -39,6 +47,7 @@ interface Position {
   noTokens: number;
   totalInvested: number;
   realizedPnl: number;
+  outcomePositions?: number[];
 }
 
 const BOT_COLORS: Record<string, string> = {
@@ -124,6 +133,10 @@ export function HFTVisualizer() {
             if (message.position) setPosition(message.position);
           } else if (message.type === 'rate_limited') {
             setError(message.message || 'Rate limited - waiting...');
+          } else if (message.type === 'low_balance') {
+            setIsRunning(false);
+            setError(`💸 ${message.message || 'Low balance - trading stopped'}`);
+            if (message.botBalance !== undefined) setBotBalance(message.botBalance);
           }
         } catch (e) {
           console.error('Failed to parse message:', e);
@@ -229,7 +242,8 @@ export function HFTVisualizer() {
       position.totalInvested
     : 0;
 
-  const totalPnl = position.realizedPnl + unrealizedPnl;
+  // Total PNL is just unrealized since we don't track realized
+  const totalPnl = unrealizedPnl;
 
   return (
     <div className="bg-poly-card border border-poly-border rounded-2xl overflow-hidden">
@@ -288,40 +302,80 @@ export function HFTVisualizer() {
         )}
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-4 p-4">
+      <div className="grid lg:grid-cols-4 gap-4 p-4">
         {/* Left Column - Prices & Position */}
         <div className="lg:col-span-1 space-y-4">
-          {/* Current Price */}
+          {/* Current Price - Multi-outcome or Binary */}
           <div className="bg-poly-dark rounded-xl p-4">
-            <div className="text-sm text-gray-400 mb-2">Implied Probability</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="text-center p-3 bg-poly-green/10 rounded-lg">
-                <div className="text-3xl font-bold text-poly-green">
-                  {marketInfo?.yesPrice.toFixed(1) || '50.0'}¢
-                </div>
-                <div className="text-xs text-poly-green">YES</div>
+            <div className="text-sm text-gray-400 mb-2">Outcome Prices</div>
+            {marketInfo?.isMultiOutcome && marketInfo.outcomePrices && marketInfo.outcomeLabels ? (
+              <div className="space-y-2">
+                {marketInfo.outcomePrices.map((price, i) => {
+                  const label = marketInfo.outcomeLabels?.[i] || `Outcome ${i + 1}`;
+                  const isTopOutcome = price === Math.max(...(marketInfo.outcomePrices || []));
+                  return (
+                    <div
+                      key={i}
+                      className={`flex justify-between items-center p-2 rounded-lg ${
+                        isTopOutcome ? 'bg-poly-green/20' : 'bg-poly-card'
+                      }`}
+                    >
+                      <span className={`text-sm truncate ${isTopOutcome ? 'text-poly-green font-semibold' : 'text-gray-300'}`}>
+                        {label}
+                      </span>
+                      <span className={`font-mono font-bold ${isTopOutcome ? 'text-poly-green' : 'text-white'}`}>
+                        {price.toFixed(2)}¢
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="text-center p-3 bg-poly-red/10 rounded-lg">
-                <div className="text-3xl font-bold text-poly-red">
-                  {marketInfo?.noPrice.toFixed(1) || '50.0'}¢
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="text-center p-3 bg-poly-green/10 rounded-lg">
+                  <div className="text-3xl font-bold text-poly-green">
+                    {marketInfo?.yesPrice.toFixed(2) || '50.00'}¢
+                  </div>
+                  <div className="text-xs text-poly-green">YES</div>
                 </div>
-                <div className="text-xs text-poly-red">NO</div>
+                <div className="text-center p-3 bg-poly-red/10 rounded-lg">
+                  <div className="text-3xl font-bold text-poly-red">
+                    {marketInfo?.noPrice.toFixed(2) || '50.00'}¢
+                  </div>
+                  <div className="text-xs text-poly-red">NO</div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Position & PNL */}
           <div className="bg-poly-dark rounded-xl p-4">
             <div className="text-sm text-gray-400 mb-3">Position & PNL</div>
             <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-gray-400">YES Tokens</span>
-                <span className="text-poly-green font-mono">{position.yesTokens.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">NO Tokens</span>
-                <span className="text-poly-red font-mono">{position.noTokens.toFixed(2)}</span>
-              </div>
+              {/* Multi-outcome positions */}
+              {marketInfo?.isMultiOutcome && position.outcomePositions && marketInfo.outcomeLabels ? (
+                position.outcomePositions.map((tokens, i) => (
+                  <div key={i} className="flex justify-between">
+                    <span className="text-gray-400 text-sm truncate max-w-[120px]">
+                      {marketInfo.outcomeLabels?.[i] || `Outcome ${i + 1}`}
+                    </span>
+                    <span className={`font-mono ${tokens > 0 ? 'text-poly-green' : 'text-gray-500'}`}>
+                      {tokens.toFixed(2)}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">YES Tokens</span>
+                    <span className="text-poly-green font-mono">{position.yesTokens.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">NO Tokens</span>
+                    <span className="text-poly-red font-mono">{position.noTokens.toFixed(2)}</span>
+                  </div>
+                </>
+              )}
               <div className="border-t border-poly-border my-2" />
               <div className="flex justify-between">
                 <span className="text-gray-400">Invested</span>
@@ -329,8 +383,8 @@ export function HFTVisualizer() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Realized PNL</span>
-                <span className={`font-mono font-bold ${position.realizedPnl >= 0 ? 'text-poly-green' : 'text-red-400'}`}>
-                  {position.realizedPnl >= 0 ? '+' : ''}{position.realizedPnl.toFixed(4)} APT
+                <span className="text-gray-500 font-mono text-xs" title="Cost-basis tracking not implemented">
+                  N/A
                 </span>
               </div>
               <div className="flex justify-between">
@@ -374,27 +428,37 @@ export function HFTVisualizer() {
             </div>
           </div>
 
-          {/* TPS Estimate */}
-          {stats.successfulTrades > 5 && (
-            <div className="bg-poly-dark rounded-xl p-4">
-              <div className="text-sm text-gray-400 mb-2">Throughput</div>
-              <div className="text-2xl font-bold text-poly-green">
-                ~{(1000 / (stats.avgLatency + (stats.currentDelay || 150))).toFixed(1)} TPS
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                Adaptive throttling active
-              </div>
+          {/* TPS Display */}
+          <div className="bg-poly-dark rounded-xl p-4">
+            <div className="text-sm text-gray-400 mb-2">Throughput</div>
+            <div className="text-3xl font-bold text-poly-green">
+              {stats.currentTps || 0} TPS
             </div>
-          )}
+            <div className="text-xs text-gray-500 mt-1">
+              Peak: {stats.peakTps || 0} TPS
+            </div>
+          </div>
 
           {/* Visibility - Bot Balance & Market Reserves */}
-          <div className="bg-poly-dark rounded-xl p-4">
+          <div className={`bg-poly-dark rounded-xl p-4 ${botBalance < 1 ? 'border border-red-500/50' : ''}`}>
             <div className="text-sm text-gray-400 mb-3">Funds Visibility</div>
             <div className="space-y-2">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-gray-400">Bot Balance</span>
-                <span className="text-white font-mono font-bold">{botBalance.toFixed(2)} APT</span>
+                <div className="flex items-center gap-2">
+                  {botBalance < 1 && (
+                    <span className="text-xs text-red-400 animate-pulse">LOW</span>
+                  )}
+                  <span className={`font-mono font-bold ${botBalance < 1 ? 'text-red-400' : botBalance < 5 ? 'text-yellow-400' : 'text-white'}`}>
+                    {botBalance.toFixed(2)} APT
+                  </span>
+                </div>
               </div>
+              {botBalance < 1 && (
+                <div className="text-xs text-red-400 bg-red-500/10 p-2 rounded">
+                  Add funds to continue trading. Min 0.5 APT required.
+                </div>
+              )}
               <div className="border-t border-poly-border my-2" />
               <div className="text-xs text-gray-500 mb-2">Market Reserves (TVL)</div>
               <div className="flex justify-between">
@@ -414,6 +478,17 @@ export function HFTVisualizer() {
           </div>
         </div>
 
+        {/* Order Book */}
+        <div className="lg:col-span-1">
+          <OrderBook
+            trades={trades}
+            yesPrice={marketInfo?.yesPrice || 50}
+            noPrice={marketInfo?.noPrice || 50}
+            yesReserve={marketReserves.yesReserve}
+            noReserve={marketReserves.noReserve}
+          />
+        </div>
+
         {/* Trade Stream */}
         <div className="lg:col-span-2 bg-poly-dark rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
@@ -426,9 +501,9 @@ export function HFTVisualizer() {
             )}
           </div>
 
-          <div className="h-[450px] overflow-hidden relative">
+          <div className="h-[450px] overflow-y-auto relative scrollbar-thin scrollbar-thumb-poly-border scrollbar-track-transparent">
             <AnimatePresence mode="popLayout">
-              {trades.slice(0, 18).map((trade) => (
+              {trades.slice(0, 50).map((trade) => (
                 <motion.div
                   key={trade.id}
                   initial={{ opacity: 0, x: 100 }}
@@ -512,7 +587,7 @@ export function HFTVisualizer() {
           </div>
           <div className="text-gray-600">|</div>
           <div className="text-center">
-            <div className="text-poly-green font-bold text-lg">~{(1000 / (stats.avgLatency + (stats.currentDelay || 150))).toFixed(1)}</div>
+            <div className="text-poly-green font-bold text-lg">{stats.currentTps || 0}</div>
             <div className="text-gray-400">TPS</div>
           </div>
           <div className="text-gray-600">|</div>

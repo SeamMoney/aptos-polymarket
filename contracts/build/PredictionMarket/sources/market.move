@@ -88,9 +88,6 @@ module prediction_market::market {
 
         // Accumulated fees
         accumulated_fees: u64,
-
-        // Total trading volume (cumulative APT traded)
-        total_volume: u64,
     }
 
     // ==================== Events ====================
@@ -237,7 +234,6 @@ module prediction_market::market {
             extend_ref,
             creator: creator_addr,
             accumulated_fees: 0,
-            total_volume: 0,
         });
 
         // Register market in registry
@@ -389,9 +385,6 @@ module prediction_market::market {
         let amount_after_fee = amount_in - fee;
         market.accumulated_fees = market.accumulated_fees + fee;
 
-        // Track volume
-        market.total_volume = market.total_volume + amount_in;
-
         // Calculate output using CPMM formula
         let (reserve_in, reserve_out) = if (is_yes) {
             (market.no_reserve, market.yes_reserve)
@@ -459,9 +452,6 @@ module prediction_market::market {
         let fee = (amount_out_before_fee * FEE_BPS) / BPS_DENOMINATOR;
         let amount_out = amount_out_before_fee - fee;
         market.accumulated_fees = market.accumulated_fees + fee;
-
-        // Track volume (use output value as volume for sells)
-        market.total_volume = market.total_volume + amount_out;
 
         assert!(amount_out >= min_out, E_SLIPPAGE_EXCEEDED);
 
@@ -536,7 +526,7 @@ module prediction_market::market {
 
     #[view]
     /// Get market details
-    public fun get_market_info(market_addr: address): (String, String, u64, bool, Option<bool>, u64, u64, u64) acquires Market {
+    public fun get_market_info(market_addr: address): (String, String, u64, bool, Option<bool>, u64, u64) acquires Market {
         let market = borrow_global<Market>(market_addr);
         (
             market.question,
@@ -546,7 +536,6 @@ module prediction_market::market {
             market.outcome,
             market.yes_reserve,
             market.no_reserve,
-            market.total_volume,
         )
     }
 

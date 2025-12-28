@@ -2,7 +2,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import { PREDICTION_MARKET_ADDRESS } from '../utils/contracts';
 
-const aptosConfig = new AptosConfig({ network: Network.TESTNET });
+// Use API key to bypass rate limits (safe for testnet demo)
+const API_KEY = 'AG-3JMDT54EN4DCLULDWAUXCYGQ56JJQCYHH';
+const aptosConfig = new AptosConfig({
+  network: Network.TESTNET,
+  clientConfig: { API_KEY },
+});
 const aptos = new Aptos(aptosConfig);
 
 export interface OnChainMarket {
@@ -50,8 +55,8 @@ export function useMarkets() {
       setLoading(true);
       setError(null);
 
-      // Wait before making the first call
-      await delay(1000);
+      // Small delay before making the first call
+      await delay(100);
 
       // Get all market addresses
       const addressesResult = await aptos.view({
@@ -76,7 +81,7 @@ export function useMarkets() {
 
       for (const address of addresses) {
         try {
-          await delay(3000); // Wait 3s between market fetches to preserve rate limit
+          await delay(50); // Small delay between market fetches
 
           const infoResult = await aptos.view({
             payload: {
@@ -85,7 +90,7 @@ export function useMarkets() {
             },
           });
 
-          await delay(2000); // Wait 2s before price fetch
+          await delay(50); // Small delay before price fetch
 
           const priceResult = await aptos.view({
             payload: {
