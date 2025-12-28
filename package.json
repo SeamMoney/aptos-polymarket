@@ -14,7 +14,8 @@
     "test:all": "npm run test && npm run test:stress",
     "ultra": "./scripts/start-ultra-hft.sh",
     "ultra:monitor": "./scripts/monitor-ultra.sh",
-    "hft": "APTOS_PRIVATE_KEY=0x48ee96658dd826f6541f5ee501c5784e6b341f04c52c641823f4b097b61eb79b APTOS_API_KEY=AG-3JMDT54EN4DCLULDWAUXCYGQ56JJQCYHH npx tsx server/hft-highperf-server.ts"
+    "hft": "./scripts/start-hft.sh",
+    "fund": "npx tsx scripts/quick-fund.ts"
   },
   "dependencies": {
     "@aptos-labs/derived-wallet-ethereum": "^0.8.4",

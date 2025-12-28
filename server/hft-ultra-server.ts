@@ -37,16 +37,23 @@ const MULTI_MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
 // Configuration - MAXIMUM TPS MODE
 const CONFIG = {
   PORT: parseInt(process.env.HFT_PORT || '3001'),
-  BATCH_SIZE: 25,           // Smaller batches = less sequence drift
+  BATCH_SIZE: 30,           // Increased from 25 for higher throughput
   BATCH_DELAY_MS: 0,        // NO DELAY - max speed
-  SEQUENCE_PIPELINE: 50,    // Conservative pipeline
-  MAX_PENDING: 100,         // Conservative pending
-  MEMPOOL_BACKOFF_MS: 100,  // Backoff when mempool full
+  SEQUENCE_PIPELINE: 60,    // Increased pipeline
+  MAX_PENDING: 120,         // Increased pending
+  MEMPOOL_BACKOFF_MS: 80,   // Reduced from 100 for faster recovery
+  MAX_DELAY_MS: 150,        // Cap max delay (was unbounded to 300)
+  TRADE_SAMPLE_RATE: 0.03,  // 3% sampling (was 10%) to prevent UI freeze at 1k TPS
+  STATS_CACHE_TTL_MS: 200,  // Cache stats for 200ms to reduce computation
 };
 
 // Adaptive state
 let currentDelay = 0;       // Starts at 0, increases on mempool_full
 let consecutiveSuccess = 0; // Track successful batches
+
+// Stats caching to reduce computation at high TPS
+let cachedStats: object | null = null;
+let cachedStatsTime = 0;
 
 // Use API key (required for high TPS)
 const API_KEY = process.env.APTOS_API_KEY || '';
@@ -178,8 +185,15 @@ function calculateTps(): number {
   return tps;
 }
 
-// Get stats - includes all fields UI expects
+// Get stats - includes all fields UI expects (with caching for performance)
 function getStats() {
+  const now = Date.now();
+
+  // Return cached stats if still valid
+  if (cachedStats && now - cachedStatsTime < CONFIG.STATS_CACHE_TTL_MS) {
+    return cachedStats;
+  }
+
   const tps = calculateTps();
   const avgTps = state.recentTps.length > 0
     ? state.recentTps.reduce((a, b) => a + b, 0) / state.recentTps.length
@@ -188,7 +202,7 @@ function getStats() {
     ? Math.round(state.recentLatencies.reduce((a, b) => a + b, 0) / state.recentLatencies.length)
     : 150;
 
-  return {
+  const stats = {
     totalTrades: state.totalTrades,
     successfulTrades: state.successfulTrades,
     failedTrades: state.failedTrades,
@@ -203,6 +217,12 @@ function getStats() {
     activeAccounts: state.accounts.filter(a => a.isActive).length,
     totalAccounts: state.accounts.length,
   };
+
+  // Cache the result
+  cachedStats = stats;
+  cachedStatsTime = now;
+
+  return stats;
 }
 
 // Get full UI data payload
@@ -544,7 +564,7 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
       if (state.recentLatencies.length > 100) state.recentLatencies.shift();
 
       // Broadcast trade (sampled to reduce overhead)
-      if (Math.random() < 0.1) { // Only broadcast 10% of trades
+      if (Math.random() < CONFIG.TRADE_SAMPLE_RATE) { // 3% sampling to prevent UI freeze at 1k TPS
         tradeIdCounter++;
         const tradeAmount = getRandomAmount();
         if (result.isBuy) {
@@ -596,30 +616,42 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
   // Update sequence number based on successes
   accState.sequenceNumber += BigInt(successCount);
 
-  // Check for mempool_full errors
+  // Categorize errors properly to avoid wasteful sequence refreshes
   let mempoolFull = false;
+  let hasSequenceError = false;
+  let hasVmError = false;
+
   for (const result of results) {
-    if (!result.success && result.error?.includes('mempool_is_full')) {
-      mempoolFull = true;
-      break;
+    if (!result.success && result.error) {
+      const err = result.error.toLowerCase();
+      if (err.includes('mempool_is_full')) {
+        mempoolFull = true;
+      } else if (err.includes('sequence') || err.includes('invalid_transaction_update')) {
+        hasSequenceError = true;
+      } else if (err.includes('vm_error') || err.includes('insufficient')) {
+        hasVmError = true;
+      }
     }
   }
 
   // Adaptive delay: back off on mempool_full, speed up on any success
   if (mempoolFull) {
-    currentDelay = Math.min(currentDelay + CONFIG.MEMPOOL_BACKOFF_MS, 300);
+    currentDelay = Math.min(currentDelay + CONFIG.MEMPOOL_BACKOFF_MS, CONFIG.MAX_DELAY_MS);
     consecutiveSuccess = 0;
   } else if (successCount > 0) {
     // Decrease delay when we have ANY successes (not just perfect batches)
     consecutiveSuccess++;
-    if (consecutiveSuccess > 3) {
-      currentDelay = Math.max(currentDelay - 20, 0); // Faster ramp down
+    if (consecutiveSuccess > 2) { // Was 3, now recover faster
+      currentDelay = Math.max(currentDelay - 30, 0); // Was 20, now recover faster
     }
   }
 
-  // Refresh sequence IMMEDIATELY on any error (aggressive recovery)
-  if (sequenceError || failCount > 0) {
+  // Only refresh sequence on actual sequence errors (NOT on mempool_is_full)
+  if (hasSequenceError) {
     await refreshSequenceNumber(accState);
+  } else if (hasVmError && failCount > batchSize / 2) {
+    // Check balance if >50% of batch failed with VM errors
+    await checkAndPauseIfLowBalance(accState);
   }
 
   const tps = (batchSize / (batchTime / 1000)).toFixed(0);
@@ -777,6 +809,12 @@ async function getMarketInfo(): Promise<{ address: string; isMultiOutcome: boole
   return { address: markets[0], isMultiOutcome: false, outcomeCount: 2 };
 }
 
+// Helper to parse keys with optional ed25519-priv- prefix
+function parsePrivateKey(key: string): Ed25519PrivateKey {
+  const cleanKey = key.startsWith('ed25519-priv-') ? key.slice(13) : key;
+  return new Ed25519PrivateKey(cleanKey);
+}
+
 // Initialize accounts
 function initializeAccounts(): Account[] {
   const accounts: Account[] = [];
@@ -787,7 +825,7 @@ function initializeAccounts(): Account[] {
     const keys = ultraKeys.split(',').map(k => k.trim());
     for (const key of keys) {
       try {
-        accounts.push(Account.fromPrivateKey({ privateKey: new Ed25519PrivateKey(key) }));
+        accounts.push(Account.fromPrivateKey({ privateKey: parsePrivateKey(key) }));
       } catch (e) {
         console.error(`Invalid key: ${key.slice(0, 10)}...`);
       }
@@ -798,7 +836,7 @@ function initializeAccounts(): Account[] {
   if (accounts.length === 0) {
     const singleKey = process.env.APTOS_PRIVATE_KEY;
     if (singleKey) {
-      accounts.push(Account.fromPrivateKey({ privateKey: new Ed25519PrivateKey(singleKey) }));
+      accounts.push(Account.fromPrivateKey({ privateKey: parsePrivateKey(singleKey) }));
     }
   }
 
