@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { OrderBook } from './OrderBook';
 
@@ -82,9 +82,12 @@ export function HFTVisualizer() {
   const [error, setError] = useState<string | null>(null);
   const [botBalance, setBotBalance] = useState(0);
   const [marketReserves, setMarketReserves] = useState({ yesReserve: 0, noReserve: 0, tvl: 0 });
+  const [tpsHistory, setTpsHistory] = useState<number[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectDelayRef = useRef(500);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTpsRef = useRef(0);
+  const tpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Connect to WebSocket with exponential backoff
   const connectWebSocket = useCallback(() => {
@@ -161,7 +164,7 @@ export function HFTVisualizer() {
       };
 
       wsRef.current = ws;
-    } catch (e) {
+    } catch {
       setError('WebSocket connection failed');
     }
   }, []);
@@ -185,6 +188,43 @@ export function HFTVisualizer() {
       }
     };
   }, [connectWebSocket]);
+
+  // Track TPS history for chart
+  useEffect(() => {
+    lastTpsRef.current = stats.currentTps || 0;
+  }, [stats.currentTps]);
+
+  // Sample TPS every 500ms for chart
+  useEffect(() => {
+    if (isRunning) {
+      tpsIntervalRef.current = setInterval(() => {
+        setTpsHistory(prev => [...prev.slice(-59), lastTpsRef.current]);
+      }, 500);
+    } else {
+      if (tpsIntervalRef.current) {
+        clearInterval(tpsIntervalRef.current);
+        tpsIntervalRef.current = null;
+      }
+    }
+    return () => {
+      if (tpsIntervalRef.current) {
+        clearInterval(tpsIntervalRef.current);
+        tpsIntervalRef.current = null;
+      }
+    };
+  }, [isRunning]);
+
+  // Memoize chart path for performance
+  const chartPath = useMemo(() => {
+    if (tpsHistory.length < 2) return '';
+    const max = Math.max(...tpsHistory, 100);
+    const points = tpsHistory.map((tps, i) => {
+      const x = (i / (tpsHistory.length - 1)) * 100;
+      const y = 100 - (tps / max) * 100;
+      return `${x},${y}`;
+    });
+    return `M ${points.join(' L ')}`;
+  }, [tpsHistory]);
 
   // Start trading
   const startTrading = async () => {
@@ -428,14 +468,44 @@ export function HFTVisualizer() {
             </div>
           </div>
 
-          {/* TPS Display */}
+          {/* TPS Display with Chart */}
           <div className="bg-poly-dark rounded-xl p-4">
-            <div className="text-sm text-gray-400 mb-2">Throughput</div>
-            <div className="text-3xl font-bold text-poly-green">
-              {stats.currentTps || 0} TPS
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-gray-400">Throughput</span>
+              <span className="text-xs text-gray-500">Peak: {stats.peakTps || 0}</span>
             </div>
-            <div className="text-xs text-gray-500 mt-1">
-              Peak: {stats.peakTps || 0} TPS
+            <div className="text-4xl font-bold text-poly-green mb-3">
+              {stats.currentTps || 0} <span className="text-lg font-normal text-gray-400">TPS</span>
+            </div>
+            {/* TPS History Chart */}
+            <div className="h-16 bg-[#0d0d0d] rounded-lg overflow-hidden relative">
+              {tpsHistory.length > 1 ? (
+                <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="tpsGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#00d26a" stopOpacity="0.3" />
+                      <stop offset="100%" stopColor="#00d26a" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  {/* Fill area */}
+                  <path
+                    d={`${chartPath} L 100,100 L 0,100 Z`}
+                    fill="url(#tpsGradient)"
+                  />
+                  {/* Line */}
+                  <path
+                    d={chartPath}
+                    fill="none"
+                    stroke="#00d26a"
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-600 text-xs">
+                  {isRunning ? 'Collecting data...' : 'Start bots to see chart'}
+                </div>
+              )}
             </div>
           </div>
 
@@ -574,28 +644,28 @@ export function HFTVisualizer() {
       </div>
 
       {/* Comparison Footer */}
-      <div className="p-4 border-t border-poly-border bg-poly-dark/50">
-        <div className="flex items-center justify-center gap-8 text-sm">
+      <div className="p-4 border-t border-[#1e1e1e] bg-[#0d0d0d]">
+        <div className="flex items-center justify-center gap-6 md:gap-10 text-sm flex-wrap">
           <div className="text-center">
-            <div className="text-poly-green font-bold text-lg">{stats.avgLatency || '~180'}ms</div>
-            <div className="text-gray-400">Aptos Latency</div>
+            <div className="text-2xl font-bold text-white">{stats.avgLatency || '~180'}<span className="text-base text-gray-500">ms</span></div>
+            <div className="text-xs text-gray-500">Aptos</div>
           </div>
-          <div className="text-gray-600">vs</div>
+          <div className="text-gray-600 text-xs">vs</div>
           <div className="text-center">
-            <div className="text-red-400 font-bold text-lg">2-5 sec</div>
-            <div className="text-gray-400">Polygon Latency</div>
+            <div className="text-2xl font-bold text-red-400">2-5<span className="text-base text-gray-500">sec</span></div>
+            <div className="text-xs text-gray-500">Polygon</div>
           </div>
-          <div className="text-gray-600">|</div>
+          <div className="hidden md:block w-px h-8 bg-[#1e1e1e]" />
           <div className="text-center">
-            <div className="text-poly-green font-bold text-lg">{stats.currentTps || 0}</div>
-            <div className="text-gray-400">TPS</div>
+            <div className="text-2xl font-bold text-poly-green">{stats.currentTps || 0}</div>
+            <div className="text-xs text-gray-500">TPS</div>
           </div>
-          <div className="text-gray-600">|</div>
+          <div className="hidden md:block w-px h-8 bg-[#1e1e1e]" />
           <div className="text-center">
-            <div className={`font-bold text-lg ${totalPnl >= 0 ? 'text-poly-green' : 'text-red-400'}`}>
-              {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)} APT
+            <div className={`text-2xl font-bold ${totalPnl >= 0 ? 'text-poly-green' : 'text-red-400'}`}>
+              {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}
             </div>
-            <div className="text-gray-400">Total PNL</div>
+            <div className="text-xs text-gray-500">PNL (APT)</div>
           </div>
         </div>
       </div>

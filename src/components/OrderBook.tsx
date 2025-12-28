@@ -26,7 +26,10 @@ interface OrderLevel {
   side: 'bid' | 'ask';
 }
 
-export function OrderBook({ trades, yesPrice, noPrice, yesReserve, noReserve }: OrderBookProps) {
+export function OrderBook({ trades, yesPrice, noPrice, yesReserve: _yesReserve, noReserve: _noReserve }: OrderBookProps) {
+  // Reserve props kept for future use
+  void _yesReserve; void _noReserve;
+
   const [showDepth, setShowDepth] = useState(true);
   const [animatedTrades, setAnimatedTrades] = useState<Set<string>>(new Set());
 
@@ -36,7 +39,7 @@ export function OrderBook({ trades, yesPrice, noPrice, yesReserve, noReserve }: 
   // Force update on new trades
   useEffect(() => {
     if (trades.length > 0) {
-      setUpdateCounter(c => c + 1);
+      setUpdateCounter(c => c + 1); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [trades.length]);
 
@@ -119,14 +122,15 @@ export function OrderBook({ trades, yesPrice, noPrice, yesReserve, noReserve }: 
       asks: askLevels.slice(0, 8).reverse(),
       maxTotal
     };
-  }, [yesPrice, yesReserve, noReserve, trades, updateCounter]);
+     
+  }, [yesPrice, trades, updateCounter]);
 
   // Track recently animated trades
   useEffect(() => {
     if (trades.length > 0) {
       const latestTrade = trades[0];
       if (latestTrade.success) {
-        setAnimatedTrades(prev => new Set([...prev, latestTrade.id]));
+        setAnimatedTrades(prev => new Set([...prev, latestTrade.id])); // eslint-disable-line react-hooks/set-state-in-effect
         setTimeout(() => {
           setAnimatedTrades(prev => {
             const next = new Set(prev);
@@ -210,7 +214,7 @@ export function OrderBook({ trades, yesPrice, noPrice, yesReserve, noReserve }: 
       {/* Asks (sell orders) - shown in reverse so lowest ask is at bottom */}
       <div className="space-y-0.5 mb-2">
         <AnimatePresence mode="popLayout">
-          {asks.map((level, i) => {
+          {asks.map((level) => {
             const depthPercent = (level.total / maxTotal) * 100;
             const isNearMid = Math.abs(level.price - yesPrice) < 3;
 
@@ -261,7 +265,7 @@ export function OrderBook({ trades, yesPrice, noPrice, yesReserve, noReserve }: 
       {/* Bids (buy orders) */}
       <div className="space-y-0.5">
         <AnimatePresence mode="popLayout">
-          {bids.map((level, i) => {
+          {bids.map((level) => {
             const depthPercent = (level.total / maxTotal) * 100;
             const isNearMid = Math.abs(level.price - yesPrice) < 3;
 

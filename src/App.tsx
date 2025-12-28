@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
@@ -60,17 +60,21 @@ function App() {
   const { markets: multiMarkets, loading: multiMarketsLoading, refresh: refreshMultiMarkets } = useMultiMarkets();
 
   // Convert on-chain markets to Market format for display
-  const realMarkets: Market[] = onChainMarkets.map((m) => ({
-    id: m.address,
-    question: m.question,
-    category: 'On-Chain',
-    yesPrice: m.yesPrice / 100,
-    noPrice: m.noPrice / 100,
-    // Volume estimate: reserves represent current liquidity, multiply by turnover factor for demo
-    volume: `${(((m.yesReserve + m.noReserve) / 100_000_000) * 10).toFixed(2)} APT`,
-    endDate: new Date(m.endTime * 1000).toLocaleDateString(),
-    isLive: !m.resolved && m.endTime * 1000 > Date.now(),
-  }));
+  const realMarkets: Market[] = useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    return onChainMarkets.map((m) => ({
+      id: m.address,
+      question: m.question,
+      category: 'On-Chain',
+      yesPrice: m.yesPrice / 100,
+      noPrice: m.noPrice / 100,
+      // Volume estimate: reserves represent current liquidity, multiply by turnover factor for demo
+      volume: `${(((m.yesReserve + m.noReserve) / 100_000_000) * 10).toFixed(2)} APT`,
+      endDate: new Date(m.endTime * 1000).toLocaleDateString(),
+      isLive: !m.resolved && m.endTime * 1000 > now,
+    }));
+  }, [onChainMarkets]);
 
   const handleBet = async (market: Market, side: 'yes' | 'no', amount: number) => {
     if (!connected || !account) {
@@ -358,10 +362,16 @@ function App() {
 
             <div className="flex items-center justify-center gap-4 flex-wrap">
               <a
-                href="#stress-test"
-                className="px-6 py-3 bg-poly-green text-black font-bold rounded-xl hover:bg-poly-green/90 transition-all"
+                href="/demo"
+                className="px-6 py-3 bg-poly-green text-black font-bold rounded-xl hover:bg-poly-green/90 transition-all flex items-center gap-2"
               >
-                Run Stress Test
+                <span>⚡</span> Launch Demo Mode
+              </a>
+              <a
+                href="#hft-demo"
+                className="px-6 py-3 bg-poly-card border border-poly-border text-white rounded-xl hover:border-poly-green/50 transition-all"
+              >
+                HFT Visualizer
               </a>
               <a
                 href="#markets"
@@ -377,23 +387,23 @@ function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
-            className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto mt-12"
+            className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-4xl mx-auto mt-12"
           >
-            <div className="bg-poly-card border border-poly-border rounded-xl p-4">
-              <div className="text-3xl font-bold text-poly-green">~470ms</div>
-              <div className="text-sm text-gray-400">Finality</div>
+            <div className="bg-[#141414] border border-[#1e1e1e] rounded-xl p-4 hover:border-poly-green/30 transition-colors group">
+              <div className="text-3xl font-bold text-white group-hover:text-poly-green transition-colors">~470ms</div>
+              <div className="text-sm text-gray-500">Finality</div>
             </div>
-            <div className="bg-poly-card border border-poly-border rounded-xl p-4">
-              <div className="text-3xl font-bold text-poly-green">160k+</div>
-              <div className="text-sm text-gray-400">Peak TPS</div>
+            <div className="bg-[#141414] border border-[#1e1e1e] rounded-xl p-4 hover:border-poly-green/30 transition-colors group">
+              <div className="text-3xl font-bold text-white group-hover:text-poly-green transition-colors">160k+</div>
+              <div className="text-sm text-gray-500">Peak TPS</div>
             </div>
-            <div className="bg-poly-card border border-poly-border rounded-xl p-4">
-              <div className="text-3xl font-bold text-poly-green">&lt;$0.001</div>
-              <div className="text-sm text-gray-400">Avg Fee</div>
+            <div className="bg-[#141414] border border-[#1e1e1e] rounded-xl p-4 hover:border-poly-green/30 transition-colors group">
+              <div className="text-3xl font-bold text-white group-hover:text-poly-green transition-colors">&lt;$0.001</div>
+              <div className="text-sm text-gray-500">Avg Fee</div>
             </div>
-            <div className="bg-poly-card border border-poly-border rounded-xl p-4">
+            <div className="bg-[#141414] border border-[#1e1e1e] rounded-xl p-4 hover:border-orange-400/30 transition-colors group">
               <div className="text-3xl font-bold text-orange-400">X-Chain</div>
-              <div className="text-sm text-gray-400">ETH/Sol Wallets</div>
+              <div className="text-sm text-gray-500">ETH/Sol Wallets</div>
             </div>
           </motion.div>
         </div>

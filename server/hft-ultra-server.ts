@@ -1,17 +1,19 @@
 /**
- * Ultra HFT Server - Maximum TPS with Multi-Account Parallel Submission
+ * Ultra HFT Server - Maximum TPS with Orderless Transactions
  *
- * Optimizations:
- * 1. Multiple accounts (5 by default) for parallel submission
- * 2. Large batch sizes (50 txns per account)
- * 3. Minimal delays (50ms between batches)
- * 4. Fire-and-forget with async tracking
- * 5. SDK batch API for automatic sequence management
+ * PHASE 10-14 OPTIMIZATIONS:
+ * 1. ORDERLESS TRANSACTIONS - No sequence number bottleneck! True parallelism
+ * 2. 20 accounts for massive parallel submission
+ * 3. Large batch sizes (100 txns per account)
+ * 4. 95% fire-and-forget mode (orderless doesn't need sequence sync)
+ * 5. 3-stage pipeline: Build → Sign → Submit in parallel
+ * 6. Exponential backoff/recovery for mempool congestion
+ * 7. Non-blocking RPC calls
  *
- * Target: 500-1000+ TPS
+ * Target: 5,000-10,000+ TPS
  *
  * Usage:
- *   ULTRA_PRIVATE_KEYS="key1,key2,key3,key4,key5" APTOS_API_KEY=... npx tsx server/hft-ultra-server.ts
+ *   ULTRA_PRIVATE_KEYS="key1,key2,...,key20" APTOS_API_KEY=... npx tsx server/hft-ultra-server.ts
  *
  * Or single account mode:
  *   APTOS_PRIVATE_KEY=0x... APTOS_API_KEY=... npx tsx server/hft-ultra-server.ts
@@ -34,17 +36,19 @@ const CONTRACT_ADDRESS = '0x64a81cb9cbd14d45b87bb32ef73107a44f00069b6a96e70d7536
 const MODULE = `${CONTRACT_ADDRESS}::market`;
 const MULTI_MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
 
-// Configuration - MAXIMUM TPS MODE
+// Configuration - ULTRA TPS MODE (Target: 10k TPS with Orderless Transactions)
 const CONFIG = {
   PORT: parseInt(process.env.HFT_PORT || '3001'),
-  BATCH_SIZE: 30,           // Increased from 25 for higher throughput
+  BATCH_SIZE: 100,          // Up from 50 - orderless allows bigger batches
   BATCH_DELAY_MS: 0,        // NO DELAY - max speed
-  SEQUENCE_PIPELINE: 60,    // Increased pipeline
-  MAX_PENDING: 120,         // Increased pending
-  MEMPOOL_BACKOFF_MS: 80,   // Reduced from 100 for faster recovery
-  MAX_DELAY_MS: 150,        // Cap max delay (was unbounded to 300)
-  TRADE_SAMPLE_RATE: 0.03,  // 3% sampling (was 10%) to prevent UI freeze at 1k TPS
-  STATS_CACHE_TTL_MS: 200,  // Cache stats for 200ms to reduce computation
+  SEQUENCE_PIPELINE: 100,   // Unused but keep consistent
+  MAX_PENDING: 1000,        // Up from 500 - orderless needs more headroom
+  MEMPOOL_BACKOFF_MS: 50,   // Down from 80 for faster initial backoff
+  MAX_DELAY_MS: 300,        // Up from 150 - more headroom for recovery
+  TRADE_SAMPLE_RATE: 0.005, // 0.5% sampling - 50 broadcasts/sec at 10k TPS
+  STATS_CACHE_TTL_MS: 1000, // 1 second cache - reduce computation at high TPS
+  FIRE_AND_FORGET_RATIO: 0.95, // 95% fire-and-forget - orderless doesn't need sequence sync
+  USE_ORDERLESS: true,      // PHASE 10: Use orderless transactions (no sequence numbers)
 };
 
 // Adaptive state
@@ -151,18 +155,17 @@ function broadcast(data: object) {
   });
 }
 
-// Get random amount - bigger trades to move prices toward election results
+// Get random amount - micro-trades for 2k TPS sustainability
 function getRandomAmount(): number {
-  // Smaller amounts to conserve funds at high TPS
-  // 10% chance of medium trade
-  if (Math.random() < 0.10) {
-    return Math.random() * 0.2 + 0.1; // 0.1 - 0.3 APT
+  // Optimized for 2k TPS: avg ~0.015 APT = 30 APT/sec
+  // 2000 APT per account lasts ~67 seconds
+  if (Math.random() < 0.05) {
+    return Math.random() * 0.1 + 0.05; // 0.05-0.15 APT (5% of trades)
   }
-  // 30% chance of small trade
-  if (Math.random() < 0.30) {
-    return Math.random() * 0.05 + 0.03; // 0.03 - 0.08 APT
+  if (Math.random() < 0.20) {
+    return Math.random() * 0.03 + 0.02; // 0.02-0.05 APT (20% of trades)
   }
-  return Math.random() * 0.02 + 0.01; // 0.01 - 0.03 APT (micro trades)
+  return Math.random() * 0.01 + 0.005; // 0.005-0.015 APT (75% micro trades)
 }
 
 // Calculate current TPS
@@ -502,44 +505,61 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
     payloadsWithInfo.push(buildPayload(state.marketAddress));
   }
 
-  // Build and submit all transactions in parallel
-  const promises = payloadsWithInfo.map(async ({ payload, isBuy }, i) => {
-    const seqNum = baseSeq + BigInt(i);
+  // 3-STAGE PIPELINE: Build → Sign → Submit (reduces latency variance)
+
+  // Stage 1: Build all transactions in parallel
+  // PHASE 10: Use orderless transactions with random nonces (no sequence number bottleneck!)
+  const buildPromises = payloadsWithInfo.map(({ payload }, i) => {
+    const options: any = CONFIG.USE_ORDERLESS
+      ? {
+          // Orderless: random nonce instead of sequence number
+          replayProtectionNonce: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
+          expireTimestamp: Math.floor(Date.now() / 1000) + 55, // Max 60s for orderless
+        }
+      : {
+          // Legacy: sequence number ordering
+          accountSequenceNumber: baseSeq + BigInt(i),
+          expireTimestamp: Math.floor(Date.now() / 1000) + 30,
+        };
+
+    return aptos.transaction.build.simple({
+      sender: accState.account.accountAddress,
+      data: payload,
+      options,
+    }).catch(() => null); // Return null on build failure
+  });
+  const builtTxs = await Promise.all(buildPromises);
+
+  // Stage 2: Sign all successfully built transactions (sync, very fast)
+  const signedTxs = builtTxs.map((tx, i) => {
+    if (!tx) return null;
     try {
-      const tx = await aptos.transaction.build.simple({
-        sender: accState.account.accountAddress,
-        data: payload,
-        options: {
-          accountSequenceNumber: seqNum,
-          expireTimestamp: Math.floor(Date.now() / 1000) + 60, // Short expiry
-        },
-      });
-
-      const signedTx = aptos.transaction.sign({
-        signer: accState.account,
-        transaction: tx,
-      });
-
-      const pending = await aptos.transaction.submit.simple({
-        transaction: tx,
-        senderAuthenticator: signedTx,
-      });
-
-      return { success: true, hash: pending.hash, isBuy };
-    } catch (e: any) {
-      const errMsg = e.message || 'Unknown error';
-      // Only log errors for the first tx in batch to reduce noise
-      // Don't log "insufficient balance" for sells (expected when no tokens)
-      if (i === 0 && !errMsg.includes('INSUFFICIENT_BALANCE')) {
-        console.error(`  [ERROR] ${errMsg.slice(0, 60)}`);
-        if (e.data?.error_code) console.error(`  [CODE] ${e.data.error_code}`);
-      }
-      return { success: false, error: errMsg, isBuy };
+      return aptos.transaction.sign({ signer: accState.account, transaction: tx });
+    } catch {
+      return null;
     }
   });
 
-  // Wait for results before updating sequence (reliable mode)
-  const results = await Promise.all(promises);
+  // Stage 3: Submit all signed transactions in parallel
+  const submitPromises = builtTxs.map((tx, i) => {
+    if (!tx || !signedTxs[i]) {
+      return Promise.resolve({ success: false, error: 'Build/sign failed', isBuy: payloadsWithInfo[i].isBuy });
+    }
+    return aptos.transaction.submit.simple({
+      transaction: tx,
+      senderAuthenticator: signedTxs[i]!,
+    })
+    .then(pending => ({ success: true, hash: pending.hash, isBuy: payloadsWithInfo[i].isBuy }))
+    .catch((e: any) => {
+      const errMsg = e.message || 'Unknown error';
+      if (i === 0 && !errMsg.includes('INSUFFICIENT_BALANCE')) {
+        console.error(`  [ERROR] ${errMsg.slice(0, 60)}`);
+      }
+      return { success: false, error: errMsg, isBuy: payloadsWithInfo[i].isBuy };
+    });
+  });
+
+  const results = await Promise.all(submitPromises);
   const batchTime = Date.now() - startTime;
 
   // Process results
@@ -613,8 +633,10 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
     }
   }
 
-  // Update sequence number based on successes
-  accState.sequenceNumber += BigInt(successCount);
+  // Update sequence number based on successes (skip for orderless - not needed)
+  if (!CONFIG.USE_ORDERLESS) {
+    accState.sequenceNumber += BigInt(successCount);
+  }
 
   // Categorize errors properly to avoid wasteful sequence refreshes
   let mempoolFull = false;
@@ -634,24 +656,32 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
     }
   }
 
-  // Adaptive delay: back off on mempool_full, speed up on any success
+  // Adaptive delay: EXPONENTIAL backoff, EXPONENTIAL recovery
   if (mempoolFull) {
-    currentDelay = Math.min(currentDelay + CONFIG.MEMPOOL_BACKOFF_MS, CONFIG.MAX_DELAY_MS);
+    // Exponential backoff: multiply by 1.5 instead of adding fixed amount
+    currentDelay = Math.min(
+      currentDelay === 0 ? CONFIG.MEMPOOL_BACKOFF_MS : Math.floor(currentDelay * 1.5),
+      CONFIG.MAX_DELAY_MS
+    );
     consecutiveSuccess = 0;
   } else if (successCount > 0) {
-    // Decrease delay when we have ANY successes (not just perfect batches)
     consecutiveSuccess++;
-    if (consecutiveSuccess > 2) { // Was 3, now recover faster
-      currentDelay = Math.max(currentDelay - 30, 0); // Was 20, now recover faster
+    if (consecutiveSuccess > 1) {  // Recover after just 2 successes (was 3)
+      // Exponential recovery: halve the delay (much faster than -30)
+      currentDelay = Math.floor(currentDelay * 0.5);
     }
   }
 
-  // Only refresh sequence on actual sequence errors (NOT on mempool_is_full)
-  if (hasSequenceError) {
-    await refreshSequenceNumber(accState);
+  // Non-blocking error handling - don't block trading loop on RPC calls
+  // PHASE 10: Skip sequence refresh for orderless transactions (not needed)
+  if (hasSequenceError && !CONFIG.USE_ORDERLESS) {
+    // Fire and forget - queue refresh without blocking
+    refreshSequenceNumber(accState).catch(() => {});
   } else if (hasVmError && failCount > batchSize / 2) {
-    // Check balance if >50% of batch failed with VM errors
-    await checkAndPauseIfLowBalance(accState);
+    // Only check balance occasionally (10% chance) to reduce RPC overhead
+    if (Math.random() < 0.1) {
+      checkAndPauseIfLowBalance(accState).catch(() => {});
+    }
   }
 
   const tps = (batchSize / (batchTime / 1000)).toFixed(0);
@@ -683,19 +713,31 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
   const startTime = Date.now();
   const baseSeq = accState.sequenceNumber;
 
-  // Pre-increment sequence number immediately (speculative execution)
-  accState.sequenceNumber += BigInt(batchSize);
+  // Pre-increment sequence number (only matters for non-orderless mode)
+  if (!CONFIG.USE_ORDERLESS) {
+    accState.sequenceNumber += BigInt(batchSize);
+  }
 
   // Build and submit without waiting
   for (let i = 0; i < batchSize; i++) {
     const { payload, isBuy } = buildPayload(state.marketAddress);
-    const seqNum = baseSeq + BigInt(i);
+
+    // PHASE 10: Orderless uses random nonces, legacy uses sequence numbers
+    const options: any = CONFIG.USE_ORDERLESS
+      ? {
+          replayProtectionNonce: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
+          expireTimestamp: Math.floor(Date.now() / 1000) + 55,
+        }
+      : {
+          accountSequenceNumber: baseSeq + BigInt(i),
+          expireTimestamp: Math.floor(Date.now() / 1000) + 30,
+        };
 
     // Fire off without waiting
     aptos.transaction.build.simple({
       sender: accState.account.accountAddress,
       data: payload,
-      options: { accountSequenceNumber: seqNum, expireTimestamp: Math.floor(Date.now() / 1000) + 30 },
+      options,
     }).then(tx => {
       const signedTx = aptos.transaction.sign({ signer: accState.account, transaction: tx });
       return aptos.transaction.submit.simple({ transaction: tx, senderAuthenticator: signedTx });
@@ -740,12 +782,26 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
 // Main trading loop for single account
 async function accountTradingLoop(accState: AccountState, accountIndex: number): Promise<void> {
   console.log(`[Account ${accountIndex + 1}] Trading loop started`);
+
+  // Stagger submissions - reduced to 100ms for orderless (less contention)
+  const staggerWindow = CONFIG.USE_ORDERLESS ? 100 : 300;
+  const staggerDelay = accountIndex * Math.ceil(staggerWindow / Math.max(state.accounts.length, 1));
+  if (staggerDelay > 0) {
+    await new Promise(r => setTimeout(r, staggerDelay));
+  }
+
   let batchCount = 0;
 
   while (state.isRunning && accState.isActive) {
     try {
-      // Execute batch at max speed
-      await executeBatchForAccount(accState);
+      // HYBRID MODE: 70% fire-and-forget for speed, 30% safe mode for sequence sync
+      if (Math.random() < CONFIG.FIRE_AND_FORGET_RATIO) {
+        // Fire-and-forget: maximum speed, speculative sequence increment
+        await fireAndForgetBatch(accState);
+      } else {
+        // Safe mode: wait for results, verify sequence
+        await executeBatchForAccount(accState);
+      }
       batchCount++;
 
       // Apply adaptive delay (only when mempool is congested)
@@ -754,14 +810,20 @@ async function accountTradingLoop(accState: AccountState, accountIndex: number):
       }
 
       // Check balance less frequently for speed
-      if (batchCount % 50 === 0) {
-        await checkAndPauseIfLowBalance(accState);
+      if (batchCount % 100 === 0) {
+        checkAndPauseIfLowBalance(accState).catch(() => {}); // Non-blocking
+      }
+
+      // Periodic sequence refresh to stay in sync (only for legacy mode, not orderless)
+      if (!CONFIG.USE_ORDERLESS && batchCount % 200 === 0) {
+        refreshSequenceNumber(accState).catch(() => {}); // Non-blocking
       }
     } catch (e: any) {
       console.error(`[Account ${accountIndex + 1}] Error: ${e.message?.slice(0, 50)}`);
-      await refreshSequenceNumber(accState);
-      // Brief pause on error
-      await new Promise(r => setTimeout(r, 50));
+      if (!CONFIG.USE_ORDERLESS) {
+        refreshSequenceNumber(accState).catch(() => {}); // Non-blocking
+      }
+      await new Promise(r => setTimeout(r, 30)); // Brief pause
     }
   }
 
@@ -923,16 +985,17 @@ async function startTrading(): Promise<void> {
   console.log(`Batch: ${CONFIG.BATCH_SIZE} | Delay: ${CONFIG.BATCH_DELAY_MS}ms`);
   console.log(`Target: ~${(CONFIG.BATCH_SIZE * activeAccounts.length / (CONFIG.BATCH_DELAY_MS / 1000)).toFixed(0)} TPS\n`);
 
-  // Start periodic UI data refresh (every 10 seconds)
-  const uiRefreshInterval = setInterval(async () => {
+  // Start periodic UI data refresh (every 15 seconds, non-blocking)
+  const uiRefreshInterval = setInterval(() => {
     if (!state.isRunning) {
       clearInterval(uiRefreshInterval);
       return;
     }
-    await refreshUIData();
+    // Fire off without awaiting - don't block event loop
+    refreshUIData().catch(() => {});
     // Broadcast updated state to all clients
     broadcast({ type: 'state', data: { isRunning: state.isRunning, ...getFullUIData() } });
-  }, 10000);
+  }, 15000);
 
   // Start all trading loops in parallel
   for (let i = 0; i < state.accounts.length; i++) {
@@ -1016,19 +1079,22 @@ app.get('/stats', (req, res) => {
 // Start server
 server.listen(CONFIG.PORT, () => {
   console.log('='.repeat(70));
-  console.log('ULTRA HFT SERVER - Maximum TPS Mode');
+  console.log('ULTRA HFT SERVER - ORDERLESS TRANSACTIONS MODE');
   console.log('='.repeat(70));
   console.log(`\nHTTP:      http://localhost:${CONFIG.PORT}`);
   console.log(`WebSocket: ws://localhost:${CONFIG.PORT}`);
   console.log('\nFeatures:');
-  console.log('  - Multi-account parallel submission');
-  console.log('  - Large batch sizes (50 txns/batch)');
-  console.log('  - Aggressive timing (50ms delay)');
-  console.log('  - Fire-and-forget with async tracking');
+  console.log('  - ORDERLESS TRANSACTIONS (no sequence bottleneck!)');
+  console.log('  - Multi-account parallel submission (20 accounts)');
+  console.log('  - Large batch sizes (100 txns/batch)');
+  console.log('  - 95% fire-and-forget mode');
+  console.log('  - 3-stage pipeline: Build → Sign → Submit');
   console.log('  - Supports binary + multi-outcome markets');
   console.log('\nConfiguration:');
+  console.log(`  USE_ORDERLESS: ${CONFIG.USE_ORDERLESS}`);
   console.log(`  BATCH_SIZE: ${CONFIG.BATCH_SIZE}`);
-  console.log(`  BATCH_DELAY: ${CONFIG.BATCH_DELAY_MS}ms`);
+  console.log(`  FIRE_AND_FORGET: ${(CONFIG.FIRE_AND_FORGET_RATIO * 100).toFixed(0)}%`);
   console.log(`  MAX_PENDING: ${CONFIG.MAX_PENDING}`);
+  console.log('\nTarget: 5,000 - 10,000+ TPS');
   console.log('\n' + '='.repeat(70) + '\n');
 });
