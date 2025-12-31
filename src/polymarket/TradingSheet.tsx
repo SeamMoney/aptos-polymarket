@@ -207,8 +207,8 @@ export function TradingSheet({
   };
 
   const handleDragEnd = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    // If dragged down more than 100px, close the sheet
-    if (info.offset.y > 100) {
+    // If dragged down more than 50px or with velocity, close the sheet
+    if (info.offset.y > 50 || info.velocity.y > 500) {
       onClose();
     }
   };
@@ -235,7 +235,8 @@ export function TradingSheet({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            transition={{ duration: 0.15 }}
+            className="absolute inset-0 bg-black/70"
             onClick={onClose}
           />
 
@@ -244,10 +245,10 @@ export function TradingSheet({
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 30, stiffness: 300 }}
+            transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
             drag="y"
-            dragConstraints={{ top: 0 }}
-            dragElastic={0.2}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={0}
             onDragEnd={handleDragEnd}
             className="relative bg-[#1c2b3a] rounded-t-2xl w-full max-w-lg overflow-hidden"
           >
