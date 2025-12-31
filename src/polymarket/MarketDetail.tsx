@@ -645,10 +645,14 @@ export function MarketDetail() {
               <button
                 onClick={startTrading}
                 disabled={!hftConnected}
-                className="flex-1 bg-[#4abe7a] hover:bg-[#3da86a] disabled:bg-[#4abe7a]/50 disabled:cursor-not-allowed rounded-lg py-4 text-white text-base font-bold transition-colors flex items-center justify-center gap-2"
+                className={`flex-1 rounded-lg py-4 text-white text-base font-bold transition-colors flex items-center justify-center gap-2 ${
+                  hftConnected
+                    ? 'bg-[#4abe7a] hover:bg-[#3da86a]'
+                    : 'bg-[#3d4f5f] cursor-not-allowed'
+                }`}
               >
                 <Play size={20} fill="white" />
-                {hftConnected ? 'Start HFT Demo' : 'Connecting...'}
+                {hftConnected ? 'Start HFT Demo' : 'Server Offline'}
               </button>
             ) : (
               <button

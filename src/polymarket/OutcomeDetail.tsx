@@ -171,12 +171,48 @@ export function OutcomeDetail() {
 
   const innerWidth = chartWidth - CHART_PADDING_RIGHT;
 
+  // Calculate dynamic Y-axis range based on price data
+  const { yMin, yMax, yLabels } = useMemo(() => {
+    if (priceHistory.length === 0) return { yMin: 0, yMax: 1, yLabels: ['100%', '75%', '50%', '25%', '0%'] };
+
+    const prices = priceHistory;
+    const dataMin = Math.min(...prices);
+    const dataMax = Math.max(...prices);
+    const range = dataMax - dataMin;
+    const padding = Math.max(0.05, range * 0.15); // At least 5% padding, or 15% of range
+
+    let yMin = Math.max(0, dataMin - padding);
+    let yMax = Math.min(1, dataMax + padding);
+
+    // Round to nice values (multiples of 5%)
+    yMin = Math.floor(yMin * 20) / 20;
+    yMax = Math.ceil(yMax * 20) / 20;
+
+    // Ensure minimum range of 20%
+    if (yMax - yMin < 0.2) {
+      const center = (yMin + yMax) / 2;
+      yMin = Math.max(0, center - 0.1);
+      yMax = Math.min(1, center + 0.1);
+    }
+
+    // Generate 5 labels evenly spaced
+    const yLabels = [];
+    for (let i = 0; i < 5; i++) {
+      const val = yMax - (i / 4) * (yMax - yMin);
+      yLabels.push(`${Math.round(val * 100)}%`);
+    }
+
+    return { yMin, yMax, yLabels };
+  }, [priceHistory]);
+
   const chartPath = useMemo(() => {
     if (priceHistory.length === 0) return { pathD: "", points: [], lastPoint: null };
 
     const points = priceHistory.map((price, i) => {
       const x = (i / Math.max(1, priceHistory.length - 1)) * innerWidth;
-      const y = CHART_HEIGHT - price * CHART_HEIGHT;
+      // Map price to Y coordinate using dynamic range
+      const normalizedPrice = (price - yMin) / (yMax - yMin);
+      const y = CHART_HEIGHT - normalizedPrice * CHART_HEIGHT;
       return { x, y, price };
     });
 
@@ -184,7 +220,7 @@ export function OutcomeDetail() {
     const lastPoint = points[points.length - 1];
 
     return { pathD, points, lastPoint };
-  }, [priceHistory, innerWidth]);
+  }, [priceHistory, innerWidth, yMin, yMax]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -370,7 +406,7 @@ export function OutcomeDetail() {
             </span>
           </div>
           {/* Polymarket watermark */}
-          <div className="flex items-center gap-2 opacity-60">
+          <div className="flex items-center gap-2 opacity-30">
             <svg width="24" height="24" viewBox="0 0 512 512" fill="none">
               <path d="M375.84 389.422C375.84 403.572 375.84 410.647 371.212 414.154C366.585 417.662 359.773 415.75 346.15 411.927L127.22 350.493C119.012 348.19 114.907 347.038 112.534 343.907C110.161 340.776 110.161 336.513 110.161 327.988V184.012C110.161 175.487 110.161 171.224 112.534 168.093C114.907 164.962 119.012 163.81 127.22 161.507L346.15 100.072C359.773 96.2495 366.585 94.338 371.212 97.8455C375.84 101.353 375.84 108.428 375.84 122.578V389.422ZM164.761 330.463L346.035 381.337V279.595L164.761 330.463ZM139.963 306.862L321.201 256L139.963 205.138V306.862ZM164.759 181.537L346.035 232.406V130.663L164.759 181.537Z" fill="white"/>
             </svg>
@@ -423,7 +459,7 @@ export function OutcomeDetail() {
                 ))}
 
                 {/* Polymarket watermark - matches PolyChart */}
-                <g opacity={0.12}>
+                <g opacity={0.06}>
                   <image
                     href="/images/icon-white.svg"
                     x={16}
@@ -505,13 +541,11 @@ export function OutcomeDetail() {
               )}
             </div>
 
-            {/* Y-axis labels */}
+            {/* Y-axis labels - dynamic based on data range */}
             <div className="ml-2 flex flex-col justify-between shrink-0" style={{ height: CHART_HEIGHT }}>
-              <span className="text-[#6b7a8a] text-xs">100%</span>
-              <span className="text-[#6b7a8a] text-xs">75%</span>
-              <span className="text-[#6b7a8a] text-xs">50%</span>
-              <span className="text-[#6b7a8a] text-xs">25%</span>
-              <span className="text-[#6b7a8a] text-xs">0%</span>
+              {yLabels.map((label, i) => (
+                <span key={i} className="text-[#6b7a8a] text-xs">{label}</span>
+              ))}
             </div>
           </div>
 
@@ -588,6 +622,31 @@ export function OutcomeDetail() {
             This market will resolve according to the next individual appointed to be Chair of the Federal Reserve by
             the President of the United States.
           </p>
+        </div>
+      </div>
+
+      {/* Buy Yes / Buy No buttons - Fixed at bottom */}
+      <div
+        className="fixed bottom-16 left-0 right-0 z-40 px-4 py-3"
+        style={{ backgroundColor: '#1c2b3a', borderTop: '2px solid #2c3f4f' }}
+      >
+        <div className="max-w-lg mx-auto flex gap-3">
+          <button
+            onClick={() => {
+              setShowTradingSheet(true);
+            }}
+            className="flex-1 bg-[#3dac67] rounded-lg py-3.5 text-white text-base font-semibold hover:bg-[#359b5c] transition-colors"
+          >
+            Buy Yes {yesPrice}¢
+          </button>
+          <button
+            onClick={() => {
+              setShowTradingSheet(true);
+            }}
+            className="flex-1 bg-[#e13836] rounded-lg py-3.5 text-white text-base font-semibold hover:bg-[#c9312f] transition-colors"
+          >
+            Buy No {noPrice}¢
+          </button>
         </div>
       </div>
 

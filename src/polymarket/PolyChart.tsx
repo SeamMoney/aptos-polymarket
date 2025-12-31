@@ -280,7 +280,7 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH }: Poly
             ))}
 
             {/* Polymarket watermark - moved to left with text */}
-            <g opacity={0.12}>
+            <g opacity={0.06}>
               <image
                 href="/images/icon-white.svg"
                 x={16}
