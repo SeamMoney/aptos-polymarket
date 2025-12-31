@@ -5,21 +5,17 @@ import { Search, Bookmark, X, RefreshCw, Loader2, Zap } from "lucide-react";
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { MarketCard } from "./MarketCard";
-import { AptosBanner } from "./AptosBanner";
-import { AptosFeatures } from "./AptosFeatures";
 import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useHFTConnection } from "../hooks/useHFTConnection";
 import type { Category, Market } from "./types";
 
 const topicFilters = ["All", "Trump", "Venezuela", "New Years", "Ukraine", "Mideast"];
-const timeFilters = ["All", "15 Min", "Hourly", "4 Hour", "Daily", "Weekly", "Monthly"];
 
 export function PolymarketHome() {
   const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState<Category>("All");
   const [selectedTopic, setSelectedTopic] = useState("All");
-  const [selectedTime, setSelectedTime] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [showRealMarkets, setShowRealMarkets] = useState(true);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
@@ -103,9 +99,6 @@ export function PolymarketHome() {
         selectedCategory={selectedCategory}
         onSelectCategory={setSelectedCategory}
       />
-
-      {/* Aptos Banner */}
-      <AptosBanner />
 
       {/* Search Bar Row */}
       <div className="px-4 py-2 flex items-center gap-3">
@@ -245,28 +238,8 @@ export function PolymarketHome() {
         </div>
       ) : (
         <>
-          {/* Time Filter Pills */}
-          <div className="flex overflow-x-auto px-4 py-2 gap-2 border-b border-[#2c3f4f]">
-            {timeFilters.map((time) => {
-              const isSelected = selectedTime === time;
-              return (
-                <button
-                  key={time}
-                  onClick={() => setSelectedTime(time)}
-                  className={`px-3 py-1.5 rounded-full shrink-0 transition-colors text-sm font-medium ${
-                    isSelected
-                      ? "bg-white text-black"
-                      : "bg-transparent text-[#8297a3] hover:text-white"
-                  }`}
-                >
-                  {time}
-                </button>
-              );
-            })}
-          </div>
-
           {/* Topic Filter Pills */}
-          <div className="flex overflow-x-auto px-4 py-3 gap-2">
+          <div className="flex overflow-x-auto px-4 py-3 gap-2 border-b border-[#2c3f4f]">
             {topicFilters.map((topic) => {
               const isSelected = selectedTopic === topic;
               return (
@@ -284,9 +257,6 @@ export function PolymarketHome() {
               );
             })}
           </div>
-
-          {/* Aptos Features - Quick Stats */}
-          <AptosFeatures />
 
           {/* Markets List */}
           <div className="pb-6">

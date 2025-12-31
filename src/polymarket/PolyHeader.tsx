@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Settings, Trophy, DollarSign, Rocket, Code2, Moon, ChevronUp } from "lucide-react";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import { Settings, Trophy, DollarSign, Rocket, Code2, Moon, ChevronUp, ExternalLink, Wallet } from "lucide-react";
 
 // Polymarket P logo without background (white version)
 function PolymarketLogo() {
@@ -34,23 +35,18 @@ export function PolyHeader() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [showDropdown, setShowDropdown] = useState(false);
 
-  // Check localStorage for auth state
-  const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    return localStorage.getItem("polymarket_logged_in") === "true";
-  });
+  // Use Aptos wallet adapter
+  const { account, connected, disconnect, wallet } = useWallet();
 
-  // Listen for storage changes
-  useEffect(() => {
-    const checkAuth = () => {
-      setIsLoggedIn(localStorage.getItem("polymarket_logged_in") === "true");
-    };
-    window.addEventListener("storage", checkAuth);
-    window.addEventListener("focus", checkAuth);
-    return () => {
-      window.removeEventListener("storage", checkAuth);
-      window.removeEventListener("focus", checkAuth);
-    };
-  }, []);
+  // Check if connected via X-Chain (derived wallet from EVM/Solana)
+  const isXChainWallet = wallet?.name?.toLowerCase().includes('ethereum') ||
+                          wallet?.name?.toLowerCase().includes('metamask') ||
+                          wallet?.name?.toLowerCase().includes('phantom') ||
+                          wallet?.name?.toLowerCase().includes('solana');
+
+  const formatAddress = (address: string) => {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -68,8 +64,7 @@ export function PolyHeader() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("polymarket_logged_in");
-    setIsLoggedIn(false);
+    disconnect();
     setShowDropdown(false);
   };
 
@@ -87,13 +82,30 @@ export function PolyHeader() {
       </button>
 
       {/* Auth buttons or logged-in state */}
-      {isLoggedIn ? (
+      {connected && account ? (
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setShowDropdown(!showDropdown)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-[#1c2b3a] transition-colors"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-[#2a3d4e] transition-colors"
           >
-            <GradientAvatar size={38} />
+            {/* X-Chain Badge */}
+            {isXChainWallet && (
+              <div className="flex items-center gap-1 px-2 py-0.5 bg-orange-500/20 rounded-full">
+                <span className="text-[10px] font-semibold text-orange-400">X-CHAIN</span>
+              </div>
+            )}
+            {/* Connected indicator */}
+            <div className="w-2 h-2 rounded-full bg-[#22c55e] animate-pulse" />
+            {/* Wallet icon or avatar */}
+            {wallet?.icon ? (
+              <img src={wallet.icon} alt={wallet.name} className="w-6 h-6 rounded-full" />
+            ) : (
+              <GradientAvatar size={28} />
+            )}
+            {/* Address */}
+            <span className="text-white text-sm font-mono">
+              {formatAddress(account.address.toString())}
+            </span>
             <ChevronUp
               size={18}
               color="#8297a3"
@@ -104,13 +116,29 @@ export function PolyHeader() {
 
           {/* Dropdown Menu */}
           {showDropdown && (
-            <div className="absolute right-0 top-full mt-2 w-72 bg-[#1c2b3a] border-2 border-[#3a4f60] rounded-2xl shadow-xl overflow-hidden z-50">
-              {/* User info with Portfolio/Cash */}
+            <div className="absolute right-0 top-full mt-2 w-80 bg-[#1c2b3a] border-2 border-[#3a4f60] rounded-2xl shadow-xl overflow-hidden z-50">
+              {/* Wallet info */}
               <div className="p-4 border-b-2 border-[#3a4f60]">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <GradientAvatar size={44} />
-                    <span className="text-white text-lg font-semibold">User</span>
+                    {wallet?.icon ? (
+                      <img src={wallet.icon} alt={wallet.name} className="w-10 h-10 rounded-lg" />
+                    ) : (
+                      <GradientAvatar size={40} />
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white text-base font-semibold">{wallet?.name || 'Wallet'}</span>
+                        {isXChainWallet && (
+                          <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 text-[10px] font-semibold rounded-full">
+                            X-CHAIN
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[#8297a3] text-xs font-mono">
+                        {formatAddress(account.address.toString())}
+                      </span>
+                    </div>
                   </div>
                   <button
                     onClick={() => { navigate("/portfolio"); setShowDropdown(false); }}
@@ -119,6 +147,34 @@ export function PolyHeader() {
                     <Settings size={20} color="#8297a3" strokeWidth={2.5} />
                   </button>
                 </div>
+
+                {/* X-Chain Info Banner */}
+                {isXChainWallet && (
+                  <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-xl mb-3">
+                    <div className="text-orange-400 text-xs font-semibold mb-1">
+                      Cross-Chain Connection Active
+                    </div>
+                    <div className="text-[#8297a3] text-xs leading-relaxed">
+                      Your {wallet?.name} wallet is connected to Aptos via Derived Account Abstraction (AIP-113)
+                    </div>
+                  </div>
+                )}
+
+                {/* Faucet Button */}
+                <a
+                  href={`https://aptos.dev/en/network/faucet?address=${account?.address.toString()}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-2.5 bg-[#22c55e]/20 text-[#22c55e] text-sm font-medium rounded-xl hover:bg-[#22c55e]/30 transition-colors"
+                >
+                  <Wallet size={16} />
+                  Get Testnet APT (Faucet)
+                  <ExternalLink size={14} />
+                </a>
+              </div>
+
+              {/* Portfolio Stats */}
+              <div className="px-4 py-3 border-b-2 border-[#3a4f60]">
                 <div className="flex items-center gap-6">
                   <div>
                     <p className="text-[#8297a3] text-xs font-medium">Portfolio</p>
@@ -160,6 +216,14 @@ export function PolyHeader() {
                 </div>
               </div>
 
+              {/* Full Address */}
+              <div className="px-4 py-2 border-t border-[#3a4f60]">
+                <div className="text-[10px] text-[#6b7a8a] mb-1">Full Aptos Address</div>
+                <div className="text-[11px] text-[#8297a3] font-mono break-all">
+                  {account?.address.toString()}
+                </div>
+              </div>
+
               {/* Footer Links */}
               <div className="border-t-2 border-[#3a4f60] p-2">
                 <button className="w-full text-left px-3 py-2 text-[#8297a3] hover:text-white transition-colors">Accuracy</button>
@@ -170,7 +234,7 @@ export function PolyHeader() {
                   onClick={handleLogout}
                   className="w-full text-left px-3 py-2 text-[#ef4444] hover:text-[#f87171] transition-colors"
                 >
-                  Logout
+                  Disconnect Wallet
                 </button>
               </div>
             </div>
@@ -186,9 +250,10 @@ export function PolyHeader() {
           </button>
           <button
             onClick={handleLogin}
-            className="bg-[#4A90C2] hover:bg-[#3A80B2] px-5 py-2.5 rounded text-white text-base font-bold transition-colors"
+            className="bg-[#4A90C2] hover:bg-[#3A80B2] px-5 py-2.5 rounded text-white text-base font-bold transition-colors flex items-center gap-2"
           >
-            Sign Up
+            <Wallet size={18} />
+            Connect
           </button>
         </div>
       )}

@@ -120,8 +120,22 @@ export function usePolymarkets(): PolymarketsHook {
   }, [binaryMarkets]);
 
   // Convert multi-outcome markets to Polymarket format
+  // Filter duplicates by question, keeping the one with highest volume
   const convertedMultiMarkets: Market[] = useMemo(() => {
-    return multiMarkets.map((market, index) => {
+    // First, deduplicate by question - keep highest volume
+    const deduped = multiMarkets.reduce((acc, market) => {
+      const existing = acc.find(m => m.question === market.question);
+      if (!existing) {
+        acc.push(market);
+      } else if (market.totalCollateral > existing.totalCollateral) {
+        // Replace with higher volume market
+        const idx = acc.indexOf(existing);
+        acc[idx] = market;
+      }
+      return acc;
+    }, [] as typeof multiMarkets);
+
+    return deduped.map((market, index) => {
       const outcomes: Outcome[] = market.outcomes.map((outcome: any, i: number) => ({
         id: `${market.address}-${outcome.index}`,
         name: outcome.label,

@@ -9,6 +9,8 @@ import { TradingSheet } from "./TradingSheet";
 import { LiveOrderBook } from "./LiveOrderBook";
 import { TPSChart } from "./TPSChart";
 import { AptosComparison } from "./AptosComparison";
+import { ConsensusVisualizer } from "./ConsensusVisualizer";
+import { SpeedComparison } from "./SpeedComparison";
 import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useHFTConnection } from "../hooks/useHFTConnection";
@@ -485,6 +487,24 @@ export function MarketDetail() {
           }`}
         >
           <AptosComparison />
+        </div>
+
+        {/* Consensus Visualizer */}
+        <div
+          className={`px-4 pb-6 transition-all duration-300 delay-690 ${
+            isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+          }`}
+        >
+          <ConsensusVisualizer />
+        </div>
+
+        {/* Speed Comparison */}
+        <div
+          className={`px-4 pb-6 transition-all duration-300 delay-700 ${
+            isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+          }`}
+        >
+          <SpeedComparison />
         </div>
 
         {/* Related Section */}
