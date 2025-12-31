@@ -40,7 +40,8 @@ function AptosKeylessIcon() {
 }
 
 // Faucet deployer key for demo (testnet only)
-const FAUCET_KEY = "0x466C93219D56FC91BBFDD22B127FC9CB717FA9752CB4ED91DF3A1D7B33307BD2";
+// Address: 0x20a30d83eec219a31e4d4a6aec1787bbaab089c99a8d263df03147782a0d490c
+const FAUCET_KEY = "0x6ceeeb36800665f36af48c88ecd8afdc4d34cfbe3793202b6313f6741866ab50";
 const FUND_AMOUNT_APT = 50; // $50 worth of APT
 
 export function PolyHeader() {
@@ -129,7 +130,8 @@ export function PolyHeader() {
       const txn = await aptos.transaction.build.simple({
         sender: faucetAccount.accountAddress,
         data: {
-          function: "0x1::aptos_account::transfer",
+          function: "0x1::aptos_account::transfer_coins",
+          typeArguments: ["0x1::aptos_coin::AptosCoin"],
           functionArguments: [recipientAddress, amountOctas],
         },
       });

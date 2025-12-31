@@ -111,7 +111,7 @@ export function PortfolioPage() {
     "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1", // multi-outcome market
   ];
 
-  // Fetch wallet balance
+  // Fetch wallet balance (supports both legacy CoinStore and new Fungible Assets)
   const fetchBalance = useCallback(async () => {
     if (!connected || !account?.address) {
       setBalance(0);
@@ -120,14 +120,28 @@ export function PortfolioPage() {
 
     try {
       setIsRefreshing(true);
-      const resources = await aptos.getAccountResource({
-        accountAddress: account.address.toString(),
-        resourceType: "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>",
-      });
-      // Balance is in octas (10^-8 APT)
-      const balanceOctas = (resources as any).coin?.value || 0;
-      const balanceAPT = Number(balanceOctas) / 100_000_000;
-      setBalance(balanceAPT);
+      const address = account.address.toString();
+
+      // Try new Fungible Asset balance first (APT metadata is at 0xa)
+      try {
+        const faBalance = await aptos.getAccountAPTAmount({ accountAddress: address });
+        setBalance(faBalance / 100_000_000);
+        return;
+      } catch {
+        // Fall back to legacy CoinStore
+      }
+
+      // Legacy CoinStore fallback
+      try {
+        const resources = await aptos.getAccountResource({
+          accountAddress: address,
+          resourceType: "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>",
+        });
+        const balanceOctas = (resources as any).coin?.value || 0;
+        setBalance(Number(balanceOctas) / 100_000_000);
+      } catch {
+        setBalance(0);
+      }
     } catch (error) {
       console.error("Error fetching balance:", error);
       setBalance(0);
