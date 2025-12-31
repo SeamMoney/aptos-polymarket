@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { ArrowUp, Search, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { ArrowUp, Search, Eye, EyeOff, RefreshCw, ExternalLink, TrendingUp, TrendingDown, Loader2 } from "lucide-react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import { PolyHeader } from "./PolyHeader";
@@ -10,6 +10,16 @@ import type { Category } from "./types";
 
 // Initialize Aptos client
 const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
+
+// Trade history item type
+interface TradeHistoryItem {
+  hash: string;
+  type: 'buy' | 'sell';
+  outcome: string;
+  amount: number;
+  timestamp: number;
+  success: boolean;
+}
 
 // Polymarket Logo for branding (using official logo)
 function PolymarketBrand() {
@@ -90,8 +100,16 @@ export function PortfolioPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [balance, setBalance] = useState<number>(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [trades, setTrades] = useState<TradeHistoryItem[]>([]);
+  const [isLoadingTrades, setIsLoadingTrades] = useState(false);
 
   const timeRanges = ["1D", "1W", "1M", "ALL"];
+
+  // Contract addresses for filtering trades
+  const MARKET_CONTRACTS = [
+    "0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4", // binary market
+    "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1", // multi-outcome market
+  ];
 
   // Fetch wallet balance
   const fetchBalance = useCallback(async () => {
@@ -125,6 +143,102 @@ export function PortfolioPage() {
     const interval = setInterval(fetchBalance, 10000);
     return () => clearInterval(interval);
   }, [fetchBalance]);
+
+  // Listen for wallet funded events to refresh immediately
+  useEffect(() => {
+    const handleWalletFunded = () => {
+      // Small delay to allow blockchain to update
+      setTimeout(fetchBalance, 1000);
+    };
+
+    window.addEventListener('wallet-funded', handleWalletFunded);
+    return () => window.removeEventListener('wallet-funded', handleWalletFunded);
+  }, [fetchBalance]);
+
+  // Fetch trade history
+  const fetchTrades = useCallback(async () => {
+    if (!connected || !account?.address) {
+      setTrades([]);
+      return;
+    }
+
+    try {
+      setIsLoadingTrades(true);
+      const address = account.address.toString();
+
+      // Fetch recent transactions for this account
+      const transactions = await aptos.getAccountTransactions({
+        accountAddress: address,
+        options: { limit: 50 },
+      });
+
+      // Filter for market contract interactions
+      const marketTrades: TradeHistoryItem[] = [];
+
+      for (const tx of transactions) {
+        if (tx.type !== 'user_transaction') continue;
+
+        const userTx = tx as any;
+        const payload = userTx.payload;
+
+        if (payload?.type !== 'entry_function_payload') continue;
+
+        const func = payload.function || '';
+        const isMarketTx = MARKET_CONTRACTS.some(addr => func.includes(addr));
+
+        if (isMarketTx) {
+          // Parse the function name to determine trade type
+          const funcName = func.split('::').pop() || '';
+          let tradeType: 'buy' | 'sell' = 'buy';
+          let outcome = '';
+
+          if (funcName.includes('buy_yes') || funcName.includes('buy_outcome')) {
+            tradeType = 'buy';
+            outcome = funcName.includes('yes') ? 'Yes' : `Outcome ${payload.arguments?.[1] || 0}`;
+          } else if (funcName.includes('buy_no')) {
+            tradeType = 'buy';
+            outcome = 'No';
+          } else if (funcName.includes('sell_yes') || funcName.includes('sell_outcome')) {
+            tradeType = 'sell';
+            outcome = funcName.includes('yes') ? 'Yes' : `Outcome ${payload.arguments?.[1] || 0}`;
+          } else if (funcName.includes('sell_no')) {
+            tradeType = 'sell';
+            outcome = 'No';
+          } else {
+            continue; // Not a buy/sell transaction
+          }
+
+          // Parse amount from arguments (usually in octas)
+          const amountArg = payload.arguments?.[1] || payload.arguments?.[2] || '0';
+          const amountOctas = parseInt(amountArg, 10);
+          const amountAPT = amountOctas / 100_000_000;
+
+          marketTrades.push({
+            hash: userTx.hash,
+            type: tradeType,
+            outcome,
+            amount: amountAPT,
+            timestamp: parseInt(userTx.timestamp, 10) / 1000, // Convert to seconds
+            success: userTx.success,
+          });
+        }
+      }
+
+      setTrades(marketTrades);
+    } catch (error) {
+      console.error("Error fetching trades:", error);
+      setTrades([]);
+    } finally {
+      setIsLoadingTrades(false);
+    }
+  }, [connected, account?.address, MARKET_CONTRACTS]);
+
+  // Fetch trades when tab changes to history
+  useEffect(() => {
+    if (activeTab === 'history') {
+      fetchTrades();
+    }
+  }, [activeTab, fetchTrades]);
 
   // Format balance for display
   const formatBalance = (val: number) => {
@@ -292,10 +406,75 @@ export function PortfolioPage() {
           </button>
         </div>
 
-        {/* Empty State */}
-        <div className="text-center py-12">
-          <p className="text-[#8297a3] text-base">No positions found.</p>
-        </div>
+        {/* Content based on active tab */}
+        {activeTab === "history" ? (
+          <div className="space-y-3">
+            {isLoadingTrades ? (
+              <div className="text-center py-12">
+                <Loader2 size={24} className="animate-spin text-[#8297a3] mx-auto" />
+                <p className="text-[#8297a3] text-base mt-2">Loading trades...</p>
+              </div>
+            ) : trades.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-[#8297a3] text-base">No trades found.</p>
+                <p className="text-[#6b7a8a] text-sm mt-1">Your market trades will appear here.</p>
+              </div>
+            ) : (
+              trades.map((trade) => (
+                <div
+                  key={trade.hash}
+                  className="bg-poly-card rounded-lg p-4 border border-[#2c3f4f]"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${
+                        trade.type === 'buy' ? 'bg-green-500/20' : 'bg-red-500/20'
+                      }`}>
+                        {trade.type === 'buy' ? (
+                          <TrendingUp size={18} className="text-green-500" />
+                        ) : (
+                          <TrendingDown size={18} className="text-red-500" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-white font-medium">
+                          {trade.type === 'buy' ? 'Bought' : 'Sold'} {trade.outcome}
+                        </p>
+                        <p className="text-[#6b7a8a] text-sm">
+                          {new Date(trade.timestamp * 1000).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-semibold ${
+                        trade.type === 'buy' ? 'text-green-500' : 'text-red-500'
+                      }`}>
+                        {trade.type === 'buy' ? '-' : '+'}{trade.amount.toFixed(2)} APT
+                      </p>
+                      <a
+                        href={`https://explorer.aptoslabs.com/txn/${trade.hash}?network=testnet`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#3b82f6] text-xs flex items-center gap-1 justify-end hover:text-[#60a5fa]"
+                      >
+                        View <ExternalLink size={10} />
+                      </a>
+                    </div>
+                  </div>
+                  {!trade.success && (
+                    <div className="mt-2 text-red-400 text-xs">Transaction failed</div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <p className="text-[#8297a3] text-base">
+              {activeTab === "positions" ? "No positions found." : "No open orders."}
+            </p>
+          </div>
+        )}
       </div>
     </motion.div>
   );

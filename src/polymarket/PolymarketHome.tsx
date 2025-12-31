@@ -1,13 +1,12 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Search, Bookmark, X, RefreshCw, Loader2, Zap } from "lucide-react";
+import { Search, Bookmark, X, RefreshCw, Loader2 } from "lucide-react";
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { MarketCard } from "./MarketCard";
 import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
-import { useHFTConnection } from "../hooks/useHFTConnection";
 import type { Category, Market } from "./types";
 
 const topicFilters = ["All", "Trump", "Venezuela", "New Years", "Ukraine", "Mideast"];
@@ -22,9 +21,6 @@ export function PolymarketHome() {
 
   // Fetch real on-chain markets
   const { markets: onChainMarkets, loading, error, refresh } = usePolymarkets();
-
-  // HFT connection status
-  const { isConnected: hftConnected, isRunning: hftRunning, stats: hftStats } = useHFTConnection();
 
   // Mark initial load as done once loading completes for the first time
   useEffect(() => {
@@ -155,35 +151,6 @@ export function PolymarketHome() {
         </div>
       )}
 
-      {/* HFT Demo Status */}
-      {hftConnected && (
-        <div className="px-4 py-2">
-          <div className={`flex items-center justify-between rounded-lg px-3 py-2 ${
-            hftRunning ? 'bg-[#1e3a5f] border border-[#3a5f8f]' : 'bg-poly-surface'
-          }`}>
-            <div className="flex items-center gap-2">
-              <Zap size={14} className={hftRunning ? 'text-[#60a5fa]' : 'text-[#6b7a8a]'} />
-              <span className={`text-xs font-medium ${hftRunning ? 'text-[#60a5fa]' : 'text-[#8297a3]'}`}>
-                {hftRunning ? 'HFT Demo Active' : 'HFT Server Connected'}
-              </span>
-            </div>
-            {hftRunning && (
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#60a5fa] animate-pulse" />
-                  <span className="text-[#60a5fa] text-xs font-bold tabular-nums">
-                    {hftStats.currentTps || 0} TPS
-                  </span>
-                </div>
-                <span className="text-[#8297a3] text-xs">
-                  {hftStats.totalTrades || 0} trades
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {error && (
         <div className="px-4 py-2">
           <p className="text-xs text-red-400">{error}</p>
@@ -259,7 +226,7 @@ export function PolymarketHome() {
           </div>
 
           {/* Markets List */}
-          <div className="pb-6">
+          <div className="pt-4 pb-6">
             {/* Loading skeleton during initial load */}
             {!initialLoadDone && loading && (
               <div className="px-4 space-y-4">

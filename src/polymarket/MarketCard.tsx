@@ -254,12 +254,12 @@ export function MarketCard({ market, onPress }: MarketCardProps) {
   }
 
   return (
-    <div className="px-4 mb-3 flex justify-center">
+    <div className="px-4 mb-4">
       <button
         onClick={onPress}
-        className="w-[360px] h-[230px] bg-[#2a3d4e] rounded-xl overflow-hidden text-left hover:bg-[#324858] transition-colors border border-[#3a4f60] flex flex-col"
+        className="w-full bg-[#2a3d4e] rounded-xl overflow-hidden text-left hover:bg-[#324858] transition-colors border border-[#3a4f60]"
       >
-        <div className="p-3 flex flex-col flex-1">
+        <div className="p-3">
           {/* Header with image and title */}
           <div className="flex items-start gap-3 mb-2">
             <img
@@ -312,7 +312,7 @@ export function MarketCard({ market, onPress }: MarketCardProps) {
           )}
 
           {/* Footer with volume and icons */}
-          <div className="flex items-center justify-between mt-auto">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="text-[#8297a3] text-sm font-medium">{market.volume} Vol.</span>
               <RefreshCw size={14} color="#8297a3" strokeWidth={2.5} />
