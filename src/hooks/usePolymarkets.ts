@@ -25,8 +25,38 @@ const CATEGORY_IMAGES: Record<string, string> = {
 
 // Special market images (for specific markets)
 const SPECIAL_MARKET_IMAGES: Record<string, string> = {
-  'republican': '/images/republican-elephant.svg',
+  'republican': '/images/republican-elephant.png',
 };
+
+// Candidate face images for outcomes
+const CANDIDATE_IMAGES: Record<string, string> = {
+  'j.d. vance': '/images/jd-vance.png',
+  'jd vance': '/images/jd-vance.png',
+  'vance': '/images/jd-vance.png',
+  'marco rubio': '/images/marco-rubio.png',
+  'rubio': '/images/marco-rubio.png',
+  'donald trump': '/images/donald-trump.png',
+  'trump': '/images/donald-trump.png',
+  'ron desantis': '/images/ron-desantis.png',
+  'desantis': '/images/ron-desantis.png',
+  'tucker carlson': '/images/tucker-carlson.png',
+  'carlson': '/images/tucker-carlson.png',
+  'donald trump jr': '/images/donald-trump-jr.png',
+  'trump jr': '/images/donald-trump-jr.png',
+  'ted cruz': '/images/ted-cruz.png',
+  'cruz': '/images/ted-cruz.png',
+  'marjorie taylor greene': '/images/marjorie-taylor-greene.png',
+  'mtg': '/images/marjorie-taylor-greene.png',
+  'greene': '/images/marjorie-taylor-greene.png',
+  'nikki haley': '/images/nikki-haley.png',
+  'haley': '/images/nikki-haley.png',
+};
+
+// Get candidate image from name
+function getCandidateImage(name: string): string | undefined {
+  const lowerName = name.toLowerCase().trim();
+  return CANDIDATE_IMAGES[lowerName];
+}
 
 // Format volume for display
 function formatVolume(collateral: number): string {

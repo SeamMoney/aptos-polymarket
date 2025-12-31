@@ -329,10 +329,10 @@ export function PolyHeader() {
           </button>
           <button
             onClick={handleLogin}
-            className="bg-[#60a5fa] hover:bg-[#3b82f6] px-3 py-1.5 rounded-lg text-white text-sm font-semibold transition-colors flex items-center gap-1.5"
+            className="bg-[#289cdd] hover:bg-[#2089c4] px-3 py-1.5 rounded-md text-white text-sm font-semibold transition-colors flex items-center gap-1.5"
           >
             <Wallet size={14} />
-            Connect
+            Sign Up
           </button>
         </div>
       )}
