@@ -3,19 +3,20 @@ import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   ChevronLeft,
-  ChevronDown,
   Link2,
   Bookmark,
   Code2,
-  HelpCircle,
   Settings,
-  Trash2,
-  RefreshCw,
-  MoreHorizontal,
+  Play,
+  Square,
+  Loader2,
 } from "lucide-react";
 import { TradingSheet } from "./TradingSheet";
+import { LiveOrderBook } from "./LiveOrderBook";
+import { TPSChart } from "./TPSChart";
 import { mockMarkets } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
+import { useHFTConnection } from "../hooks/useHFTConnection";
 
 const CHART_HEIGHT = 220;
 const CHART_PADDING_RIGHT = 50;
@@ -112,47 +113,15 @@ const generatePath = (points: { x: number; y: number }[]): string => {
   return path;
 };
 
-// Generate order book
-const generateOrderBook = (outcomeId: string, basePrice: number) => {
-  const seed = outcomeId.charCodeAt(0) * 100 + (outcomeId.charCodeAt(1) || 0);
-  const asks: { price: number; shares: number; total: number }[] = [];
-  const bids: { price: number; shares: number; total: number }[] = [];
-
-  const basePriceCents = Math.round(basePrice * 100);
-
-  for (let i = 0; i < 8; i++) {
-    const rand = seededRandom(seed * 200 + i);
-    const price = basePriceCents + 1 + i;
-    const shares = Math.round(800 + rand * 84000);
-    asks.push({ price, shares, total: Math.round(shares * (price / 100) * 100) });
-  }
-
-  for (let i = 0; i < 8; i++) {
-    const rand = seededRandom(seed * 300 + i);
-    const price = basePriceCents - 1 - i;
-    const shares = Math.round(6000 + rand * 14000);
-    bids.push({ price, shares, total: Math.round(shares * (price / 100) * 100) });
-  }
-
-  return {
-    asks: asks.reverse(),
-    bids,
-    lastPrice: basePriceCents - 1,
-    spread: 1,
-  };
-};
-
 export function OutcomeDetail() {
   const { marketId, outcomeId } = useParams<{ marketId: string; outcomeId: string }>();
   const navigate = useNavigate();
 
   const [timeRange, setTimeRange] = useState("ALL");
-  const [orderBookExpanded, setOrderBookExpanded] = useState(true);
-  const [tradeTab, setTradeTab] = useState<"yes" | "no">("yes");
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [showTradingSheet, setShowTradingSheet] = useState(false);
-  const [tradeType, setTradeType] = useState<"yes" | "no">("yes");
+  const [tradeType, _setTradeType] = useState<"yes" | "no">("yes");
   const [_isTouching, setIsTouching] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -165,7 +134,22 @@ export function OutcomeDetail() {
     sellNo,
     buyOutcome,
     sellOutcome,
+    loading: marketsLoading,
   } = usePolymarkets();
+
+  // HFT connection for live demo
+  const {
+    isConnected: hftConnected,
+    isRunning: hftRunning,
+    stats: hftStats,
+    marketInfo: hftMarketInfo,
+    marketReserves: hftReserves,
+    trades: hftTrades,
+    tpsHistory,
+    startTrading,
+    stopTrading,
+    error: hftError,
+  } = useHFTConnection();
 
   useEffect(() => {
     const timer = setTimeout(() => setIsLoaded(true), 100);
@@ -203,11 +187,6 @@ export function OutcomeDetail() {
     if (!outcome) return [];
     return generatePriceHistory(outcome.id, outcome.price, numPoints);
   }, [outcome, numPoints]);
-
-  const orderBook = useMemo(() => {
-    if (!outcome) return null;
-    return generateOrderBook(outcome.id, outcome.price);
-  }, [outcome]);
 
   const innerWidth = chartWidth - CHART_PADDING_RIGHT;
 
@@ -291,7 +270,40 @@ export function OutcomeDetail() {
     };
   }, []);
 
+  // Show loading skeleton while markets are loading
   if (!market || !outcome) {
+    if (marketsLoading) {
+      return (
+        <div className="min-h-screen bg-poly-bg">
+          <div className="px-4 py-3 flex items-center justify-between">
+            <div className="w-10 h-10 rounded-full bg-poly-surface animate-pulse" />
+            <div className="flex items-center gap-3">
+              <div className="w-20 h-4 bg-poly-surface rounded animate-pulse" />
+              <div className="w-6 h-6 bg-poly-surface rounded animate-pulse" />
+            </div>
+          </div>
+          <div className="px-4 py-8">
+            <div className="animate-pulse space-y-6">
+              {/* Title skeleton */}
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-poly-surface" />
+                <div className="h-5 bg-poly-surface rounded w-1/3" />
+              </div>
+              {/* Price skeleton */}
+              <div className="h-8 bg-poly-surface rounded w-1/2" />
+              {/* Chart skeleton */}
+              <div className="h-[220px] bg-poly-surface rounded-lg" />
+              {/* Time range skeleton */}
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <div key={i} className="w-12 h-8 bg-poly-surface rounded" />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-poly-bg flex items-center justify-center">
         <p className="text-white">Outcome not found</p>
@@ -311,8 +323,6 @@ export function OutcomeDetail() {
 
   const displayPrice = activeIndex !== null && priceHistory[activeIndex] ? priceHistory[activeIndex] : currentPrice;
   const formatPrice = (price: number) => `${Math.round(price * 100)}%`;
-  const formatMoney = (amount: number) =>
-    `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <motion.div
@@ -337,6 +347,15 @@ export function OutcomeDetail() {
 
         <div className="flex items-center gap-3">
           <span className="text-[#8297a3] text-sm">{outcome.volume} Vol.</span>
+          {hftConnected && (
+            <TPSChart
+              currentTps={hftStats.currentTps || 0}
+              peakTps={hftStats.peakTps || 0}
+              tpsHistory={tpsHistory}
+              isRunning={hftRunning}
+              compact
+            />
+          )}
           <button className="p-1.5 hover:opacity-70 transition-opacity">
             <Bookmark size={20} color="#8297a3" strokeWidth={2} />
           </button>
@@ -464,16 +483,24 @@ export function OutcomeDetail() {
                   />
                 )}
 
-                {/* End point - matches PolyChart */}
+                {/* End point with pulsating animation - matches PolyChart */}
                 {chartPath.lastPoint && (
-                  <circle
-                    cx={chartPath.lastPoint.x}
-                    cy={chartPath.lastPoint.y}
-                    r={5}
-                    fill="#60a5fa"
-                    stroke="#1c2b3a"
-                    strokeWidth={2}
-                  />
+                  <g>
+                    {/* Pulsating outer ring */}
+                    <circle cx={chartPath.lastPoint.x} cy={chartPath.lastPoint.y} r={8} fill="#60a5fa" opacity={0.3}>
+                      <animate attributeName="r" values="5;12;5" dur="1.5s" repeatCount="indefinite" />
+                      <animate attributeName="opacity" values="0.4;0;0.4" dur="1.5s" repeatCount="indefinite" />
+                    </circle>
+                    {/* Solid end point */}
+                    <circle
+                      cx={chartPath.lastPoint.x}
+                      cy={chartPath.lastPoint.y}
+                      r={5}
+                      fill="#60a5fa"
+                      stroke="#1c2b3a"
+                      strokeWidth={2}
+                    />
+                  </g>
                 )}
               </svg>
 
@@ -560,154 +587,35 @@ export function OutcomeDetail() {
           </div>
         </div>
 
-        {/* Order Book */}
-        {orderBook && (
+        {/* Live Order Book */}
+        <div
+          className={`px-4 mb-4 transition-all duration-300 delay-400 ${
+            isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+          }`}
+        >
+          <LiveOrderBook
+            yesPrice={hftMarketInfo?.yesPrice || yesPrice}
+            noPrice={hftMarketInfo?.noPrice || noPrice}
+            yesReserve={hftReserves.yesReserve}
+            noReserve={hftReserves.noReserve}
+            trades={hftTrades}
+            isConnected={hftConnected}
+          />
+        </div>
+
+        {/* Full TPS Chart when running */}
+        {hftRunning && (
           <div
-            className={`px-4 mb-4 transition-all duration-300 delay-400 ${
+            className={`px-4 mb-4 transition-all duration-300 ${
               isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
-            <div className="rounded-2xl border-2 border-[#2c3f4f]">
-              {/* Header */}
-              <button
-                onClick={() => setOrderBookExpanded(!orderBookExpanded)}
-                className="w-full px-4 py-4 flex items-center justify-between hover:opacity-80 transition-opacity"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-white text-xl font-bold">Order Book</span>
-                  <HelpCircle size={18} color="#6E7681" strokeWidth={2.5} />
-                </div>
-                <ChevronDown
-                  size={22}
-                  color="#8297a3"
-                  strokeWidth={2.5}
-                  className={`transition-transform duration-200 ${orderBookExpanded ? "rotate-180" : ""}`}
-                />
-              </button>
-
-              {orderBookExpanded && (
-                <>
-                  {/* Trade tabs */}
-                  <div className="flex items-center px-4 pb-3 border-b-2 border-[#2c3f4f]">
-                    <div className="flex gap-6 flex-1">
-                      <button
-                        onClick={() => setTradeTab("yes")}
-                        className={`relative pb-2 transition-colors ${tradeTab === "yes" ? "text-white" : "text-[#6b7a8a]"}`}
-                      >
-                        <span className={`text-base ${tradeTab === "yes" ? "font-bold" : "font-medium"}`}>Trade Yes</span>
-                        {tradeTab === "yes" && (
-                          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => setTradeTab("no")}
-                        className={`relative pb-2 transition-colors ${tradeTab === "no" ? "text-white" : "text-[#6b7a8a]"}`}
-                      >
-                        <span className={`text-base ${tradeTab === "no" ? "font-bold" : "font-medium"}`}>Trade No</span>
-                        {tradeTab === "no" && (
-                          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full" />
-                        )}
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button className="p-1.5 hover:bg-poly-surface rounded-lg transition-colors">
-                        <Trash2 size={20} color="#6b7a8a" strokeWidth={2.5} />
-                      </button>
-                      <button className="p-1.5 hover:bg-poly-surface rounded-lg transition-colors">
-                        <RefreshCw size={20} color="#6b7a8a" strokeWidth={2.5} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Order book header */}
-                  <div className="flex items-center px-4 py-3 border-b-2 border-[#2c3f4f]">
-                    <div className="w-[140px]">
-                      <span className="text-[#6b7a8a] text-xs font-semibold uppercase tracking-wider">
-                        Trade {tradeTab === "yes" ? "Yes" : "No"}
-                      </span>
-                    </div>
-                    <span className="text-[#6b7a8a] text-xs font-semibold uppercase tracking-wider w-20 text-center">Price</span>
-                    <span className="text-[#6b7a8a] text-xs font-semibold uppercase tracking-wider flex-1 text-right">Shares</span>
-                    <span className="text-[#6b7a8a] text-xs font-semibold uppercase tracking-wider w-28 text-right">Total</span>
-                  </div>
-
-                  {/* Asks */}
-                  <div className="relative max-h-[240px] overflow-y-auto">
-                    {orderBook.asks.map((ask, i) => {
-                      const maxShares = Math.max(...orderBook.asks.map((a) => a.shares));
-                      const barWidth = (ask.shares / maxShares) * 100;
-                      const showLabel = i === orderBook.asks.length - 1;
-                      return (
-                        <div
-                          key={`ask-${i}`}
-                          className="flex items-center px-4 py-2 relative cursor-pointer hover:bg-[rgba(239,68,68,0.1)] transition-colors"
-                        >
-                          <div
-                            className="absolute left-0 top-0 bottom-0 bg-[rgba(239,68,68,0.2)] pointer-events-none"
-                            style={{ width: `${Math.min(barWidth * 0.5, 50)}%` }}
-                          />
-                          {showLabel && (
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20">
-                              <span className="px-2.5 py-1 rounded text-xs font-semibold bg-[#ef4444] text-white">Asks</span>
-                            </div>
-                          )}
-                          <div className="w-[140px]" />
-                          <span className="text-[#ef4444] text-sm w-20 text-center font-semibold relative z-10 tabular-nums">{ask.price}¢</span>
-                          <span className="text-[#8b98a5] text-sm flex-1 text-right relative z-10 tabular-nums">
-                            {ask.shares.toLocaleString()}
-                          </span>
-                          <span className="text-[#8b98a5] text-sm w-28 text-right relative z-10 tabular-nums">
-                            {formatMoney(ask.total)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Spread */}
-                  <div className="flex items-center px-4 py-3 border-y-2 border-[#2c3f4f]">
-                    <span className="text-[#8b98a5] text-sm font-medium tabular-nums">Last: {orderBook.lastPrice}¢</span>
-                    <span className="text-[#8b98a5] text-sm font-medium ml-auto tabular-nums">Spread: {orderBook.spread}¢</span>
-                  </div>
-
-                  {/* Bids */}
-                  <div className="relative max-h-[240px] overflow-y-auto">
-                    {orderBook.bids.map((bid, i) => {
-                      const maxShares = Math.max(...orderBook.bids.map((b) => b.shares));
-                      const barWidth = (bid.shares / maxShares) * 100;
-                      const showLabel = i === 0;
-                      return (
-                        <div
-                          key={`bid-${i}`}
-                          className="flex items-center px-4 py-2 relative cursor-pointer hover:bg-[rgba(34,197,94,0.1)] transition-colors"
-                        >
-                          <div
-                            className="absolute left-0 top-0 bottom-0 bg-[rgba(34,197,94,0.2)] pointer-events-none"
-                            style={{ width: `${Math.min(barWidth * 0.5, 50)}%` }}
-                          />
-                          {showLabel && (
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20">
-                              <span className="px-2.5 py-1 rounded text-xs font-semibold bg-[#22c55e] text-black">Bids</span>
-                            </div>
-                          )}
-                          <div className="w-[140px]" />
-                          <span className="text-[#22c55e] text-sm w-20 text-center font-semibold relative z-10 tabular-nums">{bid.price}¢</span>
-                          <span className="text-[#8b98a5] text-sm flex-1 text-right relative z-10 tabular-nums">
-                            {bid.shares.toLocaleString()}
-                          </span>
-                          <span className="text-[#8b98a5] text-sm w-28 text-right relative z-10 tabular-nums">
-                            {formatMoney(bid.total)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Bottom padding */}
-                  <div className="h-2" />
-                </>
-              )}
-            </div>
+            <TPSChart
+              currentTps={hftStats.currentTps || 0}
+              peakTps={hftStats.peakTps || 0}
+              tpsHistory={tpsHistory}
+              isRunning={hftRunning}
+            />
           </div>
         )}
 
@@ -725,35 +633,53 @@ export function OutcomeDetail() {
         </div>
       </div>
 
-      {/* Bottom Buy Buttons - Polymarket style with more button */}
+      {/* HFT Demo Controls - Fixed Bottom Bar */}
       <div
-        className={`fixed bottom-0 left-0 right-0 px-4 py-4 z-40 transition-all duration-300 delay-600 ${
-          isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-        }`}
-        style={{ backgroundColor: '#1c2b3a' }}
+        className="fixed bottom-0 left-0 right-0 z-40 px-4 py-4"
+        style={{ backgroundColor: '#1c2b3a', borderTop: '2px solid #2c3f4f' }}
       >
-        <div className="flex gap-2 max-w-lg mx-auto">
-          <button
-            onClick={() => {
-              setTradeType("yes");
-              setShowTradingSheet(true);
-            }}
-            className="flex-1 bg-[#4abe7a] rounded-lg py-4 text-white text-base font-bold hover:bg-[#3dac67] transition-colors"
-          >
-            Buy Yes {yesPrice}¢
-          </button>
-          <button
-            onClick={() => {
-              setTradeType("no");
-              setShowTradingSheet(true);
-            }}
-            className="flex-1 bg-[#e5534b] rounded-lg py-4 text-white text-base font-bold hover:bg-[#d9453d] transition-colors"
-          >
-            Buy No {noPrice}¢
-          </button>
-          <button className="w-14 bg-[#3d4f5f] rounded-lg py-4 flex items-center justify-center hover:bg-[#4d5f6f] transition-colors">
-            <MoreHorizontal size={24} color="white" strokeWidth={2} />
-          </button>
+        <div className="max-w-lg mx-auto">
+          {hftError && (
+            <div className="mb-3 p-2 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm text-center">
+              {hftError}
+            </div>
+          )}
+          <div className="flex gap-3">
+            {!hftRunning ? (
+              <button
+                onClick={startTrading}
+                disabled={!hftConnected}
+                className="flex-1 bg-[#4abe7a] hover:bg-[#3da86a] disabled:bg-[#4abe7a]/50 disabled:cursor-not-allowed rounded-lg py-4 text-white text-base font-bold transition-colors flex items-center justify-center gap-2"
+              >
+                <Play size={20} fill="white" />
+                {hftConnected ? 'Start HFT Demo' : 'Connecting...'}
+              </button>
+            ) : (
+              <button
+                onClick={stopTrading}
+                className="flex-1 bg-[#e5534b] hover:bg-[#d4443c] rounded-lg py-4 text-white text-base font-bold transition-colors flex items-center justify-center gap-2"
+              >
+                <Square size={20} fill="white" />
+                Stop Demo
+              </button>
+            )}
+            {hftRunning && (
+              <div className="flex items-center gap-3 px-4 bg-[#2a3d4e] rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Loader2 size={16} className="text-[#60a5fa] animate-spin" />
+                  <span className="text-[#60a5fa] text-sm font-bold tabular-nums">{hftStats.currentTps || 0} TPS</span>
+                </div>
+                <div className="text-[#8297a3] text-xs">
+                  {hftStats.totalTrades || 0} trades
+                </div>
+              </div>
+            )}
+          </div>
+          {!hftConnected && (
+            <p className="text-[#6b7a8a] text-xs text-center mt-2">
+              Run <code className="bg-[#2a3d4e] px-1 rounded">npx tsx server/hft-server.ts</code> to enable demo
+            </p>
+          )}
         </div>
       </div>
 

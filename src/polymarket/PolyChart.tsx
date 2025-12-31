@@ -304,6 +304,12 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH }: Poly
             {chartPaths.map(({ id, path, color, lastX, lastY }) => (
               <g key={id}>
                 <path d={path} stroke={color} strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                {/* Pulsating outer ring */}
+                <circle cx={lastX} cy={lastY} r={8} fill={color} opacity={0.3}>
+                  <animate attributeName="r" values="5;12;5" dur="1.5s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0.4;0;0.4" dur="1.5s" repeatCount="indefinite" />
+                </circle>
+                {/* Solid end point */}
                 <circle cx={lastX} cy={lastY} r={5} fill={color} stroke="#1c2b3a" strokeWidth={2} />
               </g>
             ))}

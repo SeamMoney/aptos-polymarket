@@ -38,6 +38,7 @@ export function MarketDetail() {
     sellNo,
     buyOutcome,
     sellOutcome,
+    loading: marketsLoading,
   } = usePolymarkets();
 
   // HFT connection for live demo
@@ -105,7 +106,44 @@ export function MarketDetail() {
     setShowTradingSheet(true);
   };
 
+  // Show loading skeleton while markets are loading
   if (!market) {
+    if (marketsLoading) {
+      return (
+        <div className="min-h-screen bg-poly-bg">
+          <PolyHeader />
+          <div className="max-w-4xl mx-auto px-4 py-8">
+            <div className="animate-pulse space-y-6">
+              {/* Title skeleton */}
+              <div className="flex items-start gap-4">
+                <div className="w-14 h-14 rounded-lg bg-poly-surface" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-6 bg-poly-surface rounded w-3/4" />
+                  <div className="h-4 bg-poly-surface rounded w-1/2" />
+                </div>
+              </div>
+              {/* Chart skeleton */}
+              <div className="h-[220px] bg-poly-surface rounded-lg" />
+              {/* Outcomes skeleton */}
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="bg-poly-card rounded-xl p-4">
+                    <div className="flex gap-3">
+                      <div className="w-14 h-14 bg-poly-surface rounded-lg" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-5 bg-poly-surface rounded w-1/2" />
+                        <div className="h-4 bg-poly-surface rounded w-1/3" />
+                      </div>
+                      <div className="w-16 h-8 bg-poly-surface rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-poly-bg flex items-center justify-center">
         <p className="text-white">Market not found</p>
