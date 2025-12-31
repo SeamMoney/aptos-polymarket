@@ -291,7 +291,6 @@ export function OutcomeDetail() {
     );
   }
 
-  const yesPrice = Math.round(outcome.price * 100);
   const timeRanges = ["1H", "6H", "1D", "1W", "1M", "ALL"];
 
   const firstPrice = priceHistory[0] || outcome.price;
