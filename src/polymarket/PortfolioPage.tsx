@@ -11,6 +11,14 @@ import type { Category } from "./types";
 // Initialize Aptos client
 const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
 
+// Contract addresses (moved outside component to prevent re-renders)
+const CONTRACT_ADDRESS = "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1";
+const MARKET_ADDRESS = "0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96";
+const MARKET_CONTRACTS = [
+  "0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4", // binary market
+  CONTRACT_ADDRESS, // multi-outcome market
+];
+
 // Trade history item type
 interface TradeHistoryItem {
   hash: string;
@@ -19,6 +27,16 @@ interface TradeHistoryItem {
   amount: number;
   timestamp: number;
   success: boolean;
+}
+
+// Position item type
+interface PositionItem {
+  outcomeIndex: number;
+  outcomeName: string;
+  tokens: number;
+  currentPrice: number;
+  value: number;
+  pnl: number;
 }
 
 // Balance history entry type
@@ -393,6 +411,8 @@ export function PortfolioPage() {
   const [trades, setTrades] = useState<TradeHistoryItem[]>([]);
   const [isLoadingTrades, setIsLoadingTrades] = useState(false);
   const [hoverValue, setHoverValue] = useState<{ balance: number; pnl: number; timestamp: number } | null>(null);
+  const [positions, setPositions] = useState<PositionItem[]>([]);
+  const [isLoadingPositions, setIsLoadingPositions] = useState(false);
 
   const timeRanges = ["1D", "1W", "1M", "ALL"];
 
@@ -402,12 +422,6 @@ export function PortfolioPage() {
       saveBalanceToHistory(balance);
     }
   }, [balance]);
-
-  // Contract addresses for filtering trades
-  const MARKET_CONTRACTS = [
-    "0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4", // binary market
-    "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1", // multi-outcome market
-  ];
 
   // Fetch wallet balance (supports both legacy CoinStore and new Fungible Assets)
   const fetchBalance = useCallback(async () => {
@@ -466,6 +480,88 @@ export function PortfolioPage() {
     window.addEventListener('wallet-funded', handleWalletFunded);
     return () => window.removeEventListener('wallet-funded', handleWalletFunded);
   }, [fetchBalance]);
+
+  // Fetch user positions from the market contract
+  const fetchPositions = useCallback(async () => {
+    if (!connected || !account?.address) {
+      setPositions([]);
+      return;
+    }
+
+    try {
+      setIsLoadingPositions(true);
+      const userAddress = account.address.toString();
+
+      // Get outcome labels
+      const labelsResult = await aptos.view({
+        payload: {
+          function: `${CONTRACT_ADDRESS}::multi_outcome_market::get_outcome_labels`,
+          typeArguments: [],
+          functionArguments: [MARKET_ADDRESS],
+        },
+      });
+      const labels = labelsResult[0] as string[];
+
+      // Get user positions (token balances for each outcome)
+      const positionsResult = await aptos.view({
+        payload: {
+          function: `${CONTRACT_ADDRESS}::multi_outcome_market::get_user_multi_positions`,
+          typeArguments: [],
+          functionArguments: [MARKET_ADDRESS, userAddress],
+        },
+      });
+      const tokenBalances = (positionsResult[0] as string[]).map(b => parseInt(b));
+
+      // Get current prices
+      const pricesResult = await aptos.view({
+        payload: {
+          function: `${CONTRACT_ADDRESS}::multi_outcome_market::get_all_prices`,
+          typeArguments: [],
+          functionArguments: [MARKET_ADDRESS],
+        },
+      });
+      const prices = (pricesResult[0] as string[]).map(p => parseInt(p));
+
+      // Build positions array (only include outcomes with tokens)
+      const userPositions: PositionItem[] = [];
+      for (let i = 0; i < labels.length; i++) {
+        const tokens = tokenBalances[i] / 100_000_000; // Convert from octas
+        if (tokens > 0.0001) { // Only show non-zero positions
+          const currentPrice = prices[i] / 100; // Price is 0-100, convert to 0-1
+          const value = tokens * currentPrice;
+          userPositions.push({
+            outcomeIndex: i,
+            outcomeName: labels[i],
+            tokens,
+            currentPrice: prices[i],
+            value,
+            pnl: 0, // Would need historical data to calculate PNL
+          });
+        }
+      }
+
+      setPositions(userPositions);
+    } catch (error) {
+      console.error("Error fetching positions:", error);
+      setPositions([]);
+    } finally {
+      setIsLoadingPositions(false);
+    }
+  }, [connected, account?.address]);
+
+  // Fetch positions when tab changes to positions or on mount
+  useEffect(() => {
+    if (activeTab === 'positions') {
+      fetchPositions();
+    }
+  }, [activeTab, fetchPositions]);
+
+  // Also fetch positions on initial load if connected
+  useEffect(() => {
+    if (connected) {
+      fetchPositions();
+    }
+  }, [connected, fetchPositions]);
 
   // Fetch trade history
   const fetchTrades = useCallback(async () => {
@@ -543,7 +639,7 @@ export function PortfolioPage() {
     } finally {
       setIsLoadingTrades(false);
     }
-  }, [connected, account?.address, MARKET_CONTRACTS]);
+  }, [connected, account?.address]);
 
   // Fetch trades when tab changes to history
   useEffect(() => {
@@ -807,11 +903,53 @@ export function PortfolioPage() {
               ))
             )}
           </div>
+        ) : activeTab === "positions" ? (
+          <div className="space-y-3">
+            {isLoadingPositions ? (
+              <div className="text-center py-12">
+                <Loader2 size={24} className="animate-spin text-[#8297a3] mx-auto" />
+                <p className="text-[#8297a3] text-base mt-2">Loading positions...</p>
+              </div>
+            ) : positions.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-[#8297a3] text-base">No positions found.</p>
+                <p className="text-[#6b7a8a] text-sm mt-1">Buy outcome tokens to see them here.</p>
+              </div>
+            ) : (
+              positions.map((position) => (
+                <div
+                  key={position.outcomeIndex}
+                  className="bg-poly-card rounded-lg p-4 border border-[#2c3f4f]"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold">
+                        {position.outcomeName.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="text-white font-medium">{position.outcomeName}</p>
+                        <p className="text-[#6b7a8a] text-sm">
+                          {position.tokens.toFixed(2)} tokens @ {position.currentPrice}%
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-white font-semibold">
+                        ${position.value.toFixed(2)}
+                      </p>
+                      <p className={`text-sm ${position.currentPrice >= 50 ? 'text-green-400' : 'text-[#8297a3]'}`}>
+                        {position.currentPrice}% chance
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         ) : (
           <div className="text-center py-12">
-            <p className="text-[#8297a3] text-base">
-              {activeTab === "positions" ? "No positions found." : "No open orders."}
-            </p>
+            <p className="text-[#8297a3] text-base">No open orders.</p>
+            <p className="text-[#6b7a8a] text-sm mt-1">Limit orders will appear here.</p>
           </div>
         )}
       </div>
