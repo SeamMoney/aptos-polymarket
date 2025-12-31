@@ -1,9 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { ChevronDown, Wallet, LogOut, Copy, Check, Loader2, Plus } from "lucide-react";
 import { WalletSelector, getWalletIcon } from "../components/WalletSelector";
 import { Aptos, AptosConfig, Network, Account, Ed25519PrivateKey } from "@aptos-labs/ts-sdk";
+
+// Global Aptos client for balance fetching
+const aptosClient = new Aptos(new AptosConfig({ network: Network.TESTNET }));
 
 // Polymarket P logo without background (white version)
 function PolymarketLogo() {
@@ -51,9 +54,36 @@ export function PolyHeader() {
   const [copied, setCopied] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
   const [fundStatus, setFundStatus] = useState<"idle" | "success" | "error">("idle");
+  const [balance, setBalance] = useState<number>(0);
 
   // Use Aptos wallet adapter
   const { account, connected, disconnect, wallet } = useWallet();
+
+  // Fetch balance
+  const fetchBalance = useCallback(async () => {
+    if (!connected || !account?.address) {
+      setBalance(0);
+      return;
+    }
+    try {
+      const resources = await aptosClient.getAccountResource({
+        accountAddress: account.address.toString(),
+        resourceType: "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>",
+      });
+      const balanceOctas = (resources as any).coin?.value || 0;
+      setBalance(Number(balanceOctas) / 100_000_000);
+    } catch (error) {
+      console.error("Error fetching balance:", error);
+      setBalance(0);
+    }
+  }, [connected, account?.address]);
+
+  // Fetch balance on mount and when account changes
+  useEffect(() => {
+    fetchBalance();
+    const interval = setInterval(fetchBalance, 10000);
+    return () => clearInterval(interval);
+  }, [fetchBalance]);
 
   // Check if connected via X-Chain (derived wallet from EVM/Solana)
   const isXChainWallet = wallet?.name?.toLowerCase().includes('ethereum') ||
@@ -145,6 +175,8 @@ export function PolyHeader() {
 
       if (result.success) {
         setFundStatus("success");
+        // Refresh local balance immediately
+        setTimeout(fetchBalance, 1000);
         // Dispatch event for portfolio page to refresh balance
         window.dispatchEvent(new CustomEvent('wallet-funded', { detail: { amount: FUND_AMOUNT_APT } }));
         setTimeout(() => setFundStatus("idle"), 3000);
@@ -176,11 +208,21 @@ export function PolyHeader() {
 
       {/* Auth buttons or logged-in state */}
       {connected && account ? (
-        <div className="relative" ref={dropdownRef}>
-          <button
-            onClick={() => setShowDropdown(!showDropdown)}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#2a3d4e] hover:bg-[#3a4f60] transition-colors"
-          >
+        <div className="flex items-center gap-2">
+          {/* Balance Badge */}
+          <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#2a3d52]">
+            <span className="text-sm">💵</span>
+            <span className="text-[#22c55e] text-sm font-semibold">
+              ${balance.toFixed(2)}
+            </span>
+          </div>
+
+          {/* Wallet Dropdown */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setShowDropdown(!showDropdown)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#2a3d4e] hover:bg-[#3a4f60] transition-colors"
+            >
             {/* Wallet icon - Aptos logo with blue ring for keyless */}
             {isKeylessWallet ? (
               <AptosKeylessIcon />
@@ -320,6 +362,7 @@ export function PolyHeader() {
               </div>
             </div>
           )}
+          </div>
         </div>
       ) : (
         <div className="flex items-center gap-2">
