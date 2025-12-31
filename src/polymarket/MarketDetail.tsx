@@ -172,7 +172,7 @@ export function MarketDetail() {
 
       {/* Sticky Header - shows market title when scrolling (positioned below main header) */}
       <div
-        className={`fixed top-[60px] left-0 right-0 z-40 border-b-2 border-[#2c3f4f] transition-all duration-300 ${
+        className={`fixed top-[44px] left-0 right-0 z-40 border-b-2 border-[#2c3f4f] transition-all duration-300 ${
           showStickyTitle ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-full pointer-events-none"
         }`}
         style={{ backgroundColor: '#1c2b3a' }}
