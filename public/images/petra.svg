@@ -1,0 +1,13 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="128" height="128" rx="26" fill="url(#petra_bg)"/>
+<path d="M32 28H48V68H32V28Z" fill="white"/>
+<path d="M48 28H68C79.046 28 88 36.954 88 48C88 59.046 79.046 68 68 68H48V28Z" fill="white"/>
+<path d="M32 68H48V100H32V68Z" fill="white"/>
+<path d="M48 68L96 68L72 100L48 68Z" fill="white"/>
+<defs>
+<linearGradient id="petra_bg" x1="64" y1="0" x2="64" y2="128" gradientUnits="userSpaceOnUse">
+<stop stop-color="#7B61FF"/>
+<stop offset="1" stop-color="#5B5EF0"/>
+</linearGradient>
+</defs>
+</svg>

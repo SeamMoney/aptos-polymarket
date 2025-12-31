@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 
-const CONTRACT_ADDRESS = '0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4';
+const CONTRACT_ADDRESS = '0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1';
 const MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
 
 // Use API key to bypass rate limits (safe for testnet demo)

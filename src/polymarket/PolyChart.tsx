@@ -24,30 +24,36 @@ const seededRandom = (seed: number) => {
 };
 
 // Generate realistic step-like prices that look like actual trading data
+// When prices are similar (like all at ~17%), we spread them visually
 export const generateOutcomePrices = (
   outcomeId: string,
   currentPrice: number,  // Chart must end here
   numPoints: number,
-  patternIndex: number
+  patternIndex: number,
+  totalOutcomes: number = 6  // How many outcomes total (for spreading)
 ): number[] => {
   const prices: number[] = [];
 
   const seed = outcomeId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + patternIndex;
   const endPrice = Math.max(0.05, Math.min(0.95, currentPrice));
 
-  // Determine starting price based on pattern
+  // When all outcomes are similar (within 10% of each other), spread them more visually
+  // Each outcome gets a different "lane" in the chart
+  const spreadOffset = (patternIndex - totalOutcomes / 2) * 0.08; // Spread ±24% from center
+
+  // Determine starting price based on pattern - with MUCH more variation
   const patternType = patternIndex % 6;
   let startPrice: number;
 
   switch (patternType) {
-    case 0: startPrice = Math.max(0.08, endPrice - 0.12 - seededRandom(seed) * 0.15); break;
-    case 1: startPrice = Math.min(0.92, endPrice + 0.12 + seededRandom(seed) * 0.15); break;
-    case 2: startPrice = endPrice + (seededRandom(seed) - 0.5) * 0.2; break;
-    case 3: startPrice = endPrice * 0.6; break; // Will spike up
-    case 4: startPrice = Math.min(0.9, endPrice * 1.4); break; // Will drop down
-    default: startPrice = endPrice + (seededRandom(seed) - 0.5) * 0.1;
+    case 0: startPrice = Math.max(0.08, 0.45 + spreadOffset + seededRandom(seed) * 0.15); break; // High starter
+    case 1: startPrice = Math.max(0.05, 0.15 + spreadOffset + seededRandom(seed) * 0.1); break;  // Low starter
+    case 2: startPrice = 0.35 + spreadOffset + (seededRandom(seed) - 0.5) * 0.2; break; // Mid
+    case 3: startPrice = 0.08 + seededRandom(seed) * 0.1; break; // Will spike up from very low
+    case 4: startPrice = Math.min(0.9, 0.55 + seededRandom(seed) * 0.15); break; // Will drop down
+    default: startPrice = 0.25 + spreadOffset + (seededRandom(seed) - 0.5) * 0.15;
   }
-  startPrice = Math.max(0.05, Math.min(0.95, startPrice));
+  startPrice = Math.max(0.03, Math.min(0.97, startPrice));
 
   // Generate key price levels (step changes) - like real trading
   const numSteps = 15 + Math.floor(seededRandom(seed * 7) * 20); // 15-35 distinct price levels
@@ -56,24 +62,24 @@ export const generateOutcomePrices = (
   // First point
   stepPoints.push({ t: 0, price: startPrice });
 
-  // Generate random step changes throughout
+  // Generate random step changes throughout - with MORE dramatic movements
   let currentStepPrice = startPrice;
   for (let s = 1; s < numSteps; s++) {
     const t = s / numSteps;
     const targetAtT = startPrice + (endPrice - startPrice) * t;
 
-    // Random jump from current level - can be sharp!
-    const jumpSize = (seededRandom(seed * 100 + s) - 0.5) * 0.15;
-    const drift = (targetAtT - currentStepPrice) * 0.3; // Gentle drift toward target
+    // Random jump from current level - BIGGER jumps for visual interest
+    const jumpSize = (seededRandom(seed * 100 + s) - 0.5) * 0.25;
+    const drift = (targetAtT - currentStepPrice) * 0.2; // Weaker drift = more wandering
 
-    // Occasional big spike (like real markets)
+    // More frequent spikes (like volatile prediction markets)
     const spikeChance = seededRandom(seed * 200 + s);
     let spike = 0;
-    if (spikeChance > 0.92) spike = 0.1 + seededRandom(seed * 300 + s) * 0.15; // Up spike
-    else if (spikeChance < 0.08) spike = -(0.1 + seededRandom(seed * 300 + s) * 0.15); // Down spike
+    if (spikeChance > 0.85) spike = 0.15 + seededRandom(seed * 300 + s) * 0.2; // Up spike
+    else if (spikeChance < 0.15) spike = -(0.15 + seededRandom(seed * 300 + s) * 0.2); // Down spike
 
     currentStepPrice = currentStepPrice + jumpSize + drift + spike;
-    currentStepPrice = Math.max(0.03, Math.min(0.97, currentStepPrice));
+    currentStepPrice = Math.max(0.02, Math.min(0.98, currentStepPrice));
 
     // Add some randomness to when steps occur
     const stepT = t + (seededRandom(seed * 400 + s) - 0.5) * 0.05;
