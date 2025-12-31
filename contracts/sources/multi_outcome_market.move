@@ -546,6 +546,28 @@ module prediction_market::multi_outcome_market {
         });
     }
 
+    /// Emergency withdraw for creator (TESTNET ONLY - for demo fund recovery)
+    /// Allows creator to withdraw collateral without resolving the market
+    public entry fun emergency_withdraw(
+        admin: &signer,
+        market_addr: address,
+        amount: u64,
+    ) acquires MultiMarket {
+        let market = borrow_global_mut<MultiMarket>(market_addr);
+        let admin_addr = signer::address_of(admin);
+
+        // Only creator can emergency withdraw
+        assert!(admin_addr == market.creator, E_NOT_AUTHORIZED);
+
+        // Withdraw from collateral store
+        let market_signer = object::generate_signer_for_extending(&market.extend_ref);
+        let withdraw_asset = fungible_asset::withdraw(&market_signer, market.collateral_store, amount);
+        primary_fungible_store::deposit(admin_addr, withdraw_asset);
+
+        // Update total collateral tracker
+        aggregator_v2::sub(&mut market.total_collateral, amount);
+    }
+
     // ==================== Internal Functions ====================
 
     /// Create an outcome token

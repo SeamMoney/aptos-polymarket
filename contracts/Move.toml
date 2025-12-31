@@ -4,7 +4,7 @@ version = "1.0.0"
 authors = []
 
 [addresses]
-prediction_market = "_"
+prediction_market = "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1"
 
 [dev-addresses]
 prediction_market = "0x64a81cb9cbd14d45b87bb32ef73107a44f00069b6a96e70d75369fb7e3da5e68"

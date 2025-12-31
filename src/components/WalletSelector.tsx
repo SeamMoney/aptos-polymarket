@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import {
   groupAndSortWallets,
-  isAptosConnectWallet,
   type AdapterWallet,
+  type AdapterNotDetectedWallet,
   APTOS_CONNECT_ACCOUNT_URL
 } from '@aptos-labs/wallet-adapter-core';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -85,7 +85,7 @@ function WalletButton({
   connecting,
   isInstalled,
 }: {
-  wallet: AdapterWallet;
+  wallet: AdapterWallet | AdapterNotDetectedWallet;
   onConnect: () => void;
   connecting: boolean;
   isInstalled: boolean;
