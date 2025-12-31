@@ -219,8 +219,8 @@ export function TradingSheet({
   };
 
   const handleSetMax = () => {
-    // Set max to balance minus gas fee (in dollars, rounded down)
-    const maxAmount = Math.max(0, Math.floor(balance - ESTIMATED_GAS_FEE));
+    // Set max to balance minus gas fee, converted to cents (amount is stored in cents)
+    const maxAmount = Math.max(0, Math.floor((balance - ESTIMATED_GAS_FEE) * 100));
     setAmount(maxAmount);
   };
 
@@ -356,17 +356,17 @@ export function TradingSheet({
 
             {/* Amount Section */}
             <div className="px-4 pt-6 pb-4">
-              {/* Amount Display with +/- */}
+              {/* Amount Display with +/- ($10 increments = 1000 cents) */}
               <div className="flex items-center justify-center gap-6">
                 <button
-                  onClick={() => handleAmountChange(-10)}
+                  onClick={() => handleAmountChange(-1000)}
                   className="text-[#8297a3] hover:text-white transition-colors p-2"
                 >
                   <Minus size={24} strokeWidth={2} />
                 </button>
-                <span className="text-white text-5xl font-bold min-w-[140px] text-center">${amount}</span>
+                <span className="text-white text-5xl font-bold min-w-[140px] text-center">${(amount / 100).toFixed(2)}</span>
                 <button
-                  onClick={() => handleAmountChange(10)}
+                  onClick={() => handleAmountChange(1000)}
                   className="text-[#8297a3] hover:text-white transition-colors p-2"
                 >
                   <Plus size={24} strokeWidth={2} />
@@ -382,15 +382,15 @@ export function TradingSheet({
                 <p className="text-[#6b7a8a] text-xs mt-1">Avg. Price {currentPrice}¢</p>
               </div>
 
-              {/* Quick Amount Buttons */}
+              {/* Quick Amount Buttons - values in dollars, converted to cents */}
               <div className="flex justify-center gap-2">
-                {[1, 20, 100].map((val) => (
+                {[1, 20, 100].map((dollars) => (
                   <button
-                    key={val}
-                    onClick={() => handleAmountChange(val)}
+                    key={dollars}
+                    onClick={() => handleAmountChange(dollars * 100)}
                     className="bg-[#2a3d4e] hover:bg-[#324858] px-3.5 py-1.5 rounded-md transition-colors text-white text-xs font-medium"
                   >
-                    +${val}
+                    +${dollars}
                   </button>
                 ))}
                 <button
