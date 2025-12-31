@@ -1,8 +1,41 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import type { AdapterWallet } from '@aptos-labs/wallet-adapter-core';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Loader2, ExternalLink } from 'lucide-react';
+
+// Custom check to verify if a wallet extension is actually installed
+// This overrides the wallet adapter's detection which may incorrectly report web versions as "installed"
+const isWalletActuallyInstalled = (walletName: string): boolean => {
+  if (typeof window === 'undefined') return false;
+
+  const w = window as any;
+  const lowerName = walletName.toLowerCase();
+
+  // Petra - check for actual extension, not web version
+  if (lowerName === 'petra') {
+    // The Petra extension injects window.petra or window.aptos
+    return !!(w.petra?.isConnected !== undefined || w.aptos?.isAptosWallet);
+  }
+
+  // Phantom - check for Solana extension
+  if (lowerName.includes('phantom')) {
+    return !!(w.phantom?.solana?.isPhantom || w.solana?.isPhantom);
+  }
+
+  // MetaMask - check for Ethereum extension
+  if (lowerName.includes('metamask') || lowerName.includes('ethereum')) {
+    return !!(w.ethereum?.isMetaMask);
+  }
+
+  // Rainbow - check for Ethereum provider
+  if (lowerName.includes('rainbow')) {
+    return !!(w.ethereum?.isRainbow || w.rainbow);
+  }
+
+  // For other wallets, trust the adapter's detection
+  return true;
+};
 
 // Wallet category type
 type WalletCategory = 'aptos' | 'solana' | 'ethereum';
@@ -177,8 +210,17 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
     );
   };
 
-  const installedWallets = wallets?.filter(w => w.readyState === 'Installed') || [];
-  const notInstalledWallets = wallets?.filter(w => w.readyState !== 'Installed') || [];
+  // Use custom check to determine if wallet is actually installed
+  // This prevents web.petra.app black screen and other issues
+  const checkActuallyInstalled = useCallback((wallet: AdapterWallet): boolean => {
+    // First check if adapter says it's installed
+    if (wallet.readyState !== 'Installed') return false;
+    // Then verify with our custom check
+    return isWalletActuallyInstalled(wallet.name);
+  }, []);
+
+  const installedWallets = wallets?.filter(w => checkActuallyInstalled(w)) || [];
+  const notInstalledWallets = wallets?.filter(w => !checkActuallyInstalled(w)) || [];
 
   const categorizedInstalled = categorizeWallets(installedWallets);
   const categorizedNotInstalled = categorizeWallets(notInstalledWallets);
@@ -191,20 +233,46 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
       setError(null);
       setConnectingWallet(walletName);
 
-      // Check if Petra extension is actually installed (not just web version)
-      if (walletName === 'Petra' && typeof window !== 'undefined') {
-        const hasPetraExtension = !!(window as any).petra || !!(window as any).aptos;
-        if (!hasPetraExtension) {
-          setError('Petra extension not found. Please install the browser extension.');
-          window.open('https://petra.app', '_blank');
-          return;
+      // Double-check the extension is actually available before connecting
+      // This prevents web.petra.app black screen and similar issues
+      if (!isWalletActuallyInstalled(walletName)) {
+        const lowerName = walletName.toLowerCase();
+        let installUrl = '';
+        let walletDisplayName = walletName;
+
+        if (lowerName === 'petra') {
+          installUrl = 'https://petra.app';
+          walletDisplayName = 'Petra';
+        } else if (lowerName.includes('phantom')) {
+          installUrl = 'https://phantom.app';
+          walletDisplayName = 'Phantom';
+        } else if (lowerName.includes('metamask')) {
+          installUrl = 'https://metamask.io';
+          walletDisplayName = 'MetaMask';
+        } else if (lowerName.includes('rainbow')) {
+          installUrl = 'https://rainbow.me';
+          walletDisplayName = 'Rainbow';
         }
+
+        setError(`${walletDisplayName} extension not found. Please install the browser extension.`);
+        if (installUrl) {
+          window.open(installUrl, '_blank');
+        }
+        return;
       }
 
       await connect(walletName);
     } catch (err) {
       console.error('Failed to connect:', err);
-      setError(`Failed to connect to ${walletName}. Make sure the extension is installed.`);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      // Check for common error patterns
+      if (errorMessage.includes('User rejected') || errorMessage.includes('rejected')) {
+        setError('Connection cancelled by user.');
+      } else if (errorMessage.includes('origins don\'t match') || errorMessage.includes('CORS')) {
+        setError('Connection blocked. Please use the browser extension, not the web version.');
+      } else {
+        setError(`Failed to connect to ${walletName}. Make sure the extension is installed and unlocked.`);
+      }
     } finally {
       setConnectingWallet(null);
     }
