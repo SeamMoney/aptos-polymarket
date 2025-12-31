@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -125,6 +125,8 @@ export function OutcomeDetail() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [showTradingSheet, setShowTradingSheet] = useState(false);
   const [tradeType, setTradeType] = useState<"yes" | "no">("yes");
+  const [_isTouching, setIsTouching] = useState(false);
+  const chartRef = useRef<HTMLDivElement>(null);
 
   // Get trading functions from hook
   const {
@@ -205,6 +207,61 @@ export function OutcomeDetail() {
     },
     [numPoints, chartWidth]
   );
+
+  // Touch handlers for mobile
+  const updatePositionFromX = useCallback(
+    (clientX: number) => {
+      if (!chartRef.current) return;
+      const rect = chartRef.current.getBoundingClientRect();
+      const x = Math.max(0, Math.min(chartWidth, clientX - rect.left));
+      const idx = Math.round((x / chartWidth) * (numPoints - 1));
+      setActiveIndex(Math.max(0, Math.min(numPoints - 1, idx)));
+    },
+    [chartWidth, numPoints]
+  );
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setIsTouching(true);
+      if (e.touches.length > 0) {
+        updatePositionFromX(e.touches[0].clientX);
+      }
+    },
+    [updatePositionFromX]
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      if (e.touches.length > 0) {
+        updatePositionFromX(e.touches[0].clientX);
+      }
+    },
+    [updatePositionFromX]
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    setIsTouching(false);
+    setActiveIndex(null);
+  }, []);
+
+  // Prevent text selection and context menu on chart
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const preventContextMenu = (e: Event) => e.preventDefault();
+    const preventSelect = (e: Event) => e.preventDefault();
+
+    chart.addEventListener("contextmenu", preventContextMenu);
+    chart.addEventListener("selectstart", preventSelect);
+
+    return () => {
+      chart.removeEventListener("contextmenu", preventContextMenu);
+      chart.removeEventListener("selectstart", preventSelect);
+    };
+  }, []);
 
   if (!market || !outcome) {
     return (
@@ -310,10 +367,21 @@ export function OutcomeDetail() {
         >
           <div className="flex items-start">
             <div
+              ref={chartRef}
               className="relative cursor-crosshair flex-1"
-              style={{ height: CHART_HEIGHT }}
+              style={{
+                height: CHART_HEIGHT,
+                touchAction: 'none',
+                WebkitUserSelect: 'none',
+                WebkitTouchCallout: 'none',
+                userSelect: 'none',
+              } as React.CSSProperties}
               onMouseMove={handleMouseMove}
               onMouseLeave={() => setActiveIndex(null)}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              onTouchCancel={handleTouchEnd}
             >
               <svg width="100%" height={CHART_HEIGHT} viewBox={`0 0 ${chartWidth} ${CHART_HEIGHT}`} preserveAspectRatio="none">
                 {/* Horizontal dotted grid lines - tiny dots with large gaps */}
