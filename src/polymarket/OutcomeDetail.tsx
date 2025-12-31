@@ -9,6 +9,7 @@ import {
   Settings,
 } from "lucide-react";
 import { TradingSheet } from "./TradingSheet";
+import { LiveOrderBook } from "./LiveOrderBook";
 import { mockMarkets } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 
@@ -292,6 +293,8 @@ export function OutcomeDetail() {
   }
 
   const timeRanges = ["1H", "6H", "1D", "1W", "1M", "ALL"];
+  const yesPrice = Math.round(outcome.price * 100);
+  const noPrice = 100 - yesPrice;
 
   const firstPrice = priceHistory[0] || outcome.price;
   const currentPrice = priceHistory[priceHistory.length - 1] || outcome.price;
@@ -556,6 +559,22 @@ export function OutcomeDetail() {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Order Book */}
+        <div
+          className={`px-4 mb-4 transition-all duration-300 delay-400 ${
+            isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+          }`}
+        >
+          <LiveOrderBook
+            yesPrice={yesPrice}
+            noPrice={noPrice}
+            yesReserve={1000}
+            noReserve={1000}
+            trades={[]}
+            isConnected={false}
+          />
         </div>
 
         {/* Rules */}
