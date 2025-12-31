@@ -4,6 +4,82 @@
    POLYMARKET DESIGN SYSTEM CSS
    ================================ */
 
+/* === OPEN SAUCE FONT (Official Polymarket Font) === */
+@font-face {
+  font-family: 'Open Sauce One';
+  src: url('/fonts/OpenSauceOne-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sauce One';
+  src: url('/fonts/OpenSauceOne-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sauce One';
+  src: url('/fonts/OpenSauceOne-MediumItalic.ttf') format('truetype');
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sauce One';
+  src: url('/fonts/OpenSauceOne-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sauce One';
+  src: url('/fonts/OpenSauceOne-SemiBoldItalic.ttf') format('truetype');
+  font-weight: 600;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sauce One';
+  src: url('/fonts/OpenSauceOne-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sauce One';
+  src: url('/fonts/OpenSauceOne-BoldItalic.ttf') format('truetype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* === HIDE SCROLLBARS === */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+*::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* === COLORS === */
 :root {
   /* Brand Colors (Official) */
@@ -19,12 +95,12 @@
   --poly-red: #FF6B6B;
   --poly-red-hover: #E85555;
 
-  /* Dark Theme */
-  --poly-bg-primary: #0D1117;
-  --poly-bg-card: #161B22;
-  --poly-bg-elevated: #1C2128;
-  --poly-border: #30363D;
-  --poly-border-light: #3D444D;
+  /* Dark Theme - Polymarket Official */
+  --poly-bg-primary: #1c2b3a;
+  --poly-bg-card: #243447;
+  --poly-bg-elevated: #2a3d52;
+  --poly-border: #2c3f4f;
+  --poly-border-light: #3d5060;
 
   /* Text Colors */
   --poly-text-primary: #FFFFFF;
@@ -32,7 +108,7 @@
   --poly-text-muted: #6E7681;
 
   /* Font */
-  font-family: 'Open Sauce', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Open Sauce One', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;
@@ -311,24 +387,8 @@ body {
   box-shadow: 0 0 20px rgba(46, 92, 255, 0.3);
 }
 
-/* === SCROLLBAR === */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--poly-bg-card);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--poly-border);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--poly-border-light);
-}
+/* === SCROLLBAR - ALL HIDDEN === */
+/* Scrollbars are hidden globally via the * selector above */
 
 /* === UTILITY CLASSES === */
 .poly-flex-center {
@@ -572,7 +632,7 @@ body {
 @theme {
   --color-poly-green: #00D295;
   --color-poly-red: #FF6B6B;
-  --color-poly-dark: #0D1117;
-  --color-poly-card: #161B22;
-  --color-poly-border: #30363D;
+  --color-poly-dark: #1c2b3a;
+  --color-poly-card: #243447;
+  --color-poly-border: #2c3f4f;
 }

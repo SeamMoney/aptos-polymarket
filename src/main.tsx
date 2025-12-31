@@ -3,7 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './index.css';
 import App from './App';
-import { DemoMode, DemoMarketPage } from './components';
+import { DemoMode } from './components';
+import { PolymarketHome, MarketDetail, OutcomeDetail, SearchPage, BreakingPage, MorePage, PortfolioPage, LoginPage, BottomNav } from './polymarket';
 import { NetworkProvider } from './contexts/NetworkContext';
 import { WalletProvider } from './contexts/WalletContext';
 
@@ -15,7 +16,15 @@ createRoot(document.getElementById('root')!).render(
           <Routes>
             <Route path="/" element={<App />} />
             <Route path="/demo" element={<DemoMode />} />
-            <Route path="/demo-day" element={<DemoMarketPage />} />
+            <Route path="/polymarket" element={<><PolymarketHome /><BottomNav /></>} />
+            <Route path="/polymarket/search" element={<><SearchPage /><BottomNav /></>} />
+            <Route path="/polymarket/breaking" element={<><BreakingPage /><BottomNav /></>} />
+            <Route path="/polymarket/more" element={<><MorePage /><BottomNav /></>} />
+            <Route path="/market/:id" element={<><MarketDetail /><BottomNav /></>} />
+            <Route path="/outcome/:marketId/:outcomeId" element={<OutcomeDetail />} />
+            <Route path="/portfolio" element={<><PortfolioPage /><BottomNav /></>} />
+            <Route path="/portfolio/:userId" element={<><PortfolioPage /><BottomNav /></>} />
+            <Route path="/login" element={<LoginPage />} />
           </Routes>
         </WalletProvider>
       </NetworkProvider>

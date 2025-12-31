@@ -7,12 +7,42 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Legacy poly colors
-        'poly-green': '#00D395',
+        // Official Polymarket colors (poly-* prefix)
+        'poly': {
+          // Background colors
+          'bg': '#1c2b3a',
+          'card': '#243447',
+          'cardHover': '#2a3d52',
+          'surface': '#243447',
+          'surfaceHover': '#2a3d52',
+          'bgElevated': '#2a3d52',
+          // Border colors
+          'border': '#30363D',
+          'borderLight': '#3D444D',
+          // Brand colors
+          'blue': '#2E5CFF',
+          'blueHover': '#2451E0',
+          // Trading colors
+          'green': '#00D295',
+          'greenHover': '#00BA85',
+          'red': '#FF6B6B',
+          'redHover': '#E85555',
+          // Text colors
+          'textPrimary': '#FFFFFF',
+          'textSecondary': '#8B949E',
+          'textMuted': '#6E7681',
+          // UI elements
+          'inputBg': '#1c2b3a',
+          'pillBg': '#243447',
+          'pillSelected': '#2a3d52',
+          'cyan': '#2E5CFF',
+        },
+        // Legacy poly colors (for backwards compatibility)
+        'poly-green': '#00D295',
         'poly-red': '#FF6B6B',
-        'poly-dark': '#0D1117',
-        'poly-card': '#161B22',
-        'poly-border': '#30363D',
+        'poly-dark': '#1c2b3a',
+        'poly-card': '#243447',
+        'poly-border': '#2c3f4f',
         // Polymarket brand colors
         'pm': {
           'blue': '#1652f0',
@@ -59,12 +89,22 @@ export default {
       animation: {
         'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'glow': 'glow 2s ease-in-out infinite alternate',
+        'slide-up': 'slideUp 0.3s ease-out',
+        'fade-in': 'fadeIn 0.2s ease-out',
       },
       keyframes: {
         glow: {
           '0%': { boxShadow: '0 0 5px #00D395, 0 0 10px #00D395' },
           '100%': { boxShadow: '0 0 20px #00D395, 0 0 30px #00D395' },
-        }
+        },
+        slideUp: {
+          '0%': { transform: 'translateY(100%)', opacity: '0' },
+          '100%': { transform: 'translateY(0)', opacity: '1' },
+        },
+        fadeIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
       }
     },
   },
