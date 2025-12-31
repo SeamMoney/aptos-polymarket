@@ -21,6 +21,7 @@ export { BreakingPage } from "./BreakingPage";
 export { MorePage } from "./MorePage";
 export { PortfolioPage } from "./PortfolioPage";
 export { LoginPage } from "./LoginPage";
+export { HFTDemoPage } from "./HFTDemoPage";
 
 // Navigation
 export { BottomNav } from "./BottomNav";

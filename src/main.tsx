@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './index.css';
 import App from './App';
 import { DemoMode } from './components';
-import { PolymarketHome, MarketDetail, OutcomeDetail, SearchPage, BreakingPage, MorePage, PortfolioPage, LoginPage, BottomNav } from './polymarket';
+import { PolymarketHome, MarketDetail, OutcomeDetail, SearchPage, BreakingPage, MorePage, PortfolioPage, LoginPage, BottomNav, HFTDemoPage } from './polymarket';
 import { NetworkProvider } from './contexts/NetworkContext';
 import { WalletProvider } from './contexts/WalletContext';
 
@@ -16,6 +16,7 @@ createRoot(document.getElementById('root')!).render(
           <Routes>
             <Route path="/" element={<App />} />
             <Route path="/demo" element={<DemoMode />} />
+            <Route path="/demo-day" element={<HFTDemoPage />} />
             <Route path="/polymarket" element={<><PolymarketHome /><BottomNav /></>} />
             <Route path="/polymarket/search" element={<><SearchPage /><BottomNav /></>} />
             <Route path="/polymarket/breaking" element={<><BreakingPage /><BottomNav /></>} />
