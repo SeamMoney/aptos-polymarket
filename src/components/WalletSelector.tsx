@@ -146,6 +146,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
   const { wallets, connect, connected } = useWallet();
   const [selectedCategory, setSelectedCategory] = useState<WalletCategory>('aptos');
   const [connectingWallet, setConnectingWallet] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Close modal when connected
   useEffect(() => {
@@ -187,10 +188,23 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
 
   const handleConnect = async (walletName: string) => {
     try {
+      setError(null);
       setConnectingWallet(walletName);
+
+      // Check if Petra extension is actually installed (not just web version)
+      if (walletName === 'Petra' && typeof window !== 'undefined') {
+        const hasPetraExtension = !!(window as any).petra || !!(window as any).aptos;
+        if (!hasPetraExtension) {
+          setError('Petra extension not found. Please install the browser extension.');
+          window.open('https://petra.app', '_blank');
+          return;
+        }
+      }
+
       await connect(walletName);
-    } catch (error) {
-      console.error('Failed to connect:', error);
+    } catch (err) {
+      console.error('Failed to connect:', err);
+      setError(`Failed to connect to ${walletName}. Make sure the extension is installed.`);
     } finally {
       setConnectingWallet(null);
     }
@@ -246,23 +260,32 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
               <TabButton
                 category="aptos"
                 selected={selectedCategory === 'aptos'}
-                onClick={() => setSelectedCategory('aptos')}
+                onClick={() => { setSelectedCategory('aptos'); setError(null); }}
                 count={categorizedInstalled.aptos.length + categorizedNotInstalled.aptos.length}
               />
               <TabButton
                 category="solana"
                 selected={selectedCategory === 'solana'}
-                onClick={() => setSelectedCategory('solana')}
+                onClick={() => { setSelectedCategory('solana'); setError(null); }}
                 count={categorizedInstalled.solana.length + categorizedNotInstalled.solana.length}
               />
               <TabButton
                 category="ethereum"
                 selected={selectedCategory === 'ethereum'}
-                onClick={() => setSelectedCategory('ethereum')}
+                onClick={() => { setSelectedCategory('ethereum'); setError(null); }}
                 count={categorizedInstalled.ethereum.length + categorizedNotInstalled.ethereum.length}
               />
             </div>
           </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="px-6 mb-4">
+              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                <p className="text-red-400 text-sm">{error}</p>
+              </div>
+            </div>
+          )}
 
           {/* Wallet List */}
           <div className="px-6 pb-6 max-h-[300px] overflow-y-auto">
