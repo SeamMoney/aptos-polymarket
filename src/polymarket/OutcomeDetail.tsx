@@ -26,76 +26,79 @@ const seededRandom = (seed: number) => {
   return x - Math.floor(x);
 };
 
-// Generate price history that ENDS at the current price
+// Generate realistic step-like price history (like actual trading data)
 const generatePriceHistory = (
   outcomeId: string,
-  currentPrice: number,  // Chart must end at this price
+  currentPrice: number,  // Chart must end here
   numPoints: number
 ) => {
   const seed = outcomeId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const points: number[] = [];
+  const prices: number[] = [];
 
-  // Ensure current price is reasonable
   const endPrice = Math.max(0.05, Math.min(0.95, currentPrice));
 
-  // Determine pattern type and starting price
+  // Determine starting price based on pattern
   const patternType = seed % 6;
   let startPrice: number;
 
   switch (patternType) {
-    case 0: // Rising - started lower
-      startPrice = Math.max(0.08, endPrice - 0.15 - seededRandom(seed) * 0.2);
-      break;
-    case 1: // Falling - started higher
-      startPrice = Math.min(0.92, endPrice + 0.15 + seededRandom(seed) * 0.2);
-      break;
-    case 2: // Volatile around current
-      startPrice = endPrice + (seededRandom(seed) - 0.5) * 0.15;
-      break;
-    case 3: // Spike then back down
-      startPrice = endPrice - 0.05 + seededRandom(seed) * 0.1;
-      break;
-    case 4: // Dip then recovery
-      startPrice = endPrice + 0.05 - seededRandom(seed) * 0.1;
-      break;
-    default: // Sideways
-      startPrice = endPrice + (seededRandom(seed) - 0.5) * 0.1;
+    case 0: startPrice = Math.max(0.08, endPrice - 0.12 - seededRandom(seed) * 0.15); break;
+    case 1: startPrice = Math.min(0.92, endPrice + 0.12 + seededRandom(seed) * 0.15); break;
+    case 2: startPrice = endPrice + (seededRandom(seed) - 0.5) * 0.2; break;
+    case 3: startPrice = endPrice * 0.6; break;
+    case 4: startPrice = Math.min(0.9, endPrice * 1.4); break;
+    default: startPrice = endPrice + (seededRandom(seed) - 0.5) * 0.1;
+  }
+  startPrice = Math.max(0.05, Math.min(0.95, startPrice));
+
+  // Generate step changes like real trading
+  const numSteps = 15 + Math.floor(seededRandom(seed * 7) * 20);
+  const stepPoints: { t: number; price: number }[] = [];
+
+  stepPoints.push({ t: 0, price: startPrice });
+
+  let currentStepPrice = startPrice;
+  for (let s = 1; s < numSteps; s++) {
+    const t = s / numSteps;
+    const targetAtT = startPrice + (endPrice - startPrice) * t;
+
+    const jumpSize = (seededRandom(seed * 100 + s) - 0.5) * 0.15;
+    const drift = (targetAtT - currentStepPrice) * 0.3;
+
+    const spikeChance = seededRandom(seed * 200 + s);
+    let spike = 0;
+    if (spikeChance > 0.92) spike = 0.1 + seededRandom(seed * 300 + s) * 0.15;
+    else if (spikeChance < 0.08) spike = -(0.1 + seededRandom(seed * 300 + s) * 0.15);
+
+    currentStepPrice = currentStepPrice + jumpSize + drift + spike;
+    currentStepPrice = Math.max(0.03, Math.min(0.97, currentStepPrice));
+
+    const stepT = t + (seededRandom(seed * 400 + s) - 0.5) * 0.05;
+    stepPoints.push({ t: Math.max(0.01, Math.min(0.99, stepT)), price: currentStepPrice });
   }
 
-  startPrice = Math.max(0.08, Math.min(0.92, startPrice));
+  stepPoints.push({ t: 1, price: endPrice });
+  stepPoints.sort((a, b) => a.t - b.t);
 
+  // Generate price array with step-like behavior
+  let stepIndex = 0;
   for (let i = 0; i < numPoints; i++) {
-    const t = i / (numPoints - 1); // 0 to 1
-    const rand = seededRandom(seed * 1000 + i);
-    const rand2 = seededRandom(seed * 2000 + i);
+    const t = i / (numPoints - 1);
 
-    // Linear interpolation from start to end
-    const baseValue = startPrice + (endPrice - startPrice) * t;
-
-    // Add volatility that diminishes toward the end
-    const volatilityScale = Math.sin(t * Math.PI) * 0.8;
-    const volatility = (rand - 0.5) * 0.08 * volatilityScale + (rand2 - 0.5) * 0.05 * volatilityScale;
-
-    // Add occasional jumps in the middle
-    let jump = 0;
-    if (t > 0.1 && t < 0.9) {
-      const jumpChance = seededRandom(seed * 3000 + i);
-      if (jumpChance > 0.95) jump = (rand - 0.5) * 0.08;
-      else if (jumpChance < 0.05) jump = (rand - 0.5) * 0.08;
+    while (stepIndex < stepPoints.length - 1 && stepPoints[stepIndex + 1].t <= t) {
+      stepIndex++;
     }
 
-    let price = baseValue + volatility + jump;
-    price = Math.max(0.05, Math.min(0.95, price));
+    let price = stepPoints[stepIndex].price;
+    const microNoise = (seededRandom(seed * 5000 + i) - 0.5) * 0.008;
+    price += microNoise;
+    price = Math.max(0.03, Math.min(0.97, price));
 
-    // Force exact end price on last point
-    if (i === numPoints - 1) {
-      price = endPrice;
-    }
-
-    points.push(price);
+    if (i === numPoints - 1) price = endPrice;
+    prices.push(price);
   }
 
-  return points;
+  return prices;
 };
 
 // Generate path with straight lines (matches PolyChart)
