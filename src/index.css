@@ -1,20 +1,43 @@
 @import "tailwindcss";
 
-@theme {
-  --color-poly-green: #00D395;
-  --color-poly-red: #FF6B6B;
-  --color-poly-dark: #0D1117;
-  --color-poly-card: #161B22;
-  --color-poly-border: #30363D;
-}
+/* ================================
+   POLYMARKET DESIGN SYSTEM CSS
+   ================================ */
 
+/* === COLORS === */
 :root {
-  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  /* Brand Colors (Official) */
+  --poly-blue: #2E5CFF;
+  --poly-blue-rgb: 46, 92, 255;
+  --poly-blue-hover: #2451E0;
+  --poly-black: #000000;
+  --poly-white: #FFFFFF;
+
+  /* Trading Colors */
+  --poly-green: #00D295;
+  --poly-green-hover: #00BA85;
+  --poly-red: #FF6B6B;
+  --poly-red-hover: #E85555;
+
+  /* Dark Theme */
+  --poly-bg-primary: #0D1117;
+  --poly-bg-card: #161B22;
+  --poly-bg-elevated: #1C2128;
+  --poly-border: #30363D;
+  --poly-border-light: #3D444D;
+
+  /* Text Colors */
+  --poly-text-primary: #FFFFFF;
+  --poly-text-secondary: #8B949E;
+  --poly-text-muted: #6E7681;
+
+  /* Font */
+  font-family: 'Open Sauce', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #0D1117;
+  color: var(--poly-text-primary);
+  background-color: var(--poly-bg-primary);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -25,6 +48,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background-color: var(--poly-bg-primary);
 }
 
 #root {
@@ -32,52 +56,523 @@ body {
   min-height: 100vh;
 }
 
-/* Custom scrollbar */
+/* === BUTTONS === */
+
+/* Yes/Buy Button (Green) */
+.poly-btn-yes {
+  background-color: var(--poly-green);
+  color: var(--poly-black);
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.poly-btn-yes:hover {
+  background-color: var(--poly-green-hover);
+}
+.poly-btn-yes:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* No/Sell Button (Red) */
+.poly-btn-no {
+  background-color: var(--poly-red);
+  color: var(--poly-black);
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.poly-btn-no:hover {
+  background-color: var(--poly-red-hover);
+}
+.poly-btn-no:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Brand Button (Blue) */
+.poly-btn-primary {
+  background-color: var(--poly-blue);
+  color: var(--poly-white);
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.poly-btn-primary:hover {
+  background-color: var(--poly-blue-hover);
+}
+.poly-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Outline/Secondary Button */
+.poly-btn-secondary {
+  background-color: transparent;
+  color: var(--poly-white);
+  border: 1px solid var(--poly-border);
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.poly-btn-secondary:hover {
+  background-color: var(--poly-bg-elevated);
+  border-color: var(--poly-border-light);
+}
+
+/* === CARDS === */
+.poly-card {
+  background-color: var(--poly-bg-card);
+  border: 1px solid var(--poly-border);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.poly-card-elevated {
+  background-color: var(--poly-bg-elevated);
+  border: 1px solid var(--poly-border);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.poly-card-xl {
+  background-color: var(--poly-bg-card);
+  border: 1px solid var(--poly-border);
+  border-radius: 24px;
+  padding: 24px;
+}
+
+/* === BORDERS === */
+.poly-border {
+  border: 1px solid var(--poly-border);
+}
+
+.poly-border-light {
+  border: 1px solid var(--poly-border-light);
+}
+
+.poly-border-b {
+  border-bottom: 1px solid var(--poly-border);
+}
+
+.poly-border-t {
+  border-top: 1px solid var(--poly-border);
+}
+
+/* === BORDER RADIUS === */
+.poly-rounded-sm { border-radius: 6px; }
+.poly-rounded { border-radius: 8px; }
+.poly-rounded-md { border-radius: 12px; }
+.poly-rounded-lg { border-radius: 16px; }
+.poly-rounded-xl { border-radius: 20px; }
+.poly-rounded-2xl { border-radius: 24px; }
+.poly-rounded-full { border-radius: 9999px; }
+
+/* === INPUT FIELDS === */
+.poly-input {
+  background-color: var(--poly-bg-primary);
+  border: 1px solid var(--poly-border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: var(--poly-white);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+.poly-input:focus {
+  border-color: var(--poly-blue);
+}
+.poly-input::placeholder {
+  color: var(--poly-text-muted);
+}
+
+/* === BACKGROUNDS === */
+.poly-bg-primary { background-color: var(--poly-bg-primary); }
+.poly-bg-card { background-color: var(--poly-bg-card); }
+.poly-bg-elevated { background-color: var(--poly-bg-elevated); }
+
+/* === TEXT COLORS === */
+.poly-text-primary { color: var(--poly-text-primary); }
+.poly-text-secondary { color: var(--poly-text-secondary); }
+.poly-text-muted { color: var(--poly-text-muted); }
+.poly-text-green { color: var(--poly-green); }
+.poly-text-red { color: var(--poly-red); }
+.poly-text-blue { color: var(--poly-blue); }
+
+/* === BOX SHADOWS === */
+.poly-shadow {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3),
+              0 2px 4px -1px rgba(0, 0, 0, 0.2);
+}
+
+.poly-shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4),
+              0 4px 6px -2px rgba(0, 0, 0, 0.2);
+}
+
+/* === PROGRESS/PERCENTAGE BARS === */
+.poly-progress-bar {
+  background-color: var(--poly-border);
+  border-radius: 4px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.poly-progress-fill-green {
+  background-color: var(--poly-green);
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.poly-progress-fill-red {
+  background-color: var(--poly-red);
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+/* === HEADER === */
+.poly-header {
+  background-color: var(--poly-bg-primary);
+  border-bottom: 1px solid var(--poly-border);
+  padding: 12px 16px;
+}
+
+/* === PILLS/TAGS === */
+.poly-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.poly-pill-green {
+  background-color: rgba(0, 210, 149, 0.15);
+  color: var(--poly-green);
+}
+
+.poly-pill-red {
+  background-color: rgba(255, 107, 107, 0.15);
+  color: var(--poly-red);
+}
+
+.poly-pill-blue {
+  background-color: rgba(46, 92, 255, 0.15);
+  color: var(--poly-blue);
+}
+
+.poly-pill-gray {
+  background-color: var(--poly-bg-elevated);
+  color: var(--poly-text-secondary);
+}
+
+/* === LIVE INDICATOR === */
+.poly-live-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--poly-green);
+  border-radius: 50%;
+  animation: poly-pulse 2s infinite;
+}
+
+@keyframes poly-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.9); }
+}
+
+/* === GLOW EFFECTS === */
+.poly-glow-green {
+  box-shadow: 0 0 20px rgba(0, 210, 149, 0.3);
+}
+
+.poly-glow-red {
+  box-shadow: 0 0 20px rgba(255, 107, 107, 0.3);
+}
+
+.poly-glow-blue {
+  box-shadow: 0 0 20px rgba(46, 92, 255, 0.3);
+}
+
+/* === SCROLLBAR === */
 ::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #161B22;
+  background: var(--poly-bg-card);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #30363D;
+  background: var(--poly-border);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #484F58;
+  background: var(--poly-border-light);
 }
 
-/* Glow effects */
-.glow-green {
-  box-shadow: 0 0 20px rgba(0, 211, 149, 0.3);
+/* === UTILITY CLASSES === */
+.poly-flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.glow-red {
-  box-shadow: 0 0 20px rgba(255, 107, 107, 0.3);
+.poly-flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-/* Animated gradient background */
-.animated-gradient {
-  background: linear-gradient(-45deg, #0D1117, #161B22, #1a2332, #0D1117);
-  background-size: 400% 400%;
-  animation: gradient 15s ease infinite;
+.poly-gap-1 { gap: 4px; }
+.poly-gap-2 { gap: 8px; }
+.poly-gap-3 { gap: 12px; }
+.poly-gap-4 { gap: 16px; }
+.poly-gap-6 { gap: 24px; }
+
+.poly-p-2 { padding: 8px; }
+.poly-p-3 { padding: 12px; }
+.poly-p-4 { padding: 16px; }
+.poly-p-5 { padding: 20px; }
+.poly-p-6 { padding: 24px; }
+
+.poly-px-3 { padding-left: 12px; padding-right: 12px; }
+.poly-px-4 { padding-left: 16px; padding-right: 16px; }
+.poly-py-2 { padding-top: 8px; padding-bottom: 8px; }
+.poly-py-3 { padding-top: 12px; padding-bottom: 12px; }
+
+.poly-mb-2 { margin-bottom: 8px; }
+.poly-mb-3 { margin-bottom: 12px; }
+.poly-mb-4 { margin-bottom: 16px; }
+.poly-mb-6 { margin-bottom: 24px; }
+
+/* === TYPOGRAPHY === */
+.poly-text-xs { font-size: 12px; }
+.poly-text-sm { font-size: 14px; }
+.poly-text-base { font-size: 16px; }
+.poly-text-lg { font-size: 18px; }
+.poly-text-xl { font-size: 20px; }
+.poly-text-2xl { font-size: 24px; }
+.poly-text-3xl { font-size: 30px; }
+.poly-text-4xl { font-size: 36px; }
+.poly-text-5xl { font-size: 48px; }
+
+.poly-font-medium { font-weight: 500; }
+.poly-font-semibold { font-weight: 600; }
+.poly-font-bold { font-weight: 700; }
+
+.poly-font-mono { font-family: 'SF Mono', 'Monaco', 'Consolas', monospace; }
+
+/* === STAT CARDS === */
+.poly-stat-card {
+  background-color: var(--poly-bg-card);
+  border: 1px solid var(--poly-border);
+  border-radius: 12px;
+  padding: 16px;
 }
 
-@keyframes gradient {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+.poly-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--poly-white);
+  font-variant-numeric: tabular-nums;
 }
 
-/* Pulse animation for live indicators */
-.pulse-live {
-  animation: pulse-live 2s infinite;
+.poly-stat-label {
+  font-size: 12px;
+  color: var(--poly-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
 }
 
-@keyframes pulse-live {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+/* === OUTCOME CARDS === */
+.poly-outcome-card {
+  background-color: var(--poly-bg-elevated);
+  border: 1px solid var(--poly-border);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.poly-outcome-card:hover {
+  border-color: var(--poly-border-light);
+  background-color: #222830;
+}
+
+.poly-outcome-card.active {
+  border-color: var(--poly-green);
+  background-color: rgba(0, 210, 149, 0.1);
+}
+
+.poly-outcome-label {
+  font-size: 14px;
+  color: var(--poly-text-secondary);
+  margin-bottom: 4px;
+}
+
+.poly-outcome-price {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--poly-white);
+  font-variant-numeric: tabular-nums;
+}
+
+.poly-outcome-price.leading {
+  color: var(--poly-green);
+}
+
+/* === TPS DISPLAY === */
+.poly-tps-value {
+  font-size: 64px;
+  font-weight: 700;
+  color: var(--poly-green);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.poly-tps-label {
+  font-size: 20px;
+  color: var(--poly-text-muted);
+  margin-left: 8px;
+}
+
+/* === TRADE STREAM === */
+.poly-trade-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  background-color: var(--poly-bg-elevated);
+  transition: background-color 0.15s ease;
+}
+
+.poly-trade-row:hover {
+  background-color: #252B33;
+}
+
+.poly-trade-row.buy {
+  border-left: 3px solid var(--poly-green);
+}
+
+.poly-trade-row.sell {
+  border-left: 3px solid var(--poly-red);
+}
+
+/* === ORDERBOOK === */
+.poly-orderbook {
+  background-color: var(--poly-bg-card);
+  border: 1px solid var(--poly-border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.poly-orderbook-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--poly-border);
+}
+
+.poly-orderbook-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  position: relative;
+}
+
+.poly-orderbook-row.ask {
+  color: var(--poly-red);
+}
+
+.poly-orderbook-row.bid {
+  color: var(--poly-green);
+}
+
+.poly-orderbook-depth {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  opacity: 0.15;
+}
+
+.poly-orderbook-depth.ask {
+  right: 0;
+  background-color: var(--poly-red);
+}
+
+.poly-orderbook-depth.bid {
+  left: 0;
+  background-color: var(--poly-green);
+}
+
+.poly-orderbook-spread {
+  padding: 12px;
+  background-color: var(--poly-bg-primary);
+  text-align: center;
+  font-weight: 600;
+}
+
+/* === COMPARISON BAR === */
+.poly-comparison {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  padding: 16px;
+  background-color: var(--poly-bg-primary);
+  border-top: 1px solid var(--poly-border);
+  flex-wrap: wrap;
+}
+
+.poly-comparison-item {
+  text-align: center;
+}
+
+.poly-comparison-value {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.poly-comparison-label {
+  font-size: 12px;
+  color: var(--poly-text-muted);
+  margin-top: 2px;
+}
+
+.poly-comparison-vs {
+  color: var(--poly-text-muted);
+  font-size: 12px;
+}
+
+/* Keep Tailwind theme for compatibility */
+@theme {
+  --color-poly-green: #00D295;
+  --color-poly-red: #FF6B6B;
+  --color-poly-dark: #0D1117;
+  --color-poly-card: #161B22;
+  --color-poly-border: #30363D;
 }
