@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { ChevronDown, Minus, Plus, X, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { ChevronDown, Minus, Plus, Loader2, CheckCircle, AlertCircle, ArrowLeftRight } from "lucide-react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import type { Market, Outcome } from "./types";
 
@@ -18,7 +18,6 @@ interface TradingSheetProps {
   onSellOutcome?: (marketId: string, outcomeIndex: number, amount: string) => Promise<any>;
 }
 
-type OrderType = "market" | "limit";
 type TradeDirection = "buy" | "sell";
 
 export function TradingSheet({
@@ -35,7 +34,6 @@ export function TradingSheet({
   onSellOutcome,
 }: TradingSheetProps) {
   const { connected } = useWallet();
-  const [orderType, setOrderType] = useState<OrderType>("market");
   const [direction, setDirection] = useState<TradeDirection>("buy");
   const [tradeType, setTradeType] = useState<"yes" | "no">(initialType);
   const [amount, setAmount] = useState(0);
@@ -131,12 +129,16 @@ export function TradingSheet({
 
   const potentialWin =
     amount > 0
-      ? (amount / (currentPrice / 100) - amount).toFixed(2)
+      ? (amount / (currentPrice / 100)).toFixed(2)
       : "0.00";
 
   const handleAmountChange = useCallback((delta: number) => {
     setAmount((prev) => Math.max(0, prev + delta));
   }, []);
+
+  const toggleTradeType = () => {
+    setTradeType(prev => prev === "yes" ? "no" : "yes");
+  };
 
   const outcomeName =
     selectedOutcome?.name || (tradeType === "yes" ? "Yes" : "No");
@@ -144,7 +146,7 @@ export function TradingSheet({
   if (!isVisible) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -152,42 +154,27 @@ export function TradingSheet({
       />
 
       {/* Sheet */}
-      <div className="relative bg-[#1c2b3a] rounded-t-3xl w-full max-w-lg max-h-[85vh] overflow-hidden animate-slide-up">
-        {/* Handle */}
-        <div className="flex justify-center pt-3 pb-2">
-          <div className="w-10 h-1 bg-[#3a4f60] rounded-full" />
-        </div>
-
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-2 hover:bg-[#2a3d4e] rounded-full transition-colors"
-        >
-          <X size={20} color="#8297a3" strokeWidth={2.5} />
-        </button>
-
-        {/* Header with Buy/Sell dropdown and Market/Limit toggle */}
-        <div className="flex items-center justify-between px-4 pt-2 pb-4">
+      <div className="relative bg-[#1c2b3a] rounded-t-2xl w-full max-w-lg overflow-hidden animate-slide-up">
+        {/* Header - Buy/Sell dropdown and Market label */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#2c3f4f]">
           {/* Buy/Sell Dropdown */}
           <div className="relative">
             <button
               onClick={() => setShowDirectionDropdown(!showDirectionDropdown)}
-              className="flex items-center gap-2 px-4 py-2 bg-[#2a3d4e] rounded-lg hover:bg-[#324858] transition-colors"
+              className="flex items-center gap-1.5 text-white font-medium"
             >
-              <span className="text-white text-base font-semibold">
-                {direction === "buy" ? "Buy" : "Sell"}
-              </span>
-              <ChevronDown size={18} color="#8297a3" strokeWidth={2.5} />
+              <span className="text-base">{direction === "buy" ? "Buy" : "Sell"}</span>
+              <ChevronDown size={16} className="text-[#8297a3]" />
             </button>
 
             {showDirectionDropdown && (
-              <div className="absolute top-full left-0 mt-1 bg-[#2a3d4e] rounded-lg overflow-hidden shadow-xl z-10 border border-[#3a4f60]">
+              <div className="absolute top-full left-0 mt-1 bg-[#2a3d4e] rounded-lg overflow-hidden shadow-xl z-10 border border-[#3a4f60] min-w-[100px]">
                 <button
                   onClick={() => {
                     setDirection("buy");
                     setShowDirectionDropdown(false);
                   }}
-                  className={`w-full px-6 py-3 text-left hover:bg-[#324858] transition-colors ${
+                  className={`w-full px-4 py-2.5 text-left text-sm hover:bg-[#324858] transition-colors ${
                     direction === "buy" ? "text-white bg-[#324858]" : "text-[#8297a3]"
                   }`}
                 >
@@ -198,7 +185,7 @@ export function TradingSheet({
                     setDirection("sell");
                     setShowDirectionDropdown(false);
                   }}
-                  className={`w-full px-6 py-3 text-left hover:bg-[#324858] transition-colors ${
+                  className={`w-full px-4 py-2.5 text-left text-sm hover:bg-[#324858] transition-colors ${
                     direction === "sell" ? "text-white bg-[#324858]" : "text-[#8297a3]"
                   }`}
                 >
@@ -208,183 +195,122 @@ export function TradingSheet({
             )}
           </div>
 
-          {/* Market/Limit Toggle */}
-          <div className="flex items-center bg-[#2a3d4e] rounded-lg p-1">
-            <button
-              onClick={() => setOrderType("market")}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                orderType === "market"
-                  ? "bg-[#3a4f60] text-white"
-                  : "text-[#8297a3] hover:text-white"
-              }`}
-            >
-              Market
-            </button>
-            <button
-              onClick={() => setOrderType("limit")}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                orderType === "limit"
-                  ? "bg-[#3a4f60] text-white"
-                  : "text-[#8297a3] hover:text-white"
-              }`}
-            >
-              Limit
-            </button>
-          </div>
+          {/* Market label */}
+          <span className="text-[#8297a3] text-sm">Market</span>
         </div>
 
-        {/* Outcome Info Bar */}
-        <div className="mx-4 mb-4 p-3 bg-[#2a3d4e] rounded-xl flex items-center border border-[#3a4f60]">
-          <img
-            src={selectedOutcome?.image || market.image}
-            alt=""
-            className="w-10 h-10 rounded-lg object-cover bg-[#1c2b3a] mr-3 shrink-0"
-          />
-          <div className="flex-1 min-w-0">
-            <p className="text-white text-sm font-medium truncate">{outcomeName}</p>
-            <p className="text-[#8297a3] text-xs truncate">{market.question}</p>
-          </div>
-
-          {/* Yes/No Toggle */}
-          <div className="flex items-center bg-[#1c2b3a] rounded-lg p-1 ml-3">
-            <button
-              onClick={() => setTradeType("yes")}
-              className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${
-                tradeType === "yes"
-                  ? "bg-[#4ade80] text-white"
-                  : "text-[#8297a3] hover:text-white"
-              }`}
-            >
-              Yes
-            </button>
-            <button
-              onClick={() => setTradeType("no")}
-              className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${
-                tradeType === "no"
-                  ? "bg-[#ef4444] text-white"
-                  : "text-[#8297a3] hover:text-white"
-              }`}
-            >
-              No
-            </button>
+        {/* Market & Outcome Info */}
+        <div className="px-4 py-3 border-b border-[#2c3f4f]">
+          <div className="flex items-start gap-3">
+            <img
+              src={selectedOutcome?.image || market.image}
+              alt=""
+              className="w-9 h-9 rounded-lg object-cover bg-[#2a3d4e] shrink-0 mt-0.5"
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-sm font-medium leading-tight">{market.question}</p>
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className="text-[#8297a3] text-sm">{outcomeName}</span>
+                <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${
+                  tradeType === "yes"
+                    ? "bg-[#27ae60] text-white"
+                    : "bg-[#e74c3c] text-white"
+                }`}>
+                  {tradeType === "yes" ? "Yes" : "No"}
+                </span>
+                <button
+                  onClick={toggleTradeType}
+                  className="p-1 hover:bg-[#2a3d4e] rounded transition-colors"
+                >
+                  <ArrowLeftRight size={14} className="text-[#8297a3]" />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Amount Section */}
-        <div className="px-4">
+        <div className="px-4 pt-6 pb-4">
           {/* Amount Display with +/- */}
-          <div className="flex items-center justify-center py-8">
+          <div className="flex items-center justify-center gap-6">
             <button
               onClick={() => handleAmountChange(-10)}
-              className="w-14 h-14 flex items-center justify-center bg-[#2a3d4e] hover:bg-[#324858] rounded-full transition-colors"
+              className="text-[#8297a3] hover:text-white transition-colors p-2"
             >
-              <Minus size={28} color="#8297a3" strokeWidth={2.5} />
+              <Minus size={24} strokeWidth={2} />
             </button>
-            <div className="mx-8 text-center">
-              <span className="text-white text-6xl font-bold">${amount}</span>
-            </div>
+            <span className="text-white text-5xl font-bold min-w-[140px] text-center">${amount}</span>
             <button
               onClick={() => handleAmountChange(10)}
-              className="w-14 h-14 flex items-center justify-center bg-[#2a3d4e] hover:bg-[#324858] rounded-full transition-colors"
+              className="text-[#8297a3] hover:text-white transition-colors p-2"
             >
-              <Plus size={28} color="#8297a3" strokeWidth={2.5} />
+              <Plus size={24} strokeWidth={2} />
             </button>
           </div>
 
+          {/* To Win & Avg Price */}
+          <div className="text-center mt-4 mb-5">
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-[#8297a3] text-sm">To win</span>
+              <span className="text-[#27ae60] text-sm font-semibold">${potentialWin}</span>
+            </div>
+            <p className="text-[#6b7a8a] text-xs mt-1">Avg. Price {currentPrice}¢</p>
+          </div>
+
           {/* Quick Amount Buttons */}
-          <div className="flex justify-center gap-3 pb-6">
+          <div className="flex justify-center gap-2">
             {[1, 20, 100].map((val) => (
               <button
                 key={val}
                 onClick={() => handleAmountChange(val)}
-                className="bg-[#2a3d4e] hover:bg-[#324858] px-5 py-2.5 rounded-full transition-colors border border-[#3a4f60]"
+                className="bg-[#2a3d4e] hover:bg-[#324858] px-3.5 py-1.5 rounded-md transition-colors text-white text-xs font-medium"
               >
-                <span className="text-white text-sm font-medium">+${val}</span>
+                +${val}
               </button>
             ))}
             <button
               onClick={() => setAmount(1000)}
-              className="bg-[#2a3d4e] hover:bg-[#324858] px-5 py-2.5 rounded-full transition-colors border border-[#3a4f60]"
+              className="bg-[#2a3d4e] hover:bg-[#324858] px-3.5 py-1.5 rounded-md transition-colors text-white text-xs font-medium"
             >
-              <span className="text-white text-sm font-medium">Max</span>
+              Max
             </button>
-          </div>
-
-          {/* Summary Stats */}
-          <div className="border-t border-[#3a4f60] pt-4 pb-2">
-            <div className="flex justify-between py-2.5">
-              <span className="text-[#8297a3] text-base">Avg. price</span>
-              <span className="text-white text-base font-medium">{currentPrice}¢</span>
-            </div>
-            <div className="flex justify-between py-2.5">
-              <span className="text-[#8297a3] text-base">Shares</span>
-              <span className="text-white text-base font-medium">
-                {amount > 0 ? Math.floor(amount / (currentPrice / 100)) : 0}
-              </span>
-            </div>
-            <div className="flex justify-between py-2.5">
-              <span className="text-[#8297a3] text-base">To win</span>
-              <span className="text-[#4ade80] text-lg font-bold">${potentialWin}</span>
-            </div>
           </div>
         </div>
 
         {/* Transaction Status */}
         {txStatus !== "idle" && (
-          <div className={`mx-4 mb-4 p-3 rounded-xl flex items-center gap-2 ${
+          <div className={`mx-4 mb-3 p-2.5 rounded-lg flex items-center gap-2 ${
             txStatus === "success" ? "bg-green-900/30 border border-green-700" : "bg-red-900/30 border border-red-700"
           }`}>
             {txStatus === "success" ? (
-              <CheckCircle size={20} className="text-green-500" />
+              <CheckCircle size={16} className="text-green-500" />
             ) : (
-              <AlertCircle size={20} className="text-red-500" />
+              <AlertCircle size={16} className="text-red-500" />
             )}
-            <span className={`text-sm ${txStatus === "success" ? "text-green-400" : "text-red-400"}`}>
+            <span className={`text-xs ${txStatus === "success" ? "text-green-400" : "text-red-400"}`}>
               {txMessage}
             </span>
           </div>
         )}
 
-        {/* Deposit/Trade Button */}
-        <div className="px-4 pt-4 pb-8">
+        {/* Trade Button */}
+        <div className="px-4 pb-6">
           <button
-            onClick={amount > 0 ? executeTrade : onClose}
-            disabled={isLoading}
-            className={`w-full py-4 rounded-xl transition-colors flex items-center justify-center gap-2 ${
-              isLoading
+            onClick={amount > 0 ? executeTrade : undefined}
+            disabled={isLoading || amount === 0}
+            className={`w-full py-3.5 rounded-lg transition-colors flex items-center justify-center gap-2 ${
+              isLoading || amount === 0
                 ? "bg-[#3b82f6]/50 cursor-not-allowed"
-                : amount > 0
-                  ? tradeType === "yes"
-                    ? "bg-[#4abe7a] hover:bg-[#3da86a]"
-                    : "bg-[#e5534b] hover:bg-[#d4443c]"
-                  : "bg-[#3b82f6] hover:bg-[#2563eb]"
+                : "bg-[#3b82f6] hover:bg-[#2563eb]"
             }`}
           >
-            {isLoading ? (
-              <Loader2 size={20} className="text-white animate-spin" />
-            ) : null}
-            <span className="text-white text-base font-semibold">
-              {isLoading
-                ? "Processing..."
-                : amount > 0
-                  ? `${direction === "buy" ? "Buy" : "Sell"} ${selectedOutcome?.name || (tradeType === "yes" ? "Yes" : "No")}`
-                  : "Enter amount"
-              }
+            {isLoading && <Loader2 size={18} className="text-white animate-spin" />}
+            <span className="text-white text-sm font-semibold">
+              {isLoading ? "Processing..." : "Trade"}
             </span>
           </button>
-          <div className="flex items-center justify-center gap-2 mt-3">
-            {isRealMarket && (
-              <span className="inline-flex items-center gap-1.5 text-xs text-[#5BA3D9]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#5BA3D9] animate-pulse" />
-                Live on Aptos
-              </span>
-            )}
-            {!isRealMarket && (
-              <span className="text-xs text-[#6b7a8a]">Demo mode</span>
-            )}
-          </div>
-          <p className="text-[#6b7a8a] text-xs text-center mt-2">
-            By trading, you agree to the Terms of Use.
+          <p className="text-[#6b7a8a] text-[11px] text-center mt-3">
+            By trading, you agree to the <span className="text-[#8297a3] underline">Terms of Use</span>.
           </p>
         </div>
       </div>
