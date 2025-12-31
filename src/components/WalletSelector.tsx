@@ -1,44 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
-import type { AdapterWallet } from '@aptos-labs/wallet-adapter-core';
+import {
+  groupAndSortWallets,
+  isAptosConnectWallet,
+  type AdapterWallet,
+  APTOS_CONNECT_ACCOUNT_URL
+} from '@aptos-labs/wallet-adapter-core';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Loader2, ExternalLink } from 'lucide-react';
-
-// Custom check to verify if a wallet extension is actually installed
-// This overrides the wallet adapter's detection which may incorrectly report web versions as "installed"
-const isWalletActuallyInstalled = (walletName: string): boolean => {
-  if (typeof window === 'undefined') return false;
-
-  const w = window as any;
-  const lowerName = walletName.toLowerCase();
-
-  // Petra - check for actual extension, not web version
-  if (lowerName === 'petra') {
-    // The Petra extension injects window.petra or window.aptos
-    return !!(w.petra?.isConnected !== undefined || w.aptos?.isAptosWallet);
-  }
-
-  // Phantom - check for Solana extension
-  if (lowerName.includes('phantom')) {
-    return !!(w.phantom?.solana?.isPhantom || w.solana?.isPhantom);
-  }
-
-  // MetaMask - check for Ethereum extension
-  if (lowerName.includes('metamask') || lowerName.includes('ethereum')) {
-    return !!(w.ethereum?.isMetaMask);
-  }
-
-  // Rainbow - check for Ethereum provider
-  if (lowerName.includes('rainbow')) {
-    return !!(w.ethereum?.isRainbow || w.rainbow);
-  }
-
-  // For other wallets, trust the adapter's detection
-  return true;
-};
-
-// Wallet category type
-type WalletCategory = 'aptos' | 'solana' | 'ethereum';
 
 // Custom wallet icons (override outdated icons from adapters)
 const WALLET_ICONS: Record<string, string> = {
@@ -63,45 +32,53 @@ interface WalletSelectorProps {
   onClose: () => void;
 }
 
+// Google icon SVG
+const GoogleIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24">
+    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+  </svg>
+);
 
-// Category tab button
-function TabButton({
-  category,
-  selected,
-  onClick,
-  count
+// Apple icon SVG
+const AppleIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+  </svg>
+);
+
+// Aptos Connect Button for social login
+function AptosConnectButton({
+  wallet,
+  onConnect,
+  connecting,
 }: {
-  category: WalletCategory;
-  selected: boolean;
-  onClick: () => void;
-  count: number;
+  wallet: AdapterWallet;
+  onConnect: () => void;
+  connecting: boolean;
 }) {
-  const labels: Record<WalletCategory, string> = {
-    aptos: 'Aptos',
-    solana: 'Solana',
-    ethereum: 'Ethereum',
-  };
+  const isGoogle = wallet.name.toLowerCase().includes('google');
+  const isApple = wallet.name.toLowerCase().includes('apple');
 
   return (
     <button
-      onClick={onClick}
-      className={`flex-1 py-2.5 px-3 text-sm font-medium rounded-lg transition-colors ${
-        selected
-          ? 'bg-[#3a4f60] text-white'
-          : 'text-[#8297a3] hover:text-white hover:bg-[#2a3d4e]'
-      }`}
+      onClick={onConnect}
+      disabled={connecting}
+      className="w-full flex items-center justify-center gap-3 p-3 bg-white hover:bg-gray-100 rounded-xl transition-colors disabled:opacity-50 border border-gray-200"
     >
-      {labels[category]}
-      {count > 0 && (
-        <span className={`ml-1.5 text-xs ${selected ? 'text-[#60a5fa]' : 'text-[#6b7a8a]'}`}>
-          ({count})
-        </span>
-      )}
+      {isGoogle && <GoogleIcon />}
+      {isApple && <AppleIcon />}
+      <span className="text-gray-900 font-medium">
+        {isGoogle ? 'Continue with Google' : isApple ? 'Continue with Apple' : wallet.name}
+      </span>
+      {connecting && <Loader2 size={18} className="text-gray-500 animate-spin" />}
     </button>
   );
 }
 
-// Individual wallet button
+// Regular wallet button
 function WalletButton({
   wallet,
   onConnect,
@@ -130,8 +107,6 @@ function WalletButton({
 
   const chainLabel = getChainLabel();
   const displayName = wallet.name.replace(' (Solana)', '').replace(' (Ethereum)', '');
-
-  // Use custom icon if available, otherwise fall back to wallet's icon
   const walletIcon = WALLET_ICONS[wallet.name] || WALLET_ICONS[displayName] || wallet.icon;
 
   return (
@@ -177,7 +152,6 @@ function WalletButton({
 
 export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
   const { wallets, connect, connected } = useWallet();
-  const [selectedCategory, setSelectedCategory] = useState<WalletCategory>('aptos');
   const [connectingWallet, setConnectingWallet] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -188,107 +162,36 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
     }
   }, [connected, isOpen, onClose]);
 
-  // Categorize wallets
-  const categorizeWallets = (walletList: readonly AdapterWallet[]) => {
-    return walletList.reduce<{
-      aptos: AdapterWallet[];
-      solana: AdapterWallet[];
-      ethereum: AdapterWallet[];
-    }>(
-      (acc, wallet) => {
-        const name = wallet.name.toLowerCase();
-        if (name.includes('ethereum') || name.includes('evm')) {
-          acc.ethereum.push(wallet);
-        } else if (name.includes('solana')) {
-          acc.solana.push(wallet);
-        } else {
-          acc.aptos.push(wallet);
-        }
-        return acc;
-      },
-      { aptos: [], solana: [], ethereum: [] }
-    );
-  };
+  // Use the official groupAndSortWallets function from wallet adapter
+  const { aptosConnectWallets, availableWallets, installableWallets } = groupAndSortWallets(
+    wallets || []
+  );
 
-  // Filter out wallets that would try to use web.petra.app or Aptos Connect (Google login)
-  // These cause 429 errors and black screens
-  const isBlockedWallet = useCallback((wallet: AdapterWallet): boolean => {
-    const name = wallet.name.toLowerCase();
-    // Block Aptos Connect (uses Google login via web.petra.app)
-    if (name.includes('aptos connect') || name.includes('aptosconnect')) return true;
-    // Block any explicit web versions
-    if (name.includes('web.petra') || name.includes('petra web')) return true;
-    // Block Continue with Google/Apple (these use Aptos Connect)
-    if (name.includes('google') || name.includes('apple')) return true;
-    return false;
-  }, []);
+  // Separate cross-chain wallets (Solana/Ethereum) from Aptos wallets
+  const aptosWallets = availableWallets.filter(w =>
+    !w.name.includes('Solana') && !w.name.includes('Ethereum')
+  );
+  const solanaWallets = availableWallets.filter(w => w.name.includes('Solana'));
+  const ethereumWallets = availableWallets.filter(w => w.name.includes('Ethereum'));
 
-  // Use custom check to determine if wallet is actually installed
-  // This prevents web.petra.app black screen and other issues
-  const checkActuallyInstalled = useCallback((wallet: AdapterWallet): boolean => {
-    // First filter out blocked wallets
-    if (isBlockedWallet(wallet)) return false;
-    // Then check if adapter says it's installed
-    if (wallet.readyState !== 'Installed') return false;
-    // Then verify with our custom check
-    return isWalletActuallyInstalled(wallet.name);
-  }, [isBlockedWallet]);
-
-  // Filter all wallets to exclude blocked ones
-  const filteredWallets = wallets?.filter(w => !isBlockedWallet(w)) || [];
-  const installedWallets = filteredWallets.filter(w => checkActuallyInstalled(w));
-  const notInstalledWallets = filteredWallets.filter(w => !checkActuallyInstalled(w));
-
-  const categorizedInstalled = categorizeWallets(installedWallets);
-  const categorizedNotInstalled = categorizeWallets(notInstalledWallets);
-
-  const currentInstalled = categorizedInstalled[selectedCategory];
-  const currentNotInstalled = categorizedNotInstalled[selectedCategory];
+  const aptosInstallable = installableWallets.filter(w =>
+    !w.name.includes('Solana') && !w.name.includes('Ethereum')
+  );
+  const solanaInstallable = installableWallets.filter(w => w.name.includes('Solana'));
+  const ethereumInstallable = installableWallets.filter(w => w.name.includes('Ethereum'));
 
   const handleConnect = async (walletName: string) => {
     try {
       setError(null);
       setConnectingWallet(walletName);
-
-      // Double-check the extension is actually available before connecting
-      // This prevents web.petra.app black screen and similar issues
-      if (!isWalletActuallyInstalled(walletName)) {
-        const lowerName = walletName.toLowerCase();
-        let installUrl = '';
-        let walletDisplayName = walletName;
-
-        if (lowerName === 'petra') {
-          installUrl = 'https://petra.app';
-          walletDisplayName = 'Petra';
-        } else if (lowerName.includes('phantom')) {
-          installUrl = 'https://phantom.app';
-          walletDisplayName = 'Phantom';
-        } else if (lowerName.includes('metamask')) {
-          installUrl = 'https://metamask.io';
-          walletDisplayName = 'MetaMask';
-        } else if (lowerName.includes('rainbow')) {
-          installUrl = 'https://rainbow.me';
-          walletDisplayName = 'Rainbow';
-        }
-
-        setError(`${walletDisplayName} extension not found. Please install the browser extension.`);
-        if (installUrl) {
-          window.open(installUrl, '_blank');
-        }
-        return;
-      }
-
       await connect(walletName);
     } catch (err) {
       console.error('Failed to connect:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      // Check for common error patterns
       if (errorMessage.includes('User rejected') || errorMessage.includes('rejected')) {
         setError('Connection cancelled by user.');
-      } else if (errorMessage.includes('origins don\'t match') || errorMessage.includes('CORS')) {
-        setError('Connection blocked. Please use the browser extension, not the web version.');
       } else {
-        setError(`Failed to connect to ${walletName}. Make sure the extension is installed and unlocked.`);
+        setError(`Failed to connect. Please try again.`);
       }
     } finally {
       setConnectingWallet(null);
@@ -316,12 +219,10 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
         >
           {/* Header */}
           <div className="relative p-6 pb-4">
-            {/* Decorative gradient */}
             <div className="absolute inset-0 overflow-hidden">
               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[300px] h-[150px] bg-gradient-to-b from-[#60a5fa]/20 via-[#22c55e]/10 to-transparent rounded-full blur-3xl" />
             </div>
 
-            {/* Close button */}
             <button
               onClick={onClose}
               className="absolute top-4 right-4 p-2 hover:bg-[#2a3d4e] rounded-lg transition-colors"
@@ -329,37 +230,11 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
               <X size={20} color="#8297a3" />
             </button>
 
-            {/* Title */}
             <div className="relative text-center mb-2">
               <h2 className="text-xl font-bold text-white">Connect to Polymarket</h2>
               <p className="text-[#8297a3] text-sm mt-2">
-                Select from a number of wallet options to connect,
-                including Move, Solana, and Ethereum wallets.
+                Sign in with your social account or connect a wallet
               </p>
-            </div>
-          </div>
-
-          {/* Category Tabs */}
-          <div className="px-6 mb-4">
-            <div className="flex gap-1 p-1 bg-[#2a3d4e] rounded-xl">
-              <TabButton
-                category="aptos"
-                selected={selectedCategory === 'aptos'}
-                onClick={() => { setSelectedCategory('aptos'); setError(null); }}
-                count={categorizedInstalled.aptos.length + categorizedNotInstalled.aptos.length}
-              />
-              <TabButton
-                category="solana"
-                selected={selectedCategory === 'solana'}
-                onClick={() => { setSelectedCategory('solana'); setError(null); }}
-                count={categorizedInstalled.solana.length + categorizedNotInstalled.solana.length}
-              />
-              <TabButton
-                category="ethereum"
-                selected={selectedCategory === 'ethereum'}
-                onClick={() => { setSelectedCategory('ethereum'); setError(null); }}
-                count={categorizedInstalled.ethereum.length + categorizedNotInstalled.ethereum.length}
-              />
             </div>
           </div>
 
@@ -373,30 +248,94 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
           )}
 
           {/* Wallet List */}
-          <div className="px-6 pb-6 max-h-[300px] overflow-y-auto">
-            <div className="space-y-2">
-              {/* Installed wallets */}
-              {currentInstalled.map(wallet => (
-                <WalletButton
-                  key={wallet.name}
-                  wallet={wallet}
-                  onConnect={() => handleConnect(wallet.name)}
-                  connecting={connectingWallet === wallet.name}
-                  isInstalled={true}
-                />
-              ))}
+          <div className="px-6 pb-6 max-h-[400px] overflow-y-auto">
+            <div className="space-y-3">
+              {/* Social Login (Aptos Connect) */}
+              {aptosConnectWallets.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider mb-2">
+                    Quick Sign In
+                  </div>
+                  {aptosConnectWallets.map(wallet => (
+                    <AptosConnectButton
+                      key={wallet.name}
+                      wallet={wallet}
+                      onConnect={() => handleConnect(wallet.name)}
+                      connecting={connectingWallet === wallet.name}
+                    />
+                  ))}
 
-              {/* Not installed wallets */}
-              {currentNotInstalled.length > 0 && (
-                <>
-                  {currentInstalled.length > 0 && (
-                    <div className="py-2">
-                      <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider">
-                        Available to Install
-                      </div>
-                    </div>
-                  )}
-                  {currentNotInstalled.slice(0, 5).map(wallet => (
+                  <div className="flex items-center gap-3 py-2">
+                    <div className="flex-1 h-px bg-[#3a4f60]" />
+                    <span className="text-xs text-[#6b7a8a]">or connect wallet</span>
+                    <div className="flex-1 h-px bg-[#3a4f60]" />
+                  </div>
+                </div>
+              )}
+
+              {/* Aptos Wallets */}
+              {aptosWallets.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider">
+                    Aptos Wallets
+                  </div>
+                  {aptosWallets.map(wallet => (
+                    <WalletButton
+                      key={wallet.name}
+                      wallet={wallet}
+                      onConnect={() => handleConnect(wallet.name)}
+                      connecting={connectingWallet === wallet.name}
+                      isInstalled={true}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Solana Wallets (X-Chain) */}
+              {solanaWallets.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider flex items-center gap-2">
+                    Solana Wallets
+                    <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 text-[8px] rounded">X-CHAIN</span>
+                  </div>
+                  {solanaWallets.map(wallet => (
+                    <WalletButton
+                      key={wallet.name}
+                      wallet={wallet}
+                      onConnect={() => handleConnect(wallet.name)}
+                      connecting={connectingWallet === wallet.name}
+                      isInstalled={true}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Ethereum Wallets (X-Chain) */}
+              {ethereumWallets.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider flex items-center gap-2">
+                    Ethereum Wallets
+                    <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 text-[8px] rounded">X-CHAIN</span>
+                  </div>
+                  {ethereumWallets.map(wallet => (
+                    <WalletButton
+                      key={wallet.name}
+                      wallet={wallet}
+                      onConnect={() => handleConnect(wallet.name)}
+                      connecting={connectingWallet === wallet.name}
+                      isInstalled={true}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Installable Wallets */}
+              {(aptosInstallable.length > 0 || solanaInstallable.length > 0 || ethereumInstallable.length > 0) && (
+                <div className="space-y-2 pt-2">
+                  <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider">
+                    Available to Install
+                  </div>
+                  {[...aptosInstallable, ...solanaInstallable, ...ethereumInstallable].slice(0, 4).map(wallet => (
                     <WalletButton
                       key={wallet.name}
                       wallet={wallet}
@@ -405,35 +344,32 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
                       isInstalled={false}
                     />
                   ))}
-                </>
+                </div>
               )}
 
               {/* Empty state */}
-              {currentInstalled.length === 0 && currentNotInstalled.length === 0 && (
+              {aptosConnectWallets.length === 0 && availableWallets.length === 0 && installableWallets.length === 0 && (
                 <div className="text-center py-8 text-[#6b7a8a]">
-                  No {selectedCategory} wallets available
+                  No wallets available
                 </div>
               )}
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="px-6 py-4 border-t border-[#3a4f60] bg-[#1c2b3a]/50">
-            <div className="text-center">
-              <p className="text-[10px] text-[#6b7a8a] mb-2">
-                Don't have a wallet?
-              </p>
+          {/* Footer with Aptos Connect link */}
+          {aptosConnectWallets.length > 0 && (
+            <div className="px-6 py-3 border-t border-[#3a4f60] bg-[#1c2b3a]/50">
               <a
-                href="https://petra.app"
+                href={APTOS_CONNECT_ACCOUNT_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-[#6343EC] hover:bg-[#5333DC] text-white text-sm font-medium rounded-lg transition-colors"
+                className="text-xs text-[#60a5fa] hover:text-[#3b82f6] flex items-center justify-center gap-1"
               >
-                <img src={WALLET_ICONS['Petra']} alt="Petra" className="w-5 h-5 rounded" />
-                Download Petra chrome extension
+                Learn more about Aptos Connect
+                <ExternalLink size={10} />
               </a>
             </div>
-          </div>
+          )}
         </motion.div>
       </motion.div>
     </AnimatePresence>
