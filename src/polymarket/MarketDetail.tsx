@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp } from "lucide-react";
+import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp, Wallet } from "lucide-react";
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { PolyChart, generateOutcomePrices } from "./PolyChart";
@@ -16,6 +17,13 @@ import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useHFTConnection } from "../hooks/useHFTConnection";
 import type { Category, Outcome } from "./types";
+
+// Initialize Aptos client for TVL fetching
+const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
+
+// Contract addresses
+const CONTRACT_ADDRESS = "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1";
+const MARKET_ADDRESS = "0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96";
 
 const timeRanges = ["1H", "6H", "1D", "1W", "1M", "ALL"];
 
@@ -32,6 +40,33 @@ export function MarketDetail() {
   const [_activeIndex, setActiveIndex] = useState<number | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [showStickyTitle, setShowStickyTitle] = useState(false);
+  const [highlightedOutcomeId, setHighlightedOutcomeId] = useState<string | null>(null);
+  const [tvl, setTvl] = useState<number | null>(null);
+
+  // Fetch TVL from contract
+  const fetchTVL = useCallback(async () => {
+    try {
+      const result = await aptos.view({
+        payload: {
+          function: `${CONTRACT_ADDRESS}::multi_outcome_market::get_multi_market_info`,
+          typeArguments: [],
+          functionArguments: [MARKET_ADDRESS],
+        },
+      });
+      // Result: [question, description, category, outcome_count, end_time, resolved, winning_outcome, total_collateral]
+      const totalCollateral = parseInt(result[7] as string);
+      setTvl(totalCollateral / 100_000_000); // Convert from octas to APT
+    } catch (error) {
+      console.error("Error fetching TVL:", error);
+    }
+  }, []);
+
+  // Fetch TVL on mount and periodically
+  useEffect(() => {
+    fetchTVL();
+    const interval = setInterval(fetchTVL, 10000); // Refresh every 10 seconds
+    return () => clearInterval(interval);
+  }, [fetchTVL]);
 
   // Get trading functions from hook
   const {
@@ -261,27 +296,41 @@ export function MarketDetail() {
           </h1>
         </div>
 
-        {/* Outcome Legend */}
+        {/* Outcome Legend - Clickable to highlight */}
         {market.outcomes && (
           <div
             className={`px-4 pb-4 flex flex-wrap gap-3 transition-all duration-300 delay-200 ${
               isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
-            {market.outcomes.map((outcome) => (
-              <div
-                key={outcome.id}
-                className="flex items-center gap-1.5"
-              >
-                <div
-                  className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: outcome.color }}
-                />
-                <span className="text-poly-textSecondary text-xs">
-                  {outcome.name} {Math.round(outcome.price * 100)}%
-                </span>
-              </div>
-            ))}
+            {market.outcomes.map((outcome) => {
+              const isHighlighted = highlightedOutcomeId === outcome.id;
+              const isDimmed = highlightedOutcomeId && !isHighlighted;
+
+              return (
+                <button
+                  key={outcome.id}
+                  onClick={() => setHighlightedOutcomeId(isHighlighted ? null : outcome.id)}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-all ${
+                    isHighlighted
+                      ? "bg-poly-surface ring-1 ring-poly-blue"
+                      : isDimmed
+                      ? "opacity-50 hover:opacity-75"
+                      : "hover:bg-poly-surface/50"
+                  }`}
+                >
+                  <div
+                    className="w-2 h-2 rounded-full transition-colors"
+                    style={{ backgroundColor: isDimmed ? "#4a5568" : outcome.color }}
+                  />
+                  <span className={`text-xs transition-colors ${
+                    isDimmed ? "text-poly-textMuted" : "text-poly-textSecondary"
+                  }`}>
+                    {outcome.name} {Math.round(outcome.price * 100)}%
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -295,6 +344,7 @@ export function MarketDetail() {
             outcomes={chartOutcomes}
             onIndexChange={setActiveIndex}
             width={Math.min(800, window.innerWidth - 80)}
+            highlightedOutcomeId={highlightedOutcomeId}
           />
         </div>
 
@@ -481,6 +531,15 @@ export function MarketDetail() {
             <BarChart3 size={20} color="#8297a3" strokeWidth={2.5} />
             <span className="text-[#8297a3] text-base flex-1">Volume</span>
             <span className="text-white text-base font-semibold">{market.volume}</span>
+          </div>
+
+          {/* TVL Row */}
+          <div className="flex items-center gap-3 py-4 border-b border-[#2c3f4f]">
+            <Wallet size={20} color="#8297a3" strokeWidth={2.5} />
+            <span className="text-[#8297a3] text-base flex-1">Total Liquidity (TVL)</span>
+            <span className="text-white text-base font-semibold">
+              {tvl !== null ? `${tvl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} APT` : 'Loading...'}
+            </span>
           </div>
 
           {/* End Date Row */}

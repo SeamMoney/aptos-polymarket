@@ -15,6 +15,7 @@ interface PolyChartProps {
   outcomes: OutcomeData[];
   onIndexChange?: (index: number | null) => void;
   width?: number;
+  highlightedOutcomeId?: string | null; // When set, only this outcome is fully colored
 }
 
 // Seeded random for consistent chart patterns
@@ -24,36 +25,34 @@ const seededRandom = (seed: number) => {
 };
 
 // Generate realistic step-like prices that look like actual trading data
-// When prices are similar (like all at ~17%), we spread them visually
+// Prices stay realistic - within reasonable bounds of current price
 export const generateOutcomePrices = (
   outcomeId: string,
   currentPrice: number,  // Chart must end here
   numPoints: number,
   patternIndex: number,
-  totalOutcomes: number = 6  // How many outcomes total (for spreading)
+  _totalOutcomes: number = 6  // How many outcomes total (for spreading)
 ): number[] => {
   const prices: number[] = [];
 
   const seed = outcomeId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + patternIndex;
-  const endPrice = Math.max(0.05, Math.min(0.95, currentPrice));
+  const endPrice = Math.max(0.02, Math.min(0.98, currentPrice));
 
-  // When all outcomes are similar (within 10% of each other), spread them more visually
-  // Each outcome gets a different "lane" in the chart
-  const spreadOffset = (patternIndex - totalOutcomes / 2) * 0.08; // Spread ±24% from center
-
-  // Determine starting price based on pattern - with MUCH more variation
+  // Start price varies but stays realistic relative to end price
+  // For a 17% outcome, start might be 10-25%. For a 50% outcome, start might be 35-65%
   const patternType = patternIndex % 6;
+  const variance = Math.min(0.15, endPrice * 0.5); // Variance scales with price
   let startPrice: number;
 
   switch (patternType) {
-    case 0: startPrice = Math.max(0.08, 0.45 + spreadOffset + seededRandom(seed) * 0.15); break; // High starter
-    case 1: startPrice = Math.max(0.05, 0.15 + spreadOffset + seededRandom(seed) * 0.1); break;  // Low starter
-    case 2: startPrice = 0.35 + spreadOffset + (seededRandom(seed) - 0.5) * 0.2; break; // Mid
-    case 3: startPrice = 0.08 + seededRandom(seed) * 0.1; break; // Will spike up from very low
-    case 4: startPrice = Math.min(0.9, 0.55 + seededRandom(seed) * 0.15); break; // Will drop down
-    default: startPrice = 0.25 + spreadOffset + (seededRandom(seed) - 0.5) * 0.15;
+    case 0: startPrice = endPrice - variance * (0.5 + seededRandom(seed) * 0.5); break; // Trending up
+    case 1: startPrice = endPrice + variance * (0.5 + seededRandom(seed) * 0.5); break; // Trending down
+    case 2: startPrice = endPrice + (seededRandom(seed) - 0.5) * variance; break; // Sideways
+    case 3: startPrice = Math.max(0.02, endPrice - variance * 1.2); break; // Strong uptrend
+    case 4: startPrice = Math.min(0.98, endPrice + variance * 1.2); break; // Strong downtrend
+    default: startPrice = endPrice + (seededRandom(seed) - 0.5) * variance * 0.8;
   }
-  startPrice = Math.max(0.03, Math.min(0.97, startPrice));
+  startPrice = Math.max(0.02, Math.min(0.98, startPrice));
 
   // Generate key price levels (step changes) - like real trading
   const numSteps = 15 + Math.floor(seededRandom(seed * 7) * 20); // 15-35 distinct price levels
@@ -62,24 +61,29 @@ export const generateOutcomePrices = (
   // First point
   stepPoints.push({ t: 0, price: startPrice });
 
-  // Generate random step changes throughout - with MORE dramatic movements
+  // Generate random step changes throughout - realistic movements
   let currentStepPrice = startPrice;
   for (let s = 1; s < numSteps; s++) {
     const t = s / numSteps;
     const targetAtT = startPrice + (endPrice - startPrice) * t;
 
-    // Random jump from current level - BIGGER jumps for visual interest
-    const jumpSize = (seededRandom(seed * 100 + s) - 0.5) * 0.25;
-    const drift = (targetAtT - currentStepPrice) * 0.2; // Weaker drift = more wandering
+    // Random jump - scaled to reasonable market movements (max ~5% per step)
+    const maxJump = Math.min(0.05, variance * 0.4);
+    const jumpSize = (seededRandom(seed * 100 + s) - 0.5) * maxJump;
+    const drift = (targetAtT - currentStepPrice) * 0.3; // Drift toward target
 
-    // More frequent spikes (like volatile prediction markets)
+    // Occasional larger moves (like news events)
     const spikeChance = seededRandom(seed * 200 + s);
     let spike = 0;
-    if (spikeChance > 0.85) spike = 0.15 + seededRandom(seed * 300 + s) * 0.2; // Up spike
-    else if (spikeChance < 0.15) spike = -(0.15 + seededRandom(seed * 300 + s) * 0.2); // Down spike
+    if (spikeChance > 0.92) spike = maxJump * (0.5 + seededRandom(seed * 300 + s) * 0.5); // Up spike
+    else if (spikeChance < 0.08) spike = -maxJump * (0.5 + seededRandom(seed * 300 + s) * 0.5); // Down spike
 
     currentStepPrice = currentStepPrice + jumpSize + drift + spike;
-    currentStepPrice = Math.max(0.02, Math.min(0.98, currentStepPrice));
+
+    // Keep prices realistic - within reasonable bounds of start and end
+    const minBound = Math.min(startPrice, endPrice) - variance * 0.5;
+    const maxBound = Math.max(startPrice, endPrice) + variance * 0.5;
+    currentStepPrice = Math.max(Math.max(0.02, minBound), Math.min(Math.min(0.98, maxBound), currentStepPrice));
 
     // Add some randomness to when steps occur
     const stepT = t + (seededRandom(seed * 400 + s) - 0.5) * 0.05;
@@ -106,11 +110,11 @@ export const generateOutcomePrices = (
     let price = stepPoints[stepIndex].price;
 
     // Add tiny micro-noise to make it look more realistic (very small)
-    const microNoise = (seededRandom(seed * 5000 + i) - 0.5) * 0.008;
+    const microNoise = (seededRandom(seed * 5000 + i) - 0.5) * 0.005;
     price += microNoise;
 
-    // Clamp
-    price = Math.max(0.03, Math.min(0.97, price));
+    // Clamp to realistic bounds
+    price = Math.max(0.02, Math.min(0.98, price));
 
     // Force exact end price
     if (i === numPoints - 1) price = endPrice;
@@ -140,7 +144,7 @@ const generatePath = (
   return path;
 };
 
-export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH }: PolyChartProps) {
+export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highlightedOutcomeId }: PolyChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [cursorX, setCursorX] = useState<number>(0);
@@ -307,18 +311,34 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH }: Poly
             </g>
 
             {/* Chart lines - thicker strokes */}
-            {chartPaths.map(({ id, path, color, lastX, lastY }) => (
-              <g key={id}>
-                <path d={path} stroke={color} strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                {/* Pulsating outer ring */}
-                <circle cx={lastX} cy={lastY} r={8} fill={color} opacity={0.3}>
-                  <animate attributeName="r" values="5;12;5" dur="1.5s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0.4;0;0.4" dur="1.5s" repeatCount="indefinite" />
-                </circle>
-                {/* Solid end point */}
-                <circle cx={lastX} cy={lastY} r={5} fill={color} stroke="#1c2b3a" strokeWidth={2} />
-              </g>
-            ))}
+            {chartPaths.map(({ id, path, color, lastX, lastY }) => {
+              // If an outcome is highlighted, dim all others
+              const isHighlighted = !highlightedOutcomeId || highlightedOutcomeId === id;
+              const lineColor = isHighlighted ? color : "#4a5568";
+              const lineOpacity = isHighlighted ? 1 : 0.4;
+              const lineWidth = isHighlighted ? 2.5 : 1.5;
+
+              return (
+                <g key={id} style={{ opacity: lineOpacity, transition: 'opacity 0.2s ease' }}>
+                  <path d={path} stroke={lineColor} strokeWidth={lineWidth} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                  {/* Pulsating outer ring - only for highlighted or when none highlighted */}
+                  {isHighlighted && (
+                    <>
+                      <circle cx={lastX} cy={lastY} r={8} fill={lineColor} opacity={0.3}>
+                        <animate attributeName="r" values="5;12;5" dur="1.5s" repeatCount="indefinite" />
+                        <animate attributeName="opacity" values="0.4;0;0.4" dur="1.5s" repeatCount="indefinite" />
+                      </circle>
+                      {/* Solid end point */}
+                      <circle cx={lastX} cy={lastY} r={5} fill={lineColor} stroke="#1c2b3a" strokeWidth={2} />
+                    </>
+                  )}
+                  {/* Small end point for dimmed lines */}
+                  {!isHighlighted && (
+                    <circle cx={lastX} cy={lastY} r={3} fill={lineColor} stroke="#1c2b3a" strokeWidth={1} />
+                  )}
+                </g>
+              );
+            })}
           </svg>
 
           {/* Cursor line */}

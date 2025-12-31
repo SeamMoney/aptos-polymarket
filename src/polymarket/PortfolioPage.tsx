@@ -745,21 +745,14 @@ export function PortfolioPage() {
     }
   }, [connected, account?.address]);
 
-  // Fetch positions when tab changes to positions or on mount
+  // Fetch positions when tab changes to positions (not on initial mount - handled by trades effect)
   useEffect(() => {
     if (activeTab === 'positions') {
       fetchPositions();
     }
   }, [activeTab, fetchPositions]);
 
-  // Also fetch positions on initial load if connected
-  useEffect(() => {
-    if (connected) {
-      fetchPositions();
-    }
-  }, [connected, fetchPositions]);
-
-  // Fetch trade history
+  // Fetch trade history and reconstruct trade records for cost basis
   const fetchTrades = useCallback(async () => {
     if (!connected || !account?.address) {
       setTrades([]);
@@ -770,10 +763,35 @@ export function PortfolioPage() {
       setIsLoadingTrades(true);
       const address = account.address.toString();
 
+      // First, get outcome labels and current prices for mapping
+      let outcomeLabels: string[] = [];
+      let outcomePrices: number[] = [];
+      try {
+        const labelsResult = await aptos.view({
+          payload: {
+            function: `${CONTRACT_ADDRESS}::multi_outcome_market::get_outcome_labels`,
+            typeArguments: [],
+            functionArguments: [MARKET_ADDRESS],
+          },
+        });
+        outcomeLabels = labelsResult[0] as string[];
+
+        const pricesResult = await aptos.view({
+          payload: {
+            function: `${CONTRACT_ADDRESS}::multi_outcome_market::get_all_prices`,
+            typeArguments: [],
+            functionArguments: [MARKET_ADDRESS],
+          },
+        });
+        outcomePrices = (pricesResult[0] as string[]).map(p => parseInt(p));
+      } catch (e) {
+        console.error("Could not fetch outcome labels/prices:", e);
+      }
+
       // Fetch recent transactions for this account
       const transactions = await aptos.getAccountTransactions({
         accountAddress: address,
-        options: { limit: 50 },
+        options: { limit: 100 },
       });
 
       // Filter for market contract interactions
@@ -790,41 +808,76 @@ export function PortfolioPage() {
         const func = payload.function || '';
         const isMarketTx = MARKET_CONTRACTS.some(addr => func.includes(addr));
 
-        if (isMarketTx) {
+        if (isMarketTx && userTx.success) {
           // Parse the function name to determine trade type
           const funcName = func.split('::').pop() || '';
           let tradeType: 'buy' | 'sell' = 'buy';
           let outcome = '';
+          let outcomeIndex = 0;
 
-          if (funcName.includes('buy_yes') || funcName.includes('buy_outcome')) {
+          if (funcName.includes('buy_outcome')) {
             tradeType = 'buy';
-            outcome = funcName.includes('yes') ? 'Yes' : `Outcome ${payload.arguments?.[1] || 0}`;
+            outcomeIndex = parseInt(payload.arguments?.[1] || '0', 10);
+            outcome = outcomeLabels[outcomeIndex] || `Outcome ${outcomeIndex}`;
+          } else if (funcName.includes('sell_outcome')) {
+            tradeType = 'sell';
+            outcomeIndex = parseInt(payload.arguments?.[1] || '0', 10);
+            outcome = outcomeLabels[outcomeIndex] || `Outcome ${outcomeIndex}`;
+          } else if (funcName.includes('buy_yes')) {
+            tradeType = 'buy';
+            outcomeIndex = 0;
+            outcome = 'Yes';
           } else if (funcName.includes('buy_no')) {
             tradeType = 'buy';
+            outcomeIndex = 1;
             outcome = 'No';
-          } else if (funcName.includes('sell_yes') || funcName.includes('sell_outcome')) {
+          } else if (funcName.includes('sell_yes')) {
             tradeType = 'sell';
-            outcome = funcName.includes('yes') ? 'Yes' : `Outcome ${payload.arguments?.[1] || 0}`;
+            outcomeIndex = 0;
+            outcome = 'Yes';
           } else if (funcName.includes('sell_no')) {
             tradeType = 'sell';
+            outcomeIndex = 1;
             outcome = 'No';
           } else {
             continue; // Not a buy/sell transaction
           }
 
-          // Parse amount from arguments (usually in octas)
-          const amountArg = payload.arguments?.[1] || payload.arguments?.[2] || '0';
+          // Parse amount from arguments
+          // For buy_outcome: args are [market_addr, outcome_index, amount, min_tokens]
+          // For sell_outcome: args are [market_addr, outcome_index, tokens, min_collateral]
+          const amountArgIndex = funcName.includes('outcome') ? 2 : 1;
+          const amountArg = payload.arguments?.[amountArgIndex] || '0';
           const amountOctas = parseInt(amountArg, 10);
           const amountAPT = amountOctas / 100_000_000;
+
+          const timestamp = parseInt(userTx.timestamp, 10) / 1000;
 
           marketTrades.push({
             hash: userTx.hash,
             type: tradeType,
             outcome,
             amount: amountAPT,
-            timestamp: parseInt(userTx.timestamp, 10) / 1000, // Convert to seconds
+            timestamp,
             success: userTx.success,
           });
+
+          // Also save as TradeRecord for cost basis tracking
+          // Use current price as estimate (best we can do without historical data)
+          const estimatedPrice = outcomePrices[outcomeIndex] || 20; // Default 20% if unknown
+          const estimatedTokens = estimatedPrice > 0 ? amountAPT / (estimatedPrice / 100) : amountAPT;
+
+          const tradeRecord: TradeRecord = {
+            timestamp: timestamp * 1000, // Convert back to ms
+            outcomeIndex,
+            outcomeName: outcome,
+            type: tradeType,
+            tokens: estimatedTokens,
+            pricePerToken: estimatedPrice,
+            totalCost: amountAPT,
+            txHash: userTx.hash,
+          };
+          saveTradeRecord(tradeRecord);
         }
       }
 
@@ -843,6 +896,18 @@ export function PortfolioPage() {
       fetchTrades();
     }
   }, [activeTab, fetchTrades]);
+
+  // Fetch trades first on initial connect to populate trade records for cost basis
+  // Then refetch positions to get accurate cost basis data
+  useEffect(() => {
+    if (connected) {
+      // Fetch trades first, then positions with updated cost basis
+      fetchTrades().then(() => {
+        // After trades are saved, refetch positions to get accurate cost basis
+        fetchPositions();
+      });
+    }
+  }, [connected]); // Intentionally not including fetchTrades and fetchPositions to prevent loops
 
   // Format balance for display
   const formatBalance = (val: number) => {
