@@ -179,9 +179,21 @@ export function usePolymarkets(): PolymarketsHook {
     return [...convertedMultiMarkets, ...convertedBinaryMarkets];
   }, [convertedBinaryMarkets, convertedMultiMarkets]);
 
-  // Get market by ID
+  // Get market by ID (supports both prefixed IDs and raw addresses)
   const getMarket = useCallback((id: string): Market | undefined => {
-    return allMarkets.find(m => m.id === id);
+    // Direct match first
+    let market = allMarkets.find(m => m.id === id);
+    if (market) return market;
+
+    // Try with prefixes if raw address was passed
+    if (!id.startsWith('binary-') && !id.startsWith('multi-')) {
+      market = allMarkets.find(m => m.id === `multi-${id}` || m.id === `binary-${id}`);
+      if (market) return market;
+    }
+
+    // Try matching the address part (strip prefix if searching by prefixed ID)
+    const searchAddress = id.replace('binary-', '').replace('multi-', '');
+    return allMarkets.find(m => m.id.endsWith(searchAddress));
   }, [allMarkets]);
 
   // Parse market ID to get address and type
