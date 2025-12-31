@@ -180,22 +180,28 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
   const solanaInstallable = installableWallets.filter(w => w.name.includes('Solana'));
   const ethereumInstallable = installableWallets.filter(w => w.name.includes('Ethereum'));
 
-  const handleConnect = async (walletName: string) => {
-    try {
-      setError(null);
-      setConnectingWallet(walletName);
-      await connect(walletName);
-    } catch (err) {
-      console.error('Failed to connect:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      if (errorMessage.includes('User rejected') || errorMessage.includes('rejected')) {
-        setError('Connection cancelled by user.');
-      } else {
-        setError(`Failed to connect. Please try again.`);
-      }
-    } finally {
+  // IMPORTANT: Safari blocks popups if there's ANY async operation between
+  // the user click and window.open(). We must call connect() IMMEDIATELY
+  // without any state updates first to prevent popup blocking.
+  // The connect() function returns void - async handling is internal.
+  // Errors are handled via the onError callback in the provider.
+  const handleConnect = (walletName: string) => {
+    // Clear any previous error
+    setError(null);
+
+    // Call connect IMMEDIATELY - this must be the first thing that happens
+    // after the user click to prevent Safari popup blocking
+    connect(walletName);
+
+    // Now we can safely update UI state
+    setConnectingWallet(walletName);
+
+    // The useEffect watching `connected` will close the modal on success
+    // Errors are caught by the provider's onError callback
+    // We'll clear the connecting state after a timeout as a fallback
+    setTimeout(() => {
       setConnectingWallet(null);
-    }
+    }, 15000); // 15 second timeout for slow connections
   };
 
   if (!isOpen) return null;

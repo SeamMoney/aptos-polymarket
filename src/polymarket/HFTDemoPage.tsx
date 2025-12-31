@@ -1,21 +1,20 @@
 /**
- * HFT Demo Page - High-Performance Trading Visualization
- * Showcases 30k+ TPS on Aptos with Polymarket-style UI
+ * HFT Demo Page - TPS Graph + Trade Feed + Block River
+ * Clean, focused demo page for showcasing 30k TPS
  */
 
-import { useState, useEffect } from 'react';
+// React hooks not currently needed but may be used later
 import { motion } from 'framer-motion';
-import { Play, Square, Zap, TrendingUp, Users, Activity } from 'lucide-react';
-import { PixiTradeViz } from '../components/PixiTradeViz';
+import { Zap, TrendingUp, Activity, BarChart3, ArrowLeft } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { PolyHeader } from './PolyHeader';
+import { TradeFeed } from './TradeFeed';
+import { BlockRiver } from './BlockRiver';
+import { HFTConnectButton } from './HFTConnectButton';
 import { useHFTConnection } from '../hooks/useHFTConnection';
 
-// Market data
-const MARKET = {
-  question: "Who will be the Republican Presidential Nominee in 2028?",
-  outcomes: ["Trump Jr", "Vance", "DeSantis", "Haley", "Ramaswamy", "Other"],
-  image: "https://images.unsplash.com/photo-1540910419892-4a36d2c3266c?w=400",
-};
+// Market outcomes for the demo
+const OUTCOMES = ["Trump Jr", "Vance", "DeSantis", "Haley", "Ramaswamy", "Other"];
 
 export function HFTDemoPage() {
   const {
@@ -29,33 +28,38 @@ export function HFTDemoPage() {
     error,
   } = useHFTConnection();
 
-  const [showStats] = useState(true);
-  const [vizSize, setVizSize] = useState({ width: 800, height: 500 });
-
-  // Responsive sizing
-  useEffect(() => {
-    const updateSize = () => {
-      const width = Math.min(window.innerWidth - 40, 1200);
-      const height = Math.min(window.innerHeight - 300, 600);
-      setVizSize({ width, height });
-    };
-    updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
-  }, []);
-
-  // Format large numbers
+  // Format numbers
   const formatNumber = (n: number) => {
     if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
     if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
     return n.toLocaleString();
   };
 
+  // TPS color based on level
+  const getTpsColor = (tps: number) => {
+    if (tps > 20000) return '#22c55e';
+    if (tps > 10000) return '#60a5fa';
+    if (tps > 1000) return '#fbbf24';
+    return '#8297a3';
+  };
+
+  const currentTps = stats.currentTps || 0;
+  const peakTps = stats.peakTps || 0;
+
   return (
-    <div className="min-h-screen bg-poly-bg">
+    <div className="min-h-screen bg-[#0d1117]">
       <PolyHeader />
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="max-w-6xl mx-auto px-4 py-6">
+        {/* Back link */}
+        <Link
+          to="/polymarket"
+          className="inline-flex items-center gap-2 text-[#6b7a8a] hover:text-white mb-6 transition-colors"
+        >
+          <ArrowLeft size={16} />
+          <span className="text-sm">Back to Markets</span>
+        </Link>
+
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -63,181 +67,142 @@ export function HFTDemoPage() {
           className="text-center mb-8"
         >
           <div className="flex items-center justify-center gap-3 mb-2">
-            <Zap className="text-yellow-400" size={32} />
-            <h1 className="text-3xl font-bold text-white">
+            <Zap className="text-yellow-400" size={28} />
+            <h1 className="text-2xl font-bold text-white">
               Aptos HFT Demo
             </h1>
-            <Zap className="text-yellow-400" size={32} />
+            <Zap className="text-yellow-400" size={28} />
           </div>
-          <p className="text-poly-textSecondary text-lg">
-            {MARKET.question}
+          <p className="text-[#6b7a8a] text-sm">
+            30,000+ TPS on Aptos Testnet
           </p>
-          <div className="flex items-center justify-center gap-6 mt-4 text-sm">
-            <div className="flex items-center gap-2">
-              <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-              <span className="text-poly-textSecondary">
-                {isConnected ? 'Server Connected' : 'Server Offline'}
-              </span>
-            </div>
-            {isRunning && (
-              <div className="flex items-center gap-2">
-                <Activity className="text-blue-400 animate-pulse" size={16} />
-                <span className="text-blue-400 font-medium">LIVE</span>
-              </div>
-            )}
-          </div>
         </motion.div>
 
-        {/* Main Visualization */}
+        {/* Big TPS Display */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
+          initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2 }}
-          className="flex justify-center mb-6"
+          className="text-center mb-8"
         >
-          <PixiTradeViz
-            width={vizSize.width}
-            height={vizSize.height}
-            tps={stats.currentTps || 0}
-            peakTps={stats.peakTps || 0}
-            totalTrades={stats.totalTrades}
-            trades={trades}
-            outcomes={MARKET.outcomes}
-            prices={[50, 50, 50, 50, 50, 50]} // Would come from real data
-            isRunning={isRunning}
-          />
-        </motion.div>
+          <div
+            className="text-7xl md:text-8xl font-bold tabular-nums"
+            style={{
+              color: getTpsColor(currentTps),
+              textShadow: `0 0 40px ${getTpsColor(currentTps)}60`,
+            }}
+          >
+            {formatNumber(currentTps)}
+          </div>
+          <div className="text-xl text-[#6b7a8a] mt-2">
+            Transactions Per Second
+          </div>
 
-        {/* Control Panel */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="flex justify-center gap-4 mb-8"
-        >
-          {!isRunning ? (
-            <button
-              onClick={startTrading}
-              disabled={!isConnected}
-              className={`flex items-center gap-3 px-8 py-4 rounded-xl text-white text-lg font-bold transition-all ${
-                isConnected
-                  ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-lg shadow-green-500/30'
-                  : 'bg-gray-600 cursor-not-allowed'
-              }`}
-            >
-              <Play size={24} fill="white" />
-              Start 30K TPS Demo
-            </button>
-          ) : (
-            <button
-              onClick={stopTrading}
-              className="flex items-center gap-3 px-8 py-4 rounded-xl text-white text-lg font-bold bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 shadow-lg shadow-red-500/30 transition-all"
-            >
-              <Square size={24} fill="white" />
-              Stop Demo
-            </button>
+          {/* Peak TPS */}
+          {peakTps > 0 && (
+            <div className="flex items-center justify-center gap-2 mt-3 text-sm">
+              <TrendingUp size={16} className="text-[#22c55e]" />
+              <span className="text-[#22c55e]">Peak: {formatNumber(peakTps)} TPS</span>
+            </div>
           )}
         </motion.div>
 
+        {/* Connect Button */}
+        <div className="flex justify-center mb-8">
+          <HFTConnectButton
+            isConnected={isConnected}
+            isRunning={isRunning}
+            onStart={startTrading}
+            onStop={stopTrading}
+          />
+        </div>
+
+        {/* Error display */}
         {error && (
-          <div className="max-w-md mx-auto mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-400 text-center">
+          <div className="max-w-md mx-auto mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-400 text-center text-sm">
             {error}
           </div>
         )}
 
-        {/* Stats Grid */}
-        {showStats && (
+        {/* Stats Row */}
+        <div className="grid grid-cols-3 gap-4 max-w-2xl mx-auto mb-8">
+          <div className="bg-[#1c2b3a] rounded-xl p-4 text-center border border-[#2c3f4f]">
+            <Activity size={20} className="mx-auto mb-2 text-[#60a5fa]" />
+            <div className="text-2xl font-bold text-white">{formatNumber(stats.totalTrades)}</div>
+            <div className="text-xs text-[#6b7a8a]">Total Trades</div>
+          </div>
+          <div className="bg-[#1c2b3a] rounded-xl p-4 text-center border border-[#2c3f4f]">
+            <BarChart3 size={20} className="mx-auto mb-2 text-[#22c55e]" />
+            <div className="text-2xl font-bold text-white">{(stats.successRate || 0).toFixed(1)}%</div>
+            <div className="text-xs text-[#6b7a8a]">Success Rate</div>
+          </div>
+          <div className="bg-[#1c2b3a] rounded-xl p-4 text-center border border-[#2c3f4f]">
+            <Zap size={20} className="mx-auto mb-2 text-[#fbbf24]" />
+            <div className="text-2xl font-bold text-white">{stats.avgLatency?.toFixed(0) || 0}ms</div>
+            <div className="text-xs text-[#6b7a8a]">Avg Latency</div>
+          </div>
+        </div>
+
+        {/* TPS Chart */}
+        {tpsHistory.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto mb-8"
+            className="mb-8"
           >
-            <StatCard
-              icon={<Zap className="text-yellow-400" />}
-              label="Current TPS"
-              value={formatNumber(stats.currentTps || 0)}
-              highlight
-            />
-            <StatCard
-              icon={<TrendingUp className="text-green-400" />}
-              label="Peak TPS"
-              value={formatNumber(stats.peakTps || 0)}
-            />
-            <StatCard
-              icon={<Activity className="text-blue-400" />}
-              label="Total Trades"
-              value={formatNumber(stats.totalTrades)}
-            />
-            <StatCard
-              icon={<Users className="text-purple-400" />}
-              label="Success Rate"
-              value={`${stats.successRate?.toFixed(1) || 0}%`}
-            />
+            <div className="bg-[#1c2b3a] rounded-xl p-4 border border-[#2c3f4f]">
+              <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+                <BarChart3 size={16} className="text-[#60a5fa]" />
+                TPS History
+              </h3>
+              <TPSGraph history={tpsHistory} height={120} />
+            </div>
           </motion.div>
         )}
 
-        {/* TPS History Chart */}
-        {isRunning && tpsHistory.length > 0 && (
+        {/* Main Content Grid */}
+        <div className="grid md:grid-cols-2 gap-6 mb-8">
+          {/* Trade Feed */}
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="max-w-4xl mx-auto mb-8"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.1 }}
           >
-            <div className="bg-poly-card rounded-xl p-4 border border-poly-border">
-              <h3 className="text-white font-semibold mb-4">TPS History</h3>
-              <TPSChart history={tpsHistory} width={800} height={120} />
+            <TradeFeed
+              trades={trades}
+              maxItems={15}
+              outcomes={OUTCOMES}
+            />
+          </motion.div>
+
+          {/* Block River */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+          >
+            <div className="bg-[#1c2b3a] rounded-xl border border-[#2c3f4f] overflow-hidden">
+              <div className="px-4 py-3 border-b border-[#2c3f4f]">
+                <span className="text-sm font-semibold text-white">Block River</span>
+                <span className="text-xs text-[#6b7a8a] ml-2">Live Visualization</span>
+              </div>
+              <BlockRiver height={300} />
             </div>
           </motion.div>
-        )}
+        </div>
 
-        {/* Aptos Comparison */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="max-w-4xl mx-auto"
-        >
-          <div className="bg-gradient-to-r from-[#2a3d4e] to-[#1f3044] rounded-xl p-6 border border-[#3a4f60]">
-            <h3 className="text-white text-xl font-bold mb-4">Why Aptos?</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <ComparisonItem
-                chain="Aptos"
-                tps="160,000+"
-                finality="~400ms"
-                fees="<$0.001"
-                highlight
-              />
-              <ComparisonItem
-                chain="Polygon"
-                tps="~7,000"
-                finality="~2s"
-                fees="~$0.01"
-              />
-              <ComparisonItem
-                chain="Ethereum"
-                tps="~15"
-                finality="~12min"
-                fees="~$5+"
-              />
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Instructions */}
+        {/* Server Instructions */}
         {!isConnected && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            className="max-w-2xl mx-auto mt-8 p-6 bg-poly-card rounded-xl border border-poly-border"
+            className="max-w-xl mx-auto p-6 bg-[#1c2b3a] rounded-xl border border-[#2c3f4f]"
           >
             <h3 className="text-white font-semibold mb-3">Start the HFT Server</h3>
-            <code className="block bg-black/30 p-4 rounded-lg text-green-400 font-mono text-sm">
+            <code className="block bg-black/30 p-4 rounded-lg text-green-400 font-mono text-sm mb-3">
               ./scripts/run-3-workers.sh normal 60
             </code>
-            <p className="text-poly-textSecondary text-sm mt-3">
-              This starts 3 distributed workers (20 accounts) for ~30k TPS using your synced fullnode.
+            <p className="text-[#6b7a8a] text-sm">
+              Starts 3 workers with 20 accounts for ~30k TPS using your synced fullnode.
             </p>
           </motion.div>
         )}
@@ -246,101 +211,52 @@ export function HFTDemoPage() {
   );
 }
 
-// Stat Card Component
-function StatCard({
-  icon,
-  label,
-  value,
-  highlight,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className={`p-4 rounded-xl border ${
-        highlight
-          ? 'bg-gradient-to-br from-blue-500/20 to-purple-500/20 border-blue-500/50'
-          : 'bg-poly-card border-poly-border'
-      }`}
-    >
-      <div className="flex items-center gap-2 mb-2">
-        {icon}
-        <span className="text-poly-textSecondary text-sm">{label}</span>
-      </div>
-      <div className={`text-2xl font-bold ${highlight ? 'text-blue-400' : 'text-white'}`}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-// Comparison Item
-function ComparisonItem({
-  chain,
-  tps,
-  finality,
-  fees,
-  highlight,
-}: {
-  chain: string;
-  tps: string;
-  finality: string;
-  fees: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className={`p-4 rounded-lg ${
-        highlight ? 'bg-green-500/20 border border-green-500/50' : 'bg-black/20'
-      }`}
-    >
-      <div className={`text-lg font-bold mb-3 ${highlight ? 'text-green-400' : 'text-white'}`}>
-        {chain}
-      </div>
-      <div className="space-y-2 text-sm">
-        <div className="flex justify-between">
-          <span className="text-poly-textSecondary">Peak TPS</span>
-          <span className="text-white font-medium">{tps}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-poly-textSecondary">Finality</span>
-          <span className="text-white font-medium">{finality}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-poly-textSecondary">Fees</span>
-          <span className="text-white font-medium">{fees}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Simple TPS Chart
-function TPSChart({ history, width, height }: { history: number[]; width: number; height: number }) {
+/**
+ * Simple TPS Graph using SVG
+ */
+function TPSGraph({ history, height }: { history: number[]; height: number }) {
+  const width = 800;
   const max = Math.max(...history, 1000);
+  const padding = 20;
+
   const points = history.map((tps, i) => {
-    const x = (i / (history.length - 1)) * width;
-    const y = height - (tps / max) * height;
+    const x = padding + (i / (history.length - 1)) * (width - padding * 2);
+    const y = height - padding - (tps / max) * (height - padding * 2);
     return `${x},${y}`;
   }).join(' ');
+
+  const areaPoints = `${padding},${height - padding} ${points} ${width - padding},${height - padding}`;
 
   return (
     <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
       <defs>
         <linearGradient id="tpsGradient" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.5" />
+          <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.4" />
           <stop offset="100%" stopColor="#60a5fa" stopOpacity="0" />
         </linearGradient>
       </defs>
+
+      {/* Grid lines */}
+      {[0.25, 0.5, 0.75].map((ratio) => (
+        <line
+          key={ratio}
+          x1={padding}
+          y1={height - padding - ratio * (height - padding * 2)}
+          x2={width - padding}
+          y2={height - padding - ratio * (height - padding * 2)}
+          stroke="#2c3f4f"
+          strokeWidth="1"
+        />
+      ))}
+
       {history.length > 1 && (
         <>
+          {/* Area fill */}
           <polygon
-            points={`0,${height} ${points} ${width},${height}`}
+            points={areaPoints}
             fill="url(#tpsGradient)"
           />
+          {/* Line */}
           <polyline
             points={points}
             fill="none"
@@ -349,6 +265,15 @@ function TPSChart({ history, width, height }: { history: number[]; width: number
           />
         </>
       )}
+
+      {/* Labels */}
+      <text x={padding} y={height - 5} fill="#6b7a8a" fontSize="10">0</text>
+      <text x={width - padding} y={height - 5} fill="#6b7a8a" fontSize="10" textAnchor="end">
+        {history.length}s
+      </text>
+      <text x={5} y={padding + 5} fill="#6b7a8a" fontSize="10">
+        {(max / 1000).toFixed(0)}K
+      </text>
     </svg>
   );
 }

@@ -15,6 +15,7 @@ export interface Trade {
   error?: string;
   timestamp: number;
   explorerUrl?: string;
+  outcome?: number; // For multi-outcome markets
 }
 
 export interface Stats {
