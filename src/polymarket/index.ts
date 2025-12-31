@@ -25,3 +25,9 @@ export { HFTDemoPage } from "./HFTDemoPage";
 
 // Navigation
 export { BottomNav } from "./BottomNav";
+
+// HFT Demo Components
+export { FloatingTPSMeter } from "./FloatingTPSMeter";
+export { TradeFeed } from "./TradeFeed";
+export { BlockRiver } from "./BlockRiver";
+export { HFTConnectButton, HFTConnectButtonCompact } from "./HFTConnectButton";

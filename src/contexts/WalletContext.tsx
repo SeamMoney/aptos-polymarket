@@ -13,12 +13,6 @@ interface WalletProviderProps {
   children: ReactNode;
 }
 
-// Generate dappImageURI on client side
-let dappImageURI: string | undefined;
-if (typeof window !== 'undefined') {
-  dappImageURI = `${window.location.origin}/favicon.ico`;
-}
-
 export function WalletProvider({ children }: WalletProviderProps) {
   return (
     <AptosWalletAdapterProvider
@@ -29,11 +23,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
           testnet: import.meta.env.VITE_APTOS_API_KEY_TESTNET,
           devnet: import.meta.env.VITE_APTOS_API_KEY_DEVNET,
           mainnet: import.meta.env.VITE_APTOS_API_KEY_MAINNET,
-        },
-        aptosConnect: {
-          dappId: 'b5c4f4e2-8d7a-4f3b-9c1e-6a2d8f5e7b3c', // UUID for Polymarket on Aptos
-          dappName: 'Polymarket on Aptos',
-          dappImageURI,
         },
         crossChainWallets: true,
       }}
