@@ -681,7 +681,7 @@ export function PortfolioPage() {
       });
       const tokenBalances = (positionsResult[0] as string[]).map(b => parseInt(b));
 
-      // Get current prices
+      // Get current prices and normalize them (must sum to 100%)
       const pricesResult = await aptos.view({
         payload: {
           function: `${CONTRACT_ADDRESS}::multi_outcome_market::get_all_prices`,
@@ -689,7 +689,12 @@ export function PortfolioPage() {
           functionArguments: [MARKET_ADDRESS],
         },
       });
-      const prices = (pricesResult[0] as string[]).map(p => parseInt(p));
+      const rawPrices = (pricesResult[0] as string[]).map(p => parseInt(p));
+      // Normalize prices to sum to 100% (same as useMultiMarkets)
+      const priceSum = rawPrices.reduce((acc, p) => acc + p, 0);
+      const prices = rawPrices.map(p =>
+        priceSum > 0 ? (p / priceSum) * 100 : 100 / rawPrices.length
+      );
 
       // Build positions array (only include outcomes with tokens)
       const userPositions: PositionItem[] = [];

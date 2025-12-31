@@ -173,14 +173,20 @@ export function TradingSheet({
           ? Math.round(market.yesPrice * 100)
           : Math.round(market.noPrice * 100);
 
+        // Calculate tokens received: cost / price
+        // amount is in cents, so totalCost = amount / 100 in APT
+        // currentPriceForTrade is 0-100 (e.g., 20 for 20%)
+        const totalCostAPT = amount / 100;
+        const tokensReceived = totalCostAPT / (currentPriceForTrade / 100); // e.g., 800 / 0.20 = 4000 tokens
+
         const tradeRecord: TradeRecord = {
           timestamp: Date.now(),
           outcomeIndex,
           outcomeName,
           type: direction,
-          tokens: amount / 100, // Amount in APT
+          tokens: tokensReceived,
           pricePerToken: currentPriceForTrade,
-          totalCost: amount / 100, // APT spent
+          totalCost: totalCostAPT,
           txHash: hash,
         };
         saveTradeRecord(tradeRecord);

@@ -10,6 +10,8 @@ interface LiveOrderBookProps {
   noReserve: number;
   trades?: Trade[];
   isConnected?: boolean;
+  isMultiOutcome?: boolean;
+  tvl?: number; // Total value locked in market
 }
 
 interface LiquidityLevel {
@@ -26,12 +28,6 @@ function calculateBuyOutput(baseReserve: number, outcomeReserve: number, amountI
   return (outcomeReserve * amountIn) / (baseReserve + amountIn);
 }
 
-function calculateSpotPrice(baseReserve: number, outcomeReserve: number): number {
-  if (baseReserve <= 0 || outcomeReserve <= 0) return 50;
-  const total = baseReserve + outcomeReserve;
-  return (baseReserve / total) * 100;
-}
-
 export function LiveOrderBook({
   yesPrice,
   noPrice,
@@ -39,21 +35,36 @@ export function LiveOrderBook({
   noReserve,
   trades = [],
   isConnected = false,
+  isMultiOutcome: _isMultiOutcome = false,
+  tvl = 0,
 }: LiveOrderBookProps) {
   const [expanded, setExpanded] = useState(true);
   const [tradeTab, setTradeTab] = useState<'yes' | 'no'>('yes');
   const [animatedTrades, setAnimatedTrades] = useState<Set<string>>(new Set());
 
-  // Calculate liquidity depth from AMM reserves
+  // Calculate liquidity depth from AMM reserves or price
   const { buyLevels, sellLevels, maxAmount } = useMemo(() => {
-    const baseReserve = yesReserve > 0 ? yesReserve : 1000;
-    const outcomeReserve = noReserve > 0 ? noReserve : 1000;
-    const spotPrice = calculateSpotPrice(baseReserve, outcomeReserve);
+    // For multi-outcome markets, use the actual price to calculate depth
+    // spotPrice is in cents (e.g., 20 for 20%)
+    const spotPrice = yesPrice;
+
+    // Estimate reserves from TVL and price if not provided
+    // In a CPMM: price = baseReserve / (baseReserve + outcomeReserve)
+    // If TVL = 6000 APT and we have 6 outcomes, each outcome has ~1000 APT base
+    const estimatedBaseReserve = tvl > 0 ? tvl / 6 : 1000;
+
+    // From price = base / (base + outcome): outcome = base * (1 - price/100) / (price/100)
+    const priceRatio = Math.max(0.01, spotPrice / 100); // Avoid division by zero
+    const estimatedOutcomeReserve = estimatedBaseReserve * (1 - priceRatio) / priceRatio;
+
+    const baseReserve = yesReserve > 0 ? yesReserve : estimatedBaseReserve;
+    const outcomeReserve = noReserve > 0 ? noReserve : estimatedOutcomeReserve;
 
     const tradeSizes = [0.1, 0.5, 1, 2, 5, 10, 25, 50];
 
     const buyLevels: LiquidityLevel[] = tradeSizes.map(amount => {
       const tokensOut = calculateBuyOutput(baseReserve, outcomeReserve, amount);
+      // Price per token in cents
       const avgPrice = tokensOut > 0 ? (amount / tokensOut) * 100 : spotPrice;
       const slippage = spotPrice > 0 ? ((avgPrice - spotPrice) / spotPrice) * 100 : 0;
       return { amount, tokensOut, avgPrice, slippage: Math.abs(slippage), side: 'buy' as const };
@@ -61,15 +72,15 @@ export function LiveOrderBook({
 
     const sellLevels: LiquidityLevel[] = tradeSizes.map(amount => {
       const tokensOut = calculateBuyOutput(outcomeReserve, baseReserve, amount);
-      const avgPrice = tokensOut > 0 ? (amount / tokensOut) * 100 : (100 - spotPrice);
-      const basePrice = 100 - spotPrice;
-      const slippage = basePrice > 0 ? ((avgPrice - basePrice) / basePrice) * 100 : 0;
+      // When selling tokens, you get APT out
+      const avgPrice = tokensOut > 0 ? (tokensOut / amount) * 100 : spotPrice;
+      const slippage = spotPrice > 0 ? ((spotPrice - avgPrice) / spotPrice) * 100 : 0;
       return { amount, tokensOut, avgPrice, slippage: Math.abs(slippage), side: 'sell' as const };
     }).filter(l => l.tokensOut > 0);
 
     const maxAmount = Math.max(...buyLevels.map(l => l.amount), ...sellLevels.map(l => l.amount));
     return { buyLevels, sellLevels, maxAmount };
-  }, [yesReserve, noReserve]);
+  }, [yesPrice, yesReserve, noReserve, tvl]);
 
   // Animate recent trades
   useEffect(() => {
@@ -90,7 +101,7 @@ export function LiveOrderBook({
 
   const formatAmount = (amount: number) => amount >= 10 ? amount.toFixed(0) : amount >= 1 ? amount.toFixed(1) : amount.toFixed(2);
   const formatTokens = (tokens: number) => tokens >= 100 ? tokens.toFixed(0) : tokens >= 10 ? tokens.toFixed(1) : tokens.toFixed(2);
-  const tvl = yesReserve + noReserve;
+  const displayTvl = tvl > 0 ? tvl : yesReserve + noReserve;
 
   return (
     <div className="rounded-2xl border-2 border-[#2c3f4f] overflow-hidden">
@@ -195,7 +206,7 @@ export function LiveOrderBook({
             </div>
             <div className="text-center">
               <span className="text-xs text-[#6b7a8a]">Spread: 1¢</span>
-              <div className="text-[10px] text-[#6b7a8a]">TVL: {tvl.toFixed(2)} APT</div>
+              <div className="text-[10px] text-[#6b7a8a]">TVL: {displayTvl.toLocaleString('en-US', { maximumFractionDigits: 2 })} APT</div>
             </div>
             <div className="flex flex-col items-end">
               <span className="text-xl font-bold text-[#ef4444] tabular-nums">{noPrice.toFixed(1)}¢</span>

@@ -340,12 +340,16 @@ export function MarketDetail() {
               isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
-            {chartOutcomes.map((outcome) => {
-              const outcomeId = outcome.id;
+            {chartOutcomes.map((chartOutcome) => {
+              const outcomeId = chartOutcome.id;
               const isHighlighted = highlightedOutcomeId === outcomeId;
               const isDimmed = highlightedOutcomeId && !isHighlighted;
-              // Get the last price from the price array (current price)
-              const currentPrice = outcome.prices[outcome.prices.length - 1];
+              // Get the REAL on-chain price from market.outcomes, not the static chart data
+              const realOutcome = market?.outcomes?.find(o =>
+                o.name.toLowerCase() === chartOutcome.name.toLowerCase() ||
+                o.name.toLowerCase().includes(chartOutcome.name.toLowerCase().split(' ')[0])
+              );
+              const currentPrice = realOutcome?.price ?? chartOutcome.prices[chartOutcome.prices.length - 1];
 
               return (
                 <button
@@ -361,12 +365,12 @@ export function MarketDetail() {
                 >
                   <div
                     className="w-2 h-2 rounded-full transition-colors"
-                    style={{ backgroundColor: isDimmed ? "#4a5568" : outcome.color }}
+                    style={{ backgroundColor: isDimmed ? "#4a5568" : chartOutcome.color }}
                   />
                   <span className={`text-xs transition-colors ${
                     isDimmed ? "text-poly-textMuted" : "text-poly-textSecondary"
                   }`}>
-                    {outcome.name} {Math.round(currentPrice * 100)}%
+                    {chartOutcome.name} {Math.round(currentPrice * 100)}%
                   </span>
                 </button>
               );
@@ -433,12 +437,23 @@ export function MarketDetail() {
           }`}
         >
           <LiveOrderBook
-            yesPrice={hftMarketInfo?.yesPrice || market.yesPrice * 100}
-            noPrice={hftMarketInfo?.noPrice || market.noPrice * 100}
+            yesPrice={
+              // For multi-outcome, use first outcome's price
+              market?.outcomes?.[0]?.price
+                ? market.outcomes[0].price * 100
+                : hftMarketInfo?.yesPrice || market.yesPrice * 100
+            }
+            noPrice={
+              market?.outcomes?.[0]?.price
+                ? (1 - market.outcomes[0].price) * 100
+                : hftMarketInfo?.noPrice || market.noPrice * 100
+            }
             yesReserve={hftReserves.yesReserve}
             noReserve={hftReserves.noReserve}
             trades={hftTrades}
             isConnected={hftConnected}
+            isMultiOutcome={!!market?.outcomes}
+            tvl={tvl || 0}
           />
         </div>
 
