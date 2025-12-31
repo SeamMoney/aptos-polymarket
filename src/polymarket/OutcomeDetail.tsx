@@ -17,8 +17,8 @@ import { TradingSheet } from "./TradingSheet";
 import { mockMarkets } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 
-const CHART_HEIGHT = 280;
-const CHART_PADDING_RIGHT = 60;
+const CHART_HEIGHT = 220;
+const CHART_PADDING_RIGHT = 50;
 
 // Seeded random for consistent data
 const seededRandom = (seed: number) => {
@@ -26,61 +26,69 @@ const seededRandom = (seed: number) => {
   return x - Math.floor(x);
 };
 
-// Generate price history for the outcome
+// Generate volatile price history for the outcome
 const generatePriceHistory = (
   outcomeId: string,
   basePrice: number,
   numPoints: number
 ) => {
-  const seed = outcomeId.charCodeAt(0) * 100 + (outcomeId.charCodeAt(1) || 0);
+  const seed = outcomeId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const points: number[] = [];
+
+  // Determine pattern type based on seed
+  const patternType = seed % 6;
 
   for (let i = 0; i < numPoints; i++) {
     const rand = seededRandom(seed * 1000 + i);
+    const rand2 = seededRandom(seed * 2000 + i);
     const t = i / numPoints;
     let price: number;
 
-    if (t < 0.55) {
-      price = 0.28 + (rand - 0.5) * 0.08;
-    } else if (t < 0.65) {
-      const spikeProgress = (t - 0.55) / 0.1;
-      price = 0.3 + spikeProgress * 0.45 + (rand - 0.5) * 0.05;
-    } else if (t < 0.75) {
-      price = 0.7 + (rand - 0.5) * 0.1;
-    } else if (t < 0.85) {
-      const dropProgress = (t - 0.75) / 0.1;
-      price = 0.7 - dropProgress * 0.25 + (rand - 0.5) * 0.08;
-    } else {
-      price = basePrice + (rand - 0.5) * 0.08;
+    // Base trend based on pattern type
+    let trend: number;
+    switch (patternType) {
+      case 0: // Volatile rise
+        trend = basePrice * 0.5 + (basePrice * 0.9) * t;
+        break;
+      case 1: // Volatile fall
+        trend = basePrice * 1.5 - (basePrice * 0.9) * t;
+        break;
+      case 2: // Wild swings
+        trend = basePrice + Math.sin(t * 8 + seed) * 0.25;
+        break;
+      case 3: // Spike and crash
+        trend = t < 0.4 ? basePrice + t * 0.8 : basePrice + 0.32 - (t - 0.4) * 0.6;
+        break;
+      case 4: // V-shaped recovery
+        trend = t < 0.5 ? basePrice - t * 0.4 : basePrice - 0.2 + (t - 0.5) * 0.6;
+        break;
+      default: // Choppy sideways
+        trend = basePrice + Math.sin(t * 15) * 0.12 + Math.cos(t * 7 + seed) * 0.08;
     }
 
-    price = Math.max(0.01, Math.min(0.99, price));
+    // Add significant volatility
+    const volatility = (rand - 0.5) * 0.15 + (rand2 - 0.5) * 0.1;
+
+    // Add sudden jumps/drops occasionally
+    const jumpChance = seededRandom(seed * 3000 + i);
+    const jump = jumpChance > 0.92 ? (rand - 0.5) * 0.2 : jumpChance < 0.08 ? (rand - 0.5) * 0.2 : 0;
+
+    price = trend + volatility + jump;
+    price = Math.max(0.02, Math.min(0.98, price));
     points.push(price);
   }
 
   return points;
 };
 
-// Generate smooth curved path using quadratic bezier curves
-const generateSmoothPath = (points: { x: number; y: number }[]): string => {
+// Generate path with straight lines (matches PolyChart)
+const generatePath = (points: { x: number; y: number }[]): string => {
   if (points.length < 2) return "";
 
   let path = `M ${points[0].x} ${points[0].y}`;
-
   for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1];
-    const curr = points[i];
-    const midX = (prev.x + curr.x) / 2;
-    const midY = (prev.y + curr.y) / 2;
-
-    // Use quadratic bezier for smooth curves
-    path += ` Q ${prev.x} ${prev.y}, ${midX} ${midY}`;
+    path += ` L ${points[i].x} ${points[i].y}`;
   }
-
-  // Final line to last point
-  const last = points[points.length - 1];
-  path += ` L ${last.x} ${last.y}`;
-
   return path;
 };
 
@@ -192,7 +200,7 @@ export function OutcomeDetail() {
       return { x, y, price };
     });
 
-    const pathD = generateSmoothPath(points);
+    const pathD = generatePath(points);
     const lastPoint = points[points.length - 1];
 
     return { pathD, points, lastPoint };
@@ -368,7 +376,7 @@ export function OutcomeDetail() {
           <div className="flex items-start">
             <div
               ref={chartRef}
-              className="relative cursor-crosshair flex-1"
+              className="relative cursor-crosshair flex-1 select-none"
               style={{
                 height: CHART_HEIGHT,
                 touchAction: 'none',
@@ -383,8 +391,12 @@ export function OutcomeDetail() {
               onTouchEnd={handleTouchEnd}
               onTouchCancel={handleTouchEnd}
             >
-              <svg width="100%" height={CHART_HEIGHT} viewBox={`0 0 ${chartWidth} ${CHART_HEIGHT}`} preserveAspectRatio="none">
-                {/* Horizontal dotted grid lines - tiny dots with large gaps */}
+              <svg
+                width={chartWidth}
+                height={CHART_HEIGHT}
+                style={{ touchAction: 'none', userSelect: 'none' }}
+              >
+                {/* Faint grid lines - matches PolyChart */}
                 {[0, 0.25, 0.5, 0.75, 1].map((pct) => (
                   <line
                     key={pct}
@@ -392,62 +404,52 @@ export function OutcomeDetail() {
                     y1={CHART_HEIGHT * (1 - pct)}
                     x2={chartWidth}
                     y2={CHART_HEIGHT * (1 - pct)}
-                    stroke="#3d4f5f"
-                    strokeWidth={2}
-                    strokeDasharray="1,12"
-                    strokeLinecap="round"
+                    stroke="#30363D"
+                    strokeWidth={0.5}
+                    strokeDasharray="2,8"
+                    opacity={0.4}
                   />
                 ))}
-                {/* Chart line - smooth curves, light blue */}
+
+                {/* Polymarket watermark - matches PolyChart */}
+                <g opacity={0.12}>
+                  <image
+                    href="/images/icon-white.svg"
+                    x={16}
+                    y={CHART_HEIGHT - 36}
+                    width={24}
+                    height={24}
+                  />
+                  <text
+                    x={44}
+                    y={CHART_HEIGHT - 18}
+                    fill="#ffffff"
+                    fontSize={12}
+                    fontWeight={600}
+                    fontFamily="system-ui, -apple-system, sans-serif"
+                  >
+                    Polymarket
+                  </text>
+                </g>
+
+                {/* Chart line - thicker stroke like PolyChart */}
                 {chartPath.pathD && (
                   <path
                     d={chartPath.pathD}
                     stroke="#60a5fa"
-                    strokeWidth={1.5}
+                    strokeWidth={2.5}
                     fill="none"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
                   />
                 )}
-                {/* Pulsating end point */}
+
+                {/* End point - matches PolyChart */}
                 {chartPath.lastPoint && (
-                  <>
-                    {/* Outer pulsating ring */}
-                    <circle
-                      cx={chartPath.lastPoint.x}
-                      cy={chartPath.lastPoint.y}
-                      r={8}
-                      fill="#60a5fa"
-                    >
-                      <animate
-                        attributeName="r"
-                        values="5;12;5"
-                        dur="1.5s"
-                        repeatCount="indefinite"
-                      />
-                      <animate
-                        attributeName="opacity"
-                        values="0.5;0;0.5"
-                        dur="1.5s"
-                        repeatCount="indefinite"
-                      />
-                    </circle>
-                    {/* Inner solid dot */}
-                    <circle
-                      cx={chartPath.lastPoint.x}
-                      cy={chartPath.lastPoint.y}
-                      r={4}
-                      fill="#60a5fa"
-                    />
-                  </>
-                )}
-                {/* Hover point */}
-                {activeIndex !== null && chartPath.points[activeIndex] && (
                   <circle
-                    cx={chartPath.points[activeIndex].x}
-                    cy={chartPath.points[activeIndex].y}
-                    r={4}
+                    cx={chartPath.lastPoint.x}
+                    cy={chartPath.lastPoint.y}
+                    r={5}
                     fill="#60a5fa"
                     stroke="#1c2b3a"
                     strokeWidth={2}
@@ -455,25 +457,30 @@ export function OutcomeDetail() {
                 )}
               </svg>
 
-              {/* Hover tooltip */}
+              {/* Cursor line - matches PolyChart */}
               {activeIndex !== null && chartPath.points[activeIndex] && (
-                <>
-                  <div
-                    className="absolute top-0 w-px bg-[#5c6b7a] pointer-events-none"
-                    style={{ left: `${(chartPath.points[activeIndex].x / chartWidth) * 100}%`, height: CHART_HEIGHT }}
-                  />
-                  <div
-                    className="absolute bg-[#2a3d4e] border border-[#3a4f60] rounded-lg px-3 py-2 pointer-events-none"
-                    style={{
-                      left: `${Math.min(Math.max((chartPath.points[activeIndex].x / chartWidth) * 100 - 10, 0), 80)}%`,
-                      top: Math.max(chartPath.points[activeIndex].y - 50, 0),
-                    }}
-                  >
-                    <span className="text-white text-xs font-medium">
-                      {formatPrice(chartPath.points[activeIndex].price)}
-                    </span>
-                  </div>
-                </>
+                <div
+                  className="absolute top-0 w-px bg-poly-textSecondary pointer-events-none"
+                  style={{
+                    left: chartPath.points[activeIndex].x,
+                    height: CHART_HEIGHT,
+                  }}
+                />
+              )}
+
+              {/* Hover label - colored pill like PolyChart */}
+              {activeIndex !== null && chartPath.points[activeIndex] && (
+                <div
+                  className="absolute px-2 py-1 rounded text-xs font-semibold pointer-events-none select-none"
+                  style={{
+                    top: chartPath.points[activeIndex].y - 12,
+                    left: Math.min(chartPath.points[activeIndex].x + 12, chartWidth - 100),
+                    backgroundColor: '#60a5fa',
+                    color: '#fff',
+                  }}
+                >
+                  {outcome?.name} {formatPrice(chartPath.points[activeIndex].price)}
+                </div>
               )}
             </div>
 

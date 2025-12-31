@@ -105,34 +105,46 @@ export const generateOutcomePrices = (
           price = basePrice;
       }
     } else {
-      // Generate synthetic but realistic price patterns for other markets
+      // Generate synthetic volatile price patterns for other markets
       const t = i / numPoints;
+      const rand = seededRandom(seed + i);
+      const rand2 = seededRandom(seed * 2 + i);
 
       // Create different pattern types based on patternIndex
       const patternType = patternIndex % 6;
 
+      let trend: number;
       switch (patternType) {
-        case 0: // Rising trend
-          price = basePrice * 0.6 + (basePrice * 0.8) * t + seededRandom(seed + i) * 0.1;
+        case 0: // Volatile rising trend
+          trend = basePrice * 0.4 + (basePrice * 1.0) * t;
           break;
-        case 1: // Falling trend
-          price = basePrice * 1.4 - (basePrice * 0.8) * t + seededRandom(seed + i) * 0.1;
+        case 1: // Volatile falling trend
+          trend = basePrice * 1.6 - (basePrice * 1.0) * t;
           break;
-        case 2: // Volatile/choppy
-          price = basePrice + Math.sin(t * 12 + seed) * 0.15 + seededRandom(seed + i) * 0.08;
+        case 2: // Wild swings
+          trend = basePrice + Math.sin(t * 10 + seed) * 0.3 + Math.cos(t * 6) * 0.15;
           break;
-        case 3: // Steady with small fluctuations
-          price = basePrice + seededRandom(seed + i) * 0.06 - 0.03;
+        case 3: // Spike and crash
+          trend = t < 0.35 ? basePrice + t * 1.2 : basePrice + 0.42 - (t - 0.35) * 0.9;
           break;
-        case 4: // U-shaped recovery
-          price = basePrice + Math.pow((t - 0.5) * 2, 2) * 0.2 - 0.1 + seededRandom(seed + i) * 0.05;
+        case 4: // V-shaped recovery
+          trend = t < 0.5 ? basePrice - t * 0.5 : basePrice - 0.25 + (t - 0.5) * 0.8;
           break;
-        case 5: // Inverted U (rise then fall)
-          price = basePrice - Math.pow((t - 0.5) * 2, 2) * 0.2 + 0.1 + seededRandom(seed + i) * 0.05;
+        case 5: // Choppy sideways with spikes
+          trend = basePrice + Math.sin(t * 18) * 0.15 + Math.cos(t * 9 + seed) * 0.1;
           break;
         default:
-          price = basePrice;
+          trend = basePrice;
       }
+
+      // Add significant volatility
+      const volatility = (rand - 0.5) * 0.18 + (rand2 - 0.5) * 0.12;
+
+      // Add sudden jumps/drops occasionally
+      const jumpChance = seededRandom(seed * 3 + i);
+      const jump = jumpChance > 0.9 ? (rand - 0.5) * 0.25 : jumpChance < 0.1 ? (rand - 0.5) * 0.25 : 0;
+
+      price = trend + volatility + jump;
     }
 
     // Add small noise for realism
