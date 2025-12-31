@@ -175,15 +175,15 @@ export function PolyHeader() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleLogin}
-            className="text-[#8297a3] hover:text-white text-sm font-medium transition-colors px-3 py-2"
+            className="text-[#8297a3] hover:text-white text-sm font-medium transition-colors px-3 py-1.5"
           >
             Log In
           </button>
           <button
             onClick={handleLogin}
-            className="bg-[#22c55e] hover:bg-[#1ea54d] px-4 py-2 rounded-lg text-white text-sm font-semibold transition-colors flex items-center gap-2"
+            className="bg-[#60a5fa] hover:bg-[#3b82f6] px-3 py-1.5 rounded-lg text-white text-sm font-semibold transition-colors flex items-center gap-1.5"
           >
-            <Wallet size={16} />
+            <Wallet size={14} />
             Connect
           </button>
         </div>

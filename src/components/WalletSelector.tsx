@@ -162,7 +162,7 @@ function WalletButton({
         </div>
       </div>
       {isInstalled ? (
-        <span className="px-3 py-1.5 bg-[#3a4f60] hover:bg-[#4a5f70] text-white text-sm font-medium rounded-lg">
+        <span className="px-3 py-1.5 bg-[#60a5fa] hover:bg-[#3b82f6] text-white text-sm font-medium rounded-lg">
           Connect
         </span>
       ) : (
@@ -210,17 +210,34 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
     );
   };
 
+  // Filter out wallets that would try to use web.petra.app or Aptos Connect (Google login)
+  // These cause 429 errors and black screens
+  const isBlockedWallet = useCallback((wallet: AdapterWallet): boolean => {
+    const name = wallet.name.toLowerCase();
+    // Block Aptos Connect (uses Google login via web.petra.app)
+    if (name.includes('aptos connect') || name.includes('aptosconnect')) return true;
+    // Block any explicit web versions
+    if (name.includes('web.petra') || name.includes('petra web')) return true;
+    // Block Continue with Google/Apple (these use Aptos Connect)
+    if (name.includes('google') || name.includes('apple')) return true;
+    return false;
+  }, []);
+
   // Use custom check to determine if wallet is actually installed
   // This prevents web.petra.app black screen and other issues
   const checkActuallyInstalled = useCallback((wallet: AdapterWallet): boolean => {
-    // First check if adapter says it's installed
+    // First filter out blocked wallets
+    if (isBlockedWallet(wallet)) return false;
+    // Then check if adapter says it's installed
     if (wallet.readyState !== 'Installed') return false;
     // Then verify with our custom check
     return isWalletActuallyInstalled(wallet.name);
-  }, []);
+  }, [isBlockedWallet]);
 
-  const installedWallets = wallets?.filter(w => checkActuallyInstalled(w)) || [];
-  const notInstalledWallets = wallets?.filter(w => !checkActuallyInstalled(w)) || [];
+  // Filter all wallets to exclude blocked ones
+  const filteredWallets = wallets?.filter(w => !isBlockedWallet(w)) || [];
+  const installedWallets = filteredWallets.filter(w => checkActuallyInstalled(w));
+  const notInstalledWallets = filteredWallets.filter(w => !checkActuallyInstalled(w));
 
   const categorizedInstalled = categorizeWallets(installedWallets);
   const categorizedNotInstalled = categorizeWallets(notInstalledWallets);
