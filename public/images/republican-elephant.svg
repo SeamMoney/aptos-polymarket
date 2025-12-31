@@ -1,0 +1,20 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Circle border -->
+  <circle cx="100" cy="100" r="95" stroke="#E31B23" stroke-width="6" fill="none"/>
+  <!-- Elephant body -->
+  <path d="M145 130c0 15-10 25-25 30H80c-15-5-25-15-25-30v-10c0-5 2-10 5-15l5-10c-5-5-8-12-8-20 0-15 12-27 27-27h2c5-8 15-13 26-13 18 0 33 15 33 33 0 8-3 15-8 20l5 10c3 5 5 10 5 15v7z" fill="#E31B23"/>
+  <!-- Elephant ear -->
+  <ellipse cx="75" cy="75" rx="15" ry="20" fill="#E31B23"/>
+  <!-- Elephant trunk -->
+  <path d="M55 95c-5 0-10 5-10 15s5 20 10 25c5 5 10 0 10-10V105c0-5-5-10-10-10z" fill="#E31B23"/>
+  <!-- Elephant eye -->
+  <circle cx="90" cy="70" r="4" fill="white"/>
+  <!-- Three stars -->
+  <polygon points="85,48 87,54 93,54 88,58 90,64 85,60 80,64 82,58 77,54 83,54" fill="white"/>
+  <polygon points="105,45 107,51 113,51 108,55 110,61 105,57 100,61 102,55 97,51 103,51" fill="white"/>
+  <polygon points="125,48 127,54 133,54 128,58 130,64 125,60 120,64 122,58 117,54 123,54" fill="white"/>
+  <!-- Elephant legs -->
+  <rect x="75" y="130" width="12" height="30" rx="4" fill="#E31B23"/>
+  <rect x="95" y="130" width="12" height="30" rx="4" fill="#E31B23"/>
+  <rect x="115" y="130" width="12" height="25" rx="4" fill="#E31B23"/>
+</svg>

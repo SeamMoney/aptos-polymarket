@@ -23,6 +23,11 @@ const CATEGORY_IMAGES: Record<string, string> = {
   default: 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=200',
 };
 
+// Special market images (for specific markets)
+const SPECIAL_MARKET_IMAGES: Record<string, string> = {
+  'republican': '/images/republican-elephant.svg',
+};
+
 // Format volume for display
 function formatVolume(collateral: number): string {
   if (collateral >= 1_000_000) {
@@ -58,6 +63,20 @@ function mapCategory(category: string): Category {
 function getCategoryImage(category: string): string {
   const mapped = mapCategory(category);
   return CATEGORY_IMAGES[mapped] || CATEGORY_IMAGES.default;
+}
+
+// Get image for a market (checks question for special images first)
+function getMarketImage(question: string, category: string): string {
+  const lowerQuestion = question.toLowerCase();
+
+  // Check for special market keywords
+  for (const [keyword, image] of Object.entries(SPECIAL_MARKET_IMAGES)) {
+    if (lowerQuestion.includes(keyword)) {
+      return image;
+    }
+  }
+
+  return getCategoryImage(category);
 }
 
 export interface PolymarketsHook {
@@ -104,7 +123,7 @@ export function usePolymarkets(): PolymarketsHook {
     return binaryMarkets.map((market, index) => ({
       id: `binary-${market.address}`,
       question: market.question,
-      image: getCategoryImage(market.description),
+      image: getMarketImage(market.question, market.description),
       yesPrice: market.yesPrice / 100,
       noPrice: market.noPrice / 100,
       volume: formatVolume((market.yesReserve + market.noReserve) / 100_000_000),
@@ -157,7 +176,7 @@ export function usePolymarkets(): PolymarketsHook {
       return {
         id: `multi-${market.address}`,
         question: market.question,
-        image: getCategoryImage(market.category),
+        image: getMarketImage(market.question, market.category),
         yesPrice: maxPrice / 100,
         noPrice: (100 - maxPrice) / 100,
         volume: formatVolume(market.totalCollateral),
