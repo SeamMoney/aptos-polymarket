@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useWallet, type Wallet } from '@aptos-labs/wallet-adapter-react';
+import { useWallet } from '@aptos-labs/wallet-adapter-react';
+import type { AdapterWallet } from '@aptos-labs/wallet-adapter-core';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Loader2, ExternalLink, ChevronDown } from 'lucide-react';
+import { X, Loader2, ExternalLink } from 'lucide-react';
 
 // Wallet category type
 type WalletCategory = 'aptos' | 'solana' | 'ethereum';
@@ -101,7 +102,7 @@ function WalletButton({
   connecting,
   isInstalled,
 }: {
-  wallet: Wallet;
+  wallet: AdapterWallet;
   onConnect: () => void;
   connecting: boolean;
   isInstalled: boolean;
@@ -179,11 +180,11 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
   }, [connected, isOpen, onClose]);
 
   // Categorize wallets
-  const categorizeWallets = (walletList: readonly Wallet[]) => {
+  const categorizeWallets = (walletList: readonly AdapterWallet[]) => {
     return walletList.reduce<{
-      aptos: Wallet[];
-      solana: Wallet[];
-      ethereum: Wallet[];
+      aptos: AdapterWallet[];
+      solana: AdapterWallet[];
+      ethereum: AdapterWallet[];
     }>(
       (acc, wallet) => {
         const name = wallet.name.toLowerCase();

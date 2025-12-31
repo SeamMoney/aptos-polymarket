@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { Settings, Trophy, DollarSign, Rocket, Code2, Moon, ChevronUp, ExternalLink, Wallet } from "lucide-react";
+import { WalletSelector } from "../components/WalletSelector";
 
 // Polymarket P logo without background (white version)
 function PolymarketLogo() {
@@ -34,6 +35,7 @@ export function PolyHeader() {
   const navigate = useNavigate();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showWalletSelector, setShowWalletSelector] = useState(false);
 
   // Use Aptos wallet adapter
   const { account, connected, disconnect, wallet } = useWallet();
@@ -60,7 +62,7 @@ export function PolyHeader() {
   }, []);
 
   const handleLogin = () => {
-    navigate("/login");
+    setShowWalletSelector(true);
   };
 
   const handleLogout = () => {
@@ -257,6 +259,12 @@ export function PolyHeader() {
           </button>
         </div>
       )}
+
+      {/* Wallet Selector Modal */}
+      <WalletSelector
+        isOpen={showWalletSelector}
+        onClose={() => setShowWalletSelector(false)}
+      />
     </header>
   );
 }
