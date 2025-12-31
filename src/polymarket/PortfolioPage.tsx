@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import { ArrowUp, Search, Eye, EyeOff, RefreshCw, ExternalLink, TrendingUp, TrendingDown, Loader2 } from "lucide-react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
@@ -21,6 +21,48 @@ interface TradeHistoryItem {
   success: boolean;
 }
 
+// Balance history entry type
+interface BalanceHistoryEntry {
+  timestamp: number;
+  balance: number;
+}
+
+// Storage key for balance history
+const BALANCE_HISTORY_KEY = 'portfolio_balance_history';
+
+// Get balance history from localStorage
+function getBalanceHistory(): BalanceHistoryEntry[] {
+  try {
+    const stored = localStorage.getItem(BALANCE_HISTORY_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error('Error reading balance history:', e);
+  }
+  return [];
+}
+
+// Save balance to history
+function saveBalanceToHistory(balance: number) {
+  try {
+    const history = getBalanceHistory();
+    const now = Date.now();
+
+    // Only save if balance changed or hasn't been saved in last 30 seconds
+    const lastEntry = history[history.length - 1];
+    if (!lastEntry || lastEntry.balance !== balance || now - lastEntry.timestamp > 30000) {
+      history.push({ timestamp: now, balance });
+
+      // Keep only last 500 entries (roughly 4 hours of data at 30s intervals)
+      const trimmed = history.slice(-500);
+      localStorage.setItem(BALANCE_HISTORY_KEY, JSON.stringify(trimmed));
+    }
+  } catch (e) {
+    console.error('Error saving balance history:', e);
+  }
+}
+
 // Polymarket Logo for branding (using official logo)
 function PolymarketBrand() {
   return (
@@ -31,62 +73,310 @@ function PolymarketBrand() {
   );
 }
 
-// Profit/Loss Chart - shows balance over time
-function ProfitChart({ timeRange, balance }: { timeRange: string; balance: number }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+const CHART_HEIGHT = 120;
+const CHART_PADDING_RIGHT = 10;
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+// Interactive Profit/Loss Chart with hover states
+function ProfitChart({
+  timeRange,
+  balance,
+  onHoverValue,
+}: {
+  timeRange: string;
+  balance: number;
+  onHoverValue?: (value: { balance: number; pnl: number; timestamp: number } | null) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [cursorX, setCursorX] = useState<number>(0);
+  const [isTouching, setIsTouching] = useState(false);
+  const [chartWidth, setChartWidth] = useState(300);
 
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
+  // Get balance history and filter by time range
+  const chartData = useMemo(() => {
+    const history = getBalanceHistory();
+    const now = Date.now();
 
-    // If we have a balance, show a line that goes up to current value
-    if (balance > 0) {
-      // Draw gradient fill
-      const gradient = ctx.createLinearGradient(0, 0, 0, rect.height);
-      gradient.addColorStop(0, 'rgba(34, 197, 94, 0.3)');
-      gradient.addColorStop(1, 'rgba(34, 197, 94, 0)');
-
-      ctx.beginPath();
-      ctx.moveTo(0, rect.height * 0.8);
-      ctx.lineTo(rect.width * 0.3, rect.height * 0.6);
-      ctx.lineTo(rect.width * 0.7, rect.height * 0.4);
-      ctx.lineTo(rect.width, rect.height * 0.2);
-      ctx.lineTo(rect.width, rect.height);
-      ctx.lineTo(0, rect.height);
-      ctx.closePath();
-      ctx.fillStyle = gradient;
-      ctx.fill();
-
-      // Draw line
-      ctx.strokeStyle = "#22c55e";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, rect.height * 0.8);
-      ctx.lineTo(rect.width * 0.3, rect.height * 0.6);
-      ctx.lineTo(rect.width * 0.7, rect.height * 0.4);
-      ctx.lineTo(rect.width, rect.height * 0.2);
-      ctx.stroke();
-    } else {
-      // Draw flat line at center
-      ctx.strokeStyle = "#3d5060";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, rect.height / 2);
-      ctx.lineTo(rect.width, rect.height / 2);
-      ctx.stroke();
+    // Filter by time range
+    let cutoffTime = 0;
+    switch (timeRange) {
+      case '1D': cutoffTime = now - 24 * 60 * 60 * 1000; break;
+      case '1W': cutoffTime = now - 7 * 24 * 60 * 60 * 1000; break;
+      case '1M': cutoffTime = now - 30 * 24 * 60 * 60 * 1000; break;
+      default: cutoffTime = 0; // ALL
     }
+
+    let filtered = history.filter(h => h.timestamp >= cutoffTime);
+
+    // If no history, create synthetic data based on current balance
+    if (filtered.length < 2 && balance > 0) {
+      const startTime = cutoffTime || now - 30 * 24 * 60 * 60 * 1000;
+      filtered = [
+        { timestamp: startTime, balance: 0 },
+        { timestamp: now, balance },
+      ];
+    } else if (filtered.length < 2) {
+      // No balance, show flat line
+      filtered = [
+        { timestamp: now - 1000, balance: 0 },
+        { timestamp: now, balance: 0 },
+      ];
+    }
+
+    return filtered;
   }, [timeRange, balance]);
 
+  // Calculate PNL
+  const { startBalance, isPositive } = useMemo(() => {
+    const start = chartData[0]?.balance || 0;
+    const end = chartData[chartData.length - 1]?.balance || balance;
+    const pnlValue = end - start;
+    return {
+      startBalance: start,
+      isPositive: pnlValue >= 0,
+    };
+  }, [chartData, balance]);
+
+  // Chart sizing
+  useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setChartWidth(containerRef.current.offsetWidth);
+      }
+    };
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
+
+  const innerWidth = chartWidth - CHART_PADDING_RIGHT;
+
+  // Calculate Y-axis range
+  const { yMin, yMax } = useMemo(() => {
+    const balances = chartData.map(d => d.balance);
+    const dataMin = Math.min(...balances);
+    const dataMax = Math.max(...balances);
+    const range = dataMax - dataMin;
+    const padding = Math.max(range * 0.1, 5); // At least $5 padding
+
+    return {
+      yMin: Math.max(0, dataMin - padding),
+      yMax: dataMax + padding,
+    };
+  }, [chartData]);
+
+  // Generate SVG path
+  const { path, fillPath, points } = useMemo(() => {
+    if (chartData.length < 2) return { path: '', fillPath: '', points: [] };
+
+    const points: { x: number; y: number; data: BalanceHistoryEntry }[] = [];
+
+    for (let i = 0; i < chartData.length; i++) {
+      const d = chartData[i];
+      const x = (i / (chartData.length - 1)) * innerWidth;
+      const yRange = yMax - yMin || 1;
+      const y = CHART_HEIGHT - ((d.balance - yMin) / yRange) * CHART_HEIGHT;
+      points.push({ x, y, data: d });
+    }
+
+    // Line path
+    let path = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length; i++) {
+      path += ` L ${points[i].x} ${points[i].y}`;
+    }
+
+    // Fill path (for gradient area)
+    let fillPath = path;
+    fillPath += ` L ${points[points.length - 1].x} ${CHART_HEIGHT}`;
+    fillPath += ` L ${points[0].x} ${CHART_HEIGHT}`;
+    fillPath += ' Z';
+
+    return { path, fillPath, points };
+  }, [chartData, innerWidth, yMin, yMax]);
+
+  // Calculate position from x coordinate
+  const updatePosition = useCallback(
+    (clientX: number) => {
+      if (!containerRef.current || points.length === 0) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = Math.max(0, Math.min(innerWidth, clientX - rect.left));
+      setCursorX(x);
+
+      // Find closest point
+      let closestIdx = 0;
+      let closestDist = Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const dist = Math.abs(points[i].x - x);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestIdx = i;
+        }
+      }
+
+      setActiveIndex(closestIdx);
+
+      if (onHoverValue && points[closestIdx]) {
+        const point = points[closestIdx];
+        onHoverValue({
+          balance: point.data.balance,
+          pnl: point.data.balance - startBalance,
+          timestamp: point.data.timestamp,
+        });
+      }
+    },
+    [innerWidth, points, onHoverValue, startBalance]
+  );
+
+  // Event handlers
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (isTouching) return;
+      updatePosition(e.clientX);
+    },
+    [updatePosition, isTouching]
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    if (isTouching) return;
+    setActiveIndex(null);
+    onHoverValue?.(null);
+  }, [onHoverValue, isTouching]);
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setIsTouching(true);
+      if (e.touches.length > 0) {
+        updatePosition(e.touches[0].clientX);
+      }
+    },
+    [updatePosition]
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      if (e.touches.length > 0) {
+        updatePosition(e.touches[0].clientX);
+      }
+    },
+    [updatePosition]
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    setIsTouching(false);
+    setActiveIndex(null);
+    onHoverValue?.(null);
+  }, [onHoverValue]);
+
+  // Line/fill colors based on PNL
+  const lineColor = isPositive ? '#22c55e' : '#ef4444';
+  const gradientId = `pnl-gradient-${isPositive ? 'up' : 'down'}`;
+
   return (
-    <canvas ref={canvasRef} className="w-full h-16" />
+    <div
+      ref={containerRef}
+      className="relative cursor-crosshair select-none"
+      style={{
+        height: CHART_HEIGHT,
+        touchAction: 'none',
+        WebkitUserSelect: 'none',
+        WebkitTouchCallout: 'none',
+      }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+    >
+      <svg width="100%" height={CHART_HEIGHT}>
+        {/* Gradient definition */}
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={lineColor} stopOpacity="0.3" />
+            <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Grid lines */}
+        {[0, 0.5, 1].map((pct) => (
+          <line
+            key={pct}
+            x1={0}
+            y1={CHART_HEIGHT * (1 - pct)}
+            x2={chartWidth}
+            y2={CHART_HEIGHT * (1 - pct)}
+            stroke="#3d5060"
+            strokeWidth={1}
+            strokeDasharray="4,6"
+            opacity={0.3}
+          />
+        ))}
+
+        {/* Fill area */}
+        <path d={fillPath} fill={`url(#${gradientId})`} />
+
+        {/* Main line */}
+        <path
+          d={path}
+          stroke={lineColor}
+          strokeWidth={2.5}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* End point with pulse */}
+        {points.length > 0 && (
+          <g>
+            <circle
+              cx={points[points.length - 1].x}
+              cy={points[points.length - 1].y}
+              r={8}
+              fill={lineColor}
+              opacity={0.3}
+            >
+              <animate attributeName="r" values="5;12;5" dur="1.5s" repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0.4;0;0.4" dur="1.5s" repeatCount="indefinite" />
+            </circle>
+            <circle
+              cx={points[points.length - 1].x}
+              cy={points[points.length - 1].y}
+              r={5}
+              fill={lineColor}
+              stroke="#1c2b3a"
+              strokeWidth={2}
+            />
+          </g>
+        )}
+
+        {/* Hover point */}
+        {activeIndex !== null && points[activeIndex] && (
+          <circle
+            cx={points[activeIndex].x}
+            cy={points[activeIndex].y}
+            r={6}
+            fill={lineColor}
+            stroke="white"
+            strokeWidth={2}
+          />
+        )}
+      </svg>
+
+      {/* Cursor line */}
+      {activeIndex !== null && (
+        <div
+          className="absolute top-0 pointer-events-none"
+          style={{
+            left: cursorX,
+            height: CHART_HEIGHT,
+            width: 1,
+            backgroundColor: 'rgba(255, 255, 255, 0.6)',
+          }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -102,8 +392,16 @@ export function PortfolioPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [trades, setTrades] = useState<TradeHistoryItem[]>([]);
   const [isLoadingTrades, setIsLoadingTrades] = useState(false);
+  const [hoverValue, setHoverValue] = useState<{ balance: number; pnl: number; timestamp: number } | null>(null);
 
   const timeRanges = ["1D", "1W", "1M", "ALL"];
+
+  // Save balance to history when it changes
+  useEffect(() => {
+    if (balance > 0) {
+      saveBalanceToHistory(balance);
+    }
+  }, [balance]);
 
   // Contract addresses for filtering trades
   const MARKET_CONTRACTS = [
@@ -335,7 +633,10 @@ export function PortfolioPage() {
         <div className="bg-poly-card rounded-xl p-5 mb-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <span className="text-[#22c55e]">▲</span>
+              {/* Dynamic arrow based on PNL */}
+              <span className={hoverValue ? (hoverValue.pnl >= 0 ? "text-[#22c55e]" : "text-[#ef4444]") : "text-[#22c55e]"}>
+                {hoverValue ? (hoverValue.pnl >= 0 ? "▲" : "▼") : "▲"}
+              </span>
               <span className="text-[#8297a3] text-base">Profit/Loss</span>
             </div>
             <div className="flex items-center gap-1">
@@ -357,13 +658,37 @@ export function PortfolioPage() {
 
           <div className="flex items-start justify-between mb-4">
             <div>
-              <span className="text-white text-3xl font-bold">{formatBalance(balance)}</span>
-              <p className="text-[#8297a3] text-base mt-1">Past Month</p>
+              {/* Show hover value or current balance */}
+              <span className="text-white text-3xl font-bold">
+                {hoverValue ? formatBalance(hoverValue.balance) : formatBalance(balance)}
+              </span>
+              {/* Show PNL change when hovering */}
+              {hoverValue && (
+                <span className={`ml-2 text-lg font-semibold ${hoverValue.pnl >= 0 ? 'text-[#22c55e]' : 'text-[#ef4444]'}`}>
+                  {hoverValue.pnl >= 0 ? '+' : ''}{formatBalance(hoverValue.pnl)}
+                </span>
+              )}
+              {/* Show date/time when hovering, otherwise show time period */}
+              <p className="text-[#8297a3] text-base mt-1">
+                {hoverValue
+                  ? new Date(hoverValue.timestamp).toLocaleString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })
+                  : timeRange === '1D' ? 'Past Day' : timeRange === '1W' ? 'Past Week' : timeRange === '1M' ? 'Past Month' : 'All Time'
+                }
+              </p>
             </div>
             <PolymarketBrand />
           </div>
 
-          <ProfitChart timeRange={timeRange} balance={balance} />
+          <ProfitChart
+            timeRange={timeRange}
+            balance={balance}
+            onHoverValue={setHoverValue}
+          />
         </div>
 
         {/* Positions / Open orders / History Tabs */}

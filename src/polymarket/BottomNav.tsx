@@ -36,7 +36,7 @@ const navItems: NavItem[] = [
   { path: "/polymarket", label: "Home", icon: Home },
   { path: "/polymarket/search", label: "Search", icon: Search },
   { path: "/polymarket/breaking", label: "Breaking", customIcon: "breaking" },
-  { path: "/portfolio", label: "$0.00", customIcon: "portfolio" },
+  { path: "/portfolio", label: "Portfolio", customIcon: "portfolio" },
 ];
 
 export function BottomNav() {

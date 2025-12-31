@@ -1,14 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { ChevronDown, Wallet, LogOut, Copy, Check, Loader2, Plus } from "lucide-react";
+import { ChevronDown, Wallet, LogOut, Copy, Check, Loader2, Plus, RefreshCw } from "lucide-react";
 import { WalletSelector, getWalletIcon } from "../components/WalletSelector";
 import { Aptos, AptosConfig, Network, Account, Ed25519PrivateKey } from "@aptos-labs/ts-sdk";
 
 // Polymarket P logo without background (white version)
 function PolymarketLogo() {
   return (
-    <svg width="28" height="28" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2">
+    <svg width="36" height="36" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2">
       <path d="M375.84 389.422C375.84 403.572 375.84 410.647 371.212 414.154C366.585 417.662 359.773 415.75 346.15 411.927L127.22 350.493C119.012 348.19 114.907 347.038 112.534 343.907C110.161 340.776 110.161 336.513 110.161 327.988V184.012C110.161 175.487 110.161 171.224 112.534 168.093C114.907 164.962 119.012 163.81 127.22 161.507L346.15 100.072C359.773 96.2495 366.585 94.338 371.212 97.8455C375.84 101.353 375.84 108.428 375.84 122.578V389.422ZM164.761 330.463L346.035 381.337V279.595L164.761 330.463ZM139.963 306.862L321.201 256L139.963 205.138V306.862ZM164.759 181.537L346.035 232.406V130.663L164.759 181.537Z" fill="white"/>
     </svg>
   );
@@ -52,6 +52,8 @@ export function PolyHeader() {
   const [copied, setCopied] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
   const [fundStatus, setFundStatus] = useState<"idle" | "success" | "error">("idle");
+  const [balance, setBalance] = useState<number>(0);
+  const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
 
   // Use Aptos wallet adapter
   const { account, connected, disconnect, wallet } = useWallet();
@@ -82,6 +84,68 @@ export function PolyHeader() {
     : isKeylessWallet
     ? 'Aptos'
     : wallet?.name?.replace(' (Solana)', '').replace(' (Ethereum)', '') || 'Wallet';
+
+  // Fetch wallet balance (supports both legacy CoinStore and new Fungible Assets)
+  const fetchBalance = useCallback(async () => {
+    if (!connected || !account?.address) {
+      setBalance(0);
+      return;
+    }
+    try {
+      setIsRefreshingBalance(true);
+      const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
+      const address = account.address.toString();
+
+      // Try new Fungible Asset balance first
+      try {
+        const faBalance = await aptos.getAccountAPTAmount({ accountAddress: address });
+        setBalance(faBalance / 100_000_000);
+        return;
+      } catch {
+        // Fall back to legacy CoinStore
+      }
+
+      // Legacy CoinStore fallback
+      try {
+        const resources = await aptos.getAccountResource({
+          accountAddress: address,
+          resourceType: "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>",
+        });
+        const balanceOctas = (resources as any).coin?.value || 0;
+        setBalance(Number(balanceOctas) / 100_000_000);
+      } catch {
+        setBalance(0);
+      }
+    } catch (error) {
+      console.error("Error fetching balance:", error);
+      setBalance(0);
+    } finally {
+      setIsRefreshingBalance(false);
+    }
+  }, [connected, account?.address]);
+
+  // Fetch balance on connect and when dropdown opens
+  useEffect(() => {
+    if (connected && account?.address) {
+      fetchBalance();
+    }
+  }, [connected, account?.address, fetchBalance]);
+
+  // Refresh balance when dropdown opens
+  useEffect(() => {
+    if (showDropdown && connected) {
+      fetchBalance();
+    }
+  }, [showDropdown, connected, fetchBalance]);
+
+  // Listen for wallet-funded event to refresh balance
+  useEffect(() => {
+    const handleWalletFunded = () => {
+      fetchBalance();
+    };
+    window.addEventListener('wallet-funded', handleWalletFunded);
+    return () => window.removeEventListener('wallet-funded', handleWalletFunded);
+  }, [fetchBalance]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -278,6 +342,31 @@ export function PolyHeader() {
                     </div>
                   </div>
                 )}
+
+                {/* Balance Display */}
+                <div className="p-3 bg-[#0d1a24] rounded-lg mb-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[#8297a3] text-xs mb-0.5">Cash Balance</p>
+                      <p className="text-white text-2xl font-bold">
+                        ${balance.toFixed(2)}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fetchBalance();
+                      }}
+                      className="p-2 rounded-lg hover:bg-[#2a3d4e] transition-colors"
+                      title="Refresh balance"
+                    >
+                      <RefreshCw
+                        size={16}
+                        className={`text-[#8297a3] ${isRefreshingBalance ? 'animate-spin' : ''}`}
+                      />
+                    </button>
+                  </div>
+                </div>
 
                 {/* Fund Button */}
                 <button
