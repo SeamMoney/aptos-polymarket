@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { PanInfo } from "framer-motion";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import type { Market, Outcome } from "./types";
+import { saveTradeRecord, type TradeRecord } from "./PortfolioPage";
 
 interface TradingSheetProps {
   market: Market;
@@ -197,8 +198,8 @@ export function TradingSheet({
   };
 
   const handleSetMax = () => {
-    // Convert balance to cents and subtract gas fee
-    const maxAmount = Math.max(0, Math.floor((balance - ESTIMATED_GAS_FEE) * 100));
+    // Set max to balance minus gas fee (in dollars, rounded down)
+    const maxAmount = Math.max(0, Math.floor(balance - ESTIMATED_GAS_FEE));
     setAmount(maxAmount);
   };
 
@@ -245,12 +246,13 @@ export function TradingSheet({
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
+            transition={{ type: "tween", duration: 0.15, ease: [0.32, 0.72, 0, 1] }}
             drag="y"
-            dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={0}
+            dragDirectionLock
+            dragConstraints={{ top: 0 }}
+            dragElastic={{ top: 0, bottom: 0.5 }}
             onDragEnd={handleDragEnd}
-            className="relative bg-[#1c2b3a] rounded-t-2xl w-full max-w-lg overflow-hidden"
+            className="relative bg-[#1c2b3a] rounded-t-2xl w-full max-w-lg overflow-hidden touch-pan-y"
           >
             {/* Drag Handle */}
             <div className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing">
