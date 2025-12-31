@@ -56,7 +56,6 @@ export function MarketDetail() {
     tpsHistory,
     startTrading,
     stopTrading,
-    error: hftError,
   } = useHFTConnection();
 
   // Try to find market from on-chain data first, then fall back to mock data
@@ -652,11 +651,6 @@ export function MarketDetail() {
         style={{ backgroundColor: '#1c2b3a', borderTop: '2px solid #2c3f4f' }}
       >
         <div className="max-w-4xl mx-auto">
-          {hftError && (
-            <div className="mb-3 p-2 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm text-center">
-              {hftError}
-            </div>
-          )}
           <div className="flex gap-3">
             {!hftRunning ? (
               <button
@@ -665,11 +659,11 @@ export function MarketDetail() {
                 className={`flex-1 rounded-lg py-4 text-white text-base font-bold transition-colors flex items-center justify-center gap-2 ${
                   hftConnected
                     ? 'bg-[#4abe7a] hover:bg-[#3da86a]'
-                    : 'bg-[#3d4f5f] cursor-not-allowed'
+                    : 'bg-[#3b82f6] hover:bg-[#2563eb]'
                 }`}
               >
                 <Play size={20} fill="white" />
-                {hftConnected ? 'Start HFT Demo' : 'Server Offline'}
+                {hftConnected ? 'Start HFT Demo' : 'Start 30K TPS Demo'}
               </button>
             ) : (
               <button

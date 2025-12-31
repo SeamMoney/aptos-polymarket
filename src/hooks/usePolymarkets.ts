@@ -195,6 +195,7 @@ export function usePolymarkets(): PolymarketsHook {
       const outcomes: Outcome[] = market.outcomes.map((outcome: any, i: number) => ({
         id: `${market.address}-${outcome.index}`,
         name: outcome.label,
+        image: getCandidateImage(outcome.label), // Add candidate face image
         price: outcome.price / 100, // Normalize to 0-1
         volume: formatVolume(market.totalCollateral / market.outcomeCount),
         color: OUTCOME_COLORS[i % OUTCOME_COLORS.length],

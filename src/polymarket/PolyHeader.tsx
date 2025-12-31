@@ -145,6 +145,8 @@ export function PolyHeader() {
 
       if (result.success) {
         setFundStatus("success");
+        // Dispatch event for portfolio page to refresh balance
+        window.dispatchEvent(new CustomEvent('wallet-funded', { detail: { amount: FUND_AMOUNT_APT } }));
         setTimeout(() => setFundStatus("idle"), 3000);
       } else {
         setFundStatus("error");

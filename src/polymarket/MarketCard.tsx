@@ -70,8 +70,8 @@ function PercentageGauge({
       </svg>
       {/* Percentage text below the gauge */}
       <div className="flex flex-col items-center -mt-1">
-        <span className="text-white text-lg font-bold">{percentage}%</span>
-        <span className="text-[#8297a3] text-xs -mt-0.5">chance</span>
+        <span className="text-white text-base font-bold">{percentage}%</span>
+        <span className="text-[#8297a3] text-[10px] -mt-0.5">chance</span>
       </div>
     </div>
   );
@@ -254,27 +254,27 @@ export function MarketCard({ market, onPress }: MarketCardProps) {
   }
 
   return (
-    <div className="px-4 mb-3">
+    <div className="px-4 mb-3 flex justify-center">
       <button
         onClick={onPress}
-        className="w-full bg-[#2a3d4e] rounded-2xl overflow-hidden text-left hover:bg-[#324858] transition-colors border-2 border-[#3a4f60]"
+        className="w-[360px] h-[230px] bg-[#2a3d4e] rounded-xl overflow-hidden text-left hover:bg-[#324858] transition-colors border border-[#3a4f60] flex flex-col"
       >
-        <div className="p-4">
+        <div className="p-3 flex flex-col flex-1">
           {/* Header with image and title */}
-          <div className="flex items-start gap-3 mb-4">
+          <div className="flex items-start gap-3 mb-2">
             <img
               src={market.image}
               alt=""
-              className="w-14 h-14 rounded-lg object-cover bg-poly-surface shrink-0"
+              className="w-12 h-12 rounded-lg object-cover bg-poly-surface shrink-0"
             />
-            <div className="flex-1 min-w-0 pt-0.5">
-              <h3 className="text-white text-base font-bold leading-snug pr-2">
+            <div className="flex-1 min-w-0">
+              <h3 className="text-white text-sm font-bold leading-snug pr-2 line-clamp-2">
                 {market.question}
               </h3>
             </div>
             {/* Show gauge for single outcome markets */}
             {isSingleOutcome && (
-              <PercentageGauge percentage={yesPercent} />
+              <PercentageGauge percentage={yesPercent} size={60} />
             )}
           </div>
 
@@ -295,16 +295,16 @@ export function MarketCard({ market, onPress }: MarketCardProps) {
 
           {/* Single outcome Yes/No buttons */}
           {isSingleOutcome && (
-            <div className="flex gap-2 mb-4">
+            <div className="flex gap-2 mb-2">
               <button
                 onClick={handleYesClick}
-                className="flex-1 py-3 rounded-lg text-white text-base font-bold bg-[#3dac67] hover:bg-[#359b5c] transition-colors"
+                className="flex-1 py-2.5 rounded-lg text-white text-base font-bold bg-[#3dac67] hover:bg-[#359b5c] transition-colors"
               >
                 Yes
               </button>
               <button
                 onClick={handleNoClick}
-                className="flex-1 py-3 rounded-lg text-white text-base font-bold bg-[#e13836] hover:bg-[#c9312f] transition-colors"
+                className="flex-1 py-2.5 rounded-lg text-white text-base font-bold bg-[#e13836] hover:bg-[#c9312f] transition-colors"
               >
                 No
               </button>
@@ -312,29 +312,29 @@ export function MarketCard({ market, onPress }: MarketCardProps) {
           )}
 
           {/* Footer with volume and icons */}
-          <div className="flex items-center justify-between pt-3 border-t-2 border-[#3a4f60]">
+          <div className="flex items-center justify-between mt-auto">
             <div className="flex items-center gap-1.5">
               <span className="text-[#8297a3] text-sm font-medium">{market.volume} Vol.</span>
-              <RefreshCw size={16} color="#8297a3" strokeWidth={2.5} />
+              <RefreshCw size={14} color="#8297a3" strokeWidth={2.5} />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <button
                 onClick={(e) => e.stopPropagation()}
-                className="p-1.5 hover:opacity-70 transition-opacity"
+                className="p-1 hover:opacity-70 transition-opacity"
               >
-                <Gift size={20} color="#6b7a8a" strokeWidth={2.5} />
+                <Gift size={18} color="#6b7a8a" strokeWidth={2.5} />
               </button>
               <button
                 onClick={(e) => e.stopPropagation()}
-                className="p-1.5 hover:opacity-70 transition-opacity"
+                className="p-1 hover:opacity-70 transition-opacity"
               >
-                <Bookmark size={20} color="#6b7a8a" strokeWidth={2.5} />
+                <Bookmark size={18} color="#6b7a8a" strokeWidth={2.5} />
               </button>
               <button
                 onClick={(e) => e.stopPropagation()}
-                className="p-1.5 hover:opacity-70 transition-opacity"
+                className="p-1 hover:opacity-70 transition-opacity"
               >
-                <MoreHorizontal size={20} color="#6b7a8a" strokeWidth={2.5} />
+                <MoreHorizontal size={18} color="#6b7a8a" strokeWidth={2.5} />
               </button>
             </div>
           </div>

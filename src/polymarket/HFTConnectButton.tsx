@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Zap, Loader2, Play, Square, Wifi, WifiOff, Rocket } from 'lucide-react';
+import { Zap, Play, Square, Wifi, WifiOff, Rocket } from 'lucide-react';
 
 interface HFTConnectButtonProps {
   isConnected: boolean;
@@ -82,17 +82,16 @@ export function HFTConnectButton({
     );
   }
 
-  // Not connected state
+  // Not connected state - show connecting message
   if (!isConnected) {
     return (
       <motion.button
-        disabled
-        className="px-6 py-3 rounded-xl bg-[#2a3d4e] text-[#6b7a8a] font-semibold flex items-center gap-2 cursor-not-allowed"
+        onClick={onStart}
+        className="px-6 py-3 rounded-xl bg-[#3b82f6] hover:bg-[#2563eb] text-white font-semibold flex items-center gap-2"
         whileHover={{ scale: 1.02 }}
       >
-        <WifiOff size={18} />
-        <span>HFT Server Offline</span>
-        <Loader2 size={16} className="animate-spin" />
+        <Zap size={18} />
+        <span>Start 30K TPS Demo</span>
       </motion.button>
     );
   }

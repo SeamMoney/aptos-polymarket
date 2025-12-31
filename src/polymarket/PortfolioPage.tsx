@@ -1,10 +1,15 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { ArrowUp, Search, Eye, EyeOff } from "lucide-react";
+import { ArrowUp, Search, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { categories } from "./mockData";
 import type { Category } from "./types";
+
+// Initialize Aptos client
+const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
 
 // Polymarket Logo for branding (using official logo)
 function PolymarketBrand() {
@@ -16,8 +21,8 @@ function PolymarketBrand() {
   );
 }
 
-// Profit/Loss Chart
-function ProfitChart({ timeRange }: { timeRange: string }) {
+// Profit/Loss Chart - shows balance over time
+function ProfitChart({ timeRange, balance }: { timeRange: string; balance: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -32,14 +37,43 @@ function ProfitChart({ timeRange }: { timeRange: string }) {
     canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
 
-    // Draw flat line at $0
-    ctx.strokeStyle = "#3d5060";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, rect.height / 2);
-    ctx.lineTo(rect.width, rect.height / 2);
-    ctx.stroke();
-  }, [timeRange]);
+    // If we have a balance, show a line that goes up to current value
+    if (balance > 0) {
+      // Draw gradient fill
+      const gradient = ctx.createLinearGradient(0, 0, 0, rect.height);
+      gradient.addColorStop(0, 'rgba(34, 197, 94, 0.3)');
+      gradient.addColorStop(1, 'rgba(34, 197, 94, 0)');
+
+      ctx.beginPath();
+      ctx.moveTo(0, rect.height * 0.8);
+      ctx.lineTo(rect.width * 0.3, rect.height * 0.6);
+      ctx.lineTo(rect.width * 0.7, rect.height * 0.4);
+      ctx.lineTo(rect.width, rect.height * 0.2);
+      ctx.lineTo(rect.width, rect.height);
+      ctx.lineTo(0, rect.height);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      // Draw line
+      ctx.strokeStyle = "#22c55e";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, rect.height * 0.8);
+      ctx.lineTo(rect.width * 0.3, rect.height * 0.6);
+      ctx.lineTo(rect.width * 0.7, rect.height * 0.4);
+      ctx.lineTo(rect.width, rect.height * 0.2);
+      ctx.stroke();
+    } else {
+      // Draw flat line at center
+      ctx.strokeStyle = "#3d5060";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, rect.height / 2);
+      ctx.lineTo(rect.width, rect.height / 2);
+      ctx.stroke();
+    }
+  }, [timeRange, balance]);
 
   return (
     <canvas ref={canvasRef} className="w-full h-16" />
@@ -48,13 +82,57 @@ function ProfitChart({ timeRange }: { timeRange: string }) {
 
 // Main Portfolio Page Component
 export function PortfolioPage() {
+  const { account, connected } = useWallet();
   const [selectedCategory, setSelectedCategory] = useState<Category>("All");
   const [activeTab, setActiveTab] = useState<"positions" | "orders" | "history">("positions");
   const [timeRange, setTimeRange] = useState("1M");
   const [showBalance, setShowBalance] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [balance, setBalance] = useState<number>(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const timeRanges = ["1D", "1W", "1M", "ALL"];
+
+  // Fetch wallet balance
+  const fetchBalance = useCallback(async () => {
+    if (!connected || !account?.address) {
+      setBalance(0);
+      return;
+    }
+
+    try {
+      setIsRefreshing(true);
+      const resources = await aptos.getAccountResource({
+        accountAddress: account.address.toString(),
+        resourceType: "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>",
+      });
+      // Balance is in octas (10^-8 APT)
+      const balanceOctas = (resources as any).coin?.value || 0;
+      const balanceAPT = Number(balanceOctas) / 100_000_000;
+      setBalance(balanceAPT);
+    } catch (error) {
+      console.error("Error fetching balance:", error);
+      setBalance(0);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [connected, account?.address]);
+
+  // Fetch balance on mount and when account changes
+  useEffect(() => {
+    fetchBalance();
+    // Also set up interval to refresh every 10 seconds
+    const interval = setInterval(fetchBalance, 10000);
+    return () => clearInterval(interval);
+  }, [fetchBalance]);
+
+  // Format balance for display
+  const formatBalance = (val: number) => {
+    if (val >= 1000) {
+      return `$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    return `$${val.toFixed(2)}`;
+  };
 
   return (
     <motion.div
@@ -89,22 +167,34 @@ export function PortfolioPage() {
                 )}
               </button>
             </div>
-            {/* Cash Badge */}
-            <div className="flex items-center gap-2 bg-[#2a3d52] px-3 py-1.5 rounded-full">
-              <span className="text-lg">💵</span>
-              <span className="text-[#22c55e] text-base font-semibold">
-                {showBalance ? "$0.00" : "••••"}
-              </span>
+            {/* Cash Badge with Refresh */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={fetchBalance}
+                disabled={isRefreshing}
+                className="p-1.5 hover:bg-[#2a3d52] rounded-lg transition-colors"
+              >
+                <RefreshCw
+                  size={16}
+                  className={`text-[#8297a3] ${isRefreshing ? 'animate-spin' : ''}`}
+                />
+              </button>
+              <div className="flex items-center gap-2 bg-[#2a3d52] px-3 py-1.5 rounded-full">
+                <span className="text-lg">💵</span>
+                <span className="text-[#22c55e] text-base font-semibold">
+                  {showBalance ? formatBalance(balance) : "••••"}
+                </span>
+              </div>
             </div>
           </div>
 
           {/* Portfolio Value */}
           <div className="mb-1">
             <span className="text-white text-4xl font-bold">
-              {showBalance ? "$0.00" : "••••••"}
+              {showBalance ? formatBalance(balance) : "••••••"}
             </span>
           </div>
-          <span className="text-[#8297a3] text-base">Today</span>
+          <span className="text-[#8297a3] text-base">{connected ? "APT Balance" : "Connect wallet"}</span>
 
           {/* Withdraw Button */}
           <button className="w-full mt-5 py-3.5 bg-[#3d5060] rounded-lg flex items-center justify-center gap-2 text-[#8297a3] text-base font-medium hover:bg-[#4a6070] transition-colors">
@@ -139,13 +229,13 @@ export function PortfolioPage() {
 
           <div className="flex items-start justify-between mb-4">
             <div>
-              <span className="text-white text-3xl font-bold">$0.00</span>
+              <span className="text-white text-3xl font-bold">{formatBalance(balance)}</span>
               <p className="text-[#8297a3] text-base mt-1">Past Month</p>
             </div>
             <PolymarketBrand />
           </div>
 
-          <ProfitChart timeRange={timeRange} />
+          <ProfitChart timeRange={timeRange} balance={balance} />
         </div>
 
         {/* Positions / Open orders / History Tabs */}

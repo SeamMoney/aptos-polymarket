@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { ChevronDown, Minus, Plus, Loader2, CheckCircle, AlertCircle, ArrowLeftRight } from "lucide-react";
+import { ChevronDown, Minus, Plus, Loader2, CheckCircle, AlertCircle, ArrowLeftRight, ExternalLink } from "lucide-react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import type { Market, Outcome } from "./types";
 
@@ -41,6 +41,7 @@ export function TradingSheet({
   const [isLoading, setIsLoading] = useState(false);
   const [txStatus, setTxStatus] = useState<"idle" | "success" | "error">("idle");
   const [txMessage, setTxMessage] = useState("");
+  const [txHash, setTxHash] = useState<string | null>(null);
 
   // Check if this is a real on-chain market
   const isRealMarket = market.id.startsWith("binary-") || market.id.startsWith("multi-");
@@ -74,43 +75,52 @@ export function TradingSheet({
 
     setIsLoading(true);
     setTxStatus("idle");
+    setTxHash(null);
 
     try {
       // Convert amount to APT (divide by 100 to get APT from cents-based UI amount)
       const amountAPT = (amount / 100).toString();
+      let result: any;
 
       if (isMultiOutcome && (onBuyOutcome || onSellOutcome)) {
         // Multi-outcome market
         const outcomeIndex = getOutcomeIndex();
         if (direction === "buy" && onBuyOutcome) {
-          await onBuyOutcome(market.id, outcomeIndex, amountAPT);
+          result = await onBuyOutcome(market.id, outcomeIndex, amountAPT);
         } else if (direction === "sell" && onSellOutcome) {
-          await onSellOutcome(market.id, outcomeIndex, amountAPT);
+          result = await onSellOutcome(market.id, outcomeIndex, amountAPT);
         }
       } else {
         // Binary market
         if (direction === "buy") {
           if (tradeType === "yes" && onBuyYes) {
-            await onBuyYes(market.id, amountAPT);
+            result = await onBuyYes(market.id, amountAPT);
           } else if (tradeType === "no" && onBuyNo) {
-            await onBuyNo(market.id, amountAPT);
+            result = await onBuyNo(market.id, amountAPT);
           }
         } else {
           if (tradeType === "yes" && onSellYes) {
-            await onSellYes(market.id, amountAPT);
+            result = await onSellYes(market.id, amountAPT);
           } else if (tradeType === "no" && onSellNo) {
-            await onSellNo(market.id, amountAPT);
+            result = await onSellNo(market.id, amountAPT);
           }
         }
+      }
+
+      // Capture transaction hash
+      const hash = result?.hash || result?.transaction?.hash;
+      if (hash) {
+        setTxHash(hash);
       }
 
       setTxStatus("success");
       setTxMessage("Transaction submitted!");
       setTimeout(() => {
         setTxStatus("idle");
+        setTxHash(null);
         setAmount(0);
         onClose();
-      }, 2000);
+      }, 4000); // Extended to 4s so user can click explorer link
     } catch (error: any) {
       console.error("Trade error:", error);
       setTxStatus("error");
@@ -283,13 +293,26 @@ export function TradingSheet({
             txStatus === "success" ? "bg-green-900/30 border border-green-700" : "bg-red-900/30 border border-red-700"
           }`}>
             {txStatus === "success" ? (
-              <CheckCircle size={16} className="text-green-500" />
+              <CheckCircle size={16} className="text-green-500 shrink-0" />
             ) : (
-              <AlertCircle size={16} className="text-red-500" />
+              <AlertCircle size={16} className="text-red-500 shrink-0" />
             )}
-            <span className={`text-xs ${txStatus === "success" ? "text-green-400" : "text-red-400"}`}>
-              {txMessage}
-            </span>
+            <div className="flex-1 min-w-0">
+              <span className={`text-xs ${txStatus === "success" ? "text-green-400" : "text-red-400"}`}>
+                {txMessage}
+              </span>
+              {txStatus === "success" && txHash && (
+                <a
+                  href={`https://explorer.aptoslabs.com/txn/${txHash}?network=testnet`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 mt-1"
+                >
+                  <span className="truncate">View on Explorer</span>
+                  <ExternalLink size={12} className="shrink-0" />
+                </a>
+              )}
+            </div>
           </div>
         )}
 
