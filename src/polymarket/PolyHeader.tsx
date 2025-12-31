@@ -29,12 +29,25 @@ export function PolyHeader() {
                           wallet?.name?.toLowerCase().includes('phantom') ||
                           wallet?.name?.toLowerCase().includes('solana');
 
+  // Check if connected via Petra Web (Google/Apple social login)
+  const isPetraWebWallet = wallet?.name?.toLowerCase().includes('google') ||
+                            wallet?.name?.toLowerCase().includes('apple') ||
+                            wallet?.url?.includes('web.petra.app');
+
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
-  const walletDisplayName = wallet?.name?.replace(' (Solana)', '').replace(' (Ethereum)', '') || 'Wallet';
-  const walletIcon = getWalletIcon(wallet?.name || '', wallet?.icon);
+  // Petra purple logo for Petra Web connections
+  const PETRA_ICON = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiByeD0iMjAiIGZpbGw9IiM2MzQzRUMiLz4KPHBhdGggZD0iTTI1IDMyLjVDMjUgMjguMzU3OSAyOC4zNTc5IDI1IDMyLjUgMjVINTBWNTBIMzIuNUMyOC4zNTc5IDUwIDI1IDQ2LjY0MjEgMjUgNDIuNVYzMi41WiIgZmlsbD0id2hpdGUiLz4KPHBhdGggZD0iTTUwIDI1SDY3LjVDNzEuNjQyMSAyNSA3NSAyOC4zNTc5IDc1IDMyLjVWNDIuNUM3NSA0Ni42NDIxIDcxLjY0MjEgNTAgNjcuNSA1MEg1MFYyNVoiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik01MCA1MEg2Ny41Qzc1IDUwIDc1IDU3LjUgNzUgNjIuNUM3NSA2Ny41IDc1IDc1IDY3LjUgNzVINTBWNTBaIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjYiLz4KPHBhdGggZD0iTTI1IDYyLjVDMjUgNTcuNSAyNSA1MCAzMi41IDUwSDUwVjc1SDMyLjVDMjguMzU3OSA3NSAyNSA3MS42NDIxIDI1IDY3LjVWNjIuNVoiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNiIvPgo8L3N2Zz4=';
+
+  // Show Petra icon for Petra Web wallets, otherwise use wallet's icon
+  const walletDisplayName = isPetraWebWallet
+    ? 'Petra Web'
+    : wallet?.name?.replace(' (Solana)', '').replace(' (Ethereum)', '') || 'Wallet';
+  const walletIcon = isPetraWebWallet
+    ? PETRA_ICON
+    : getWalletIcon(wallet?.name || '', wallet?.icon);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -94,6 +107,12 @@ export function PolyHeader() {
             <span className="text-white text-sm font-medium">
               {formatAddress(account.address.toString())}
             </span>
+            {/* Petra Web Badge */}
+            {isPetraWebWallet && (
+              <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 text-[10px] font-semibold rounded">
+                KEYLESS
+              </span>
+            )}
             {/* X-Chain Badge */}
             {isXChainWallet && (
               <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 text-[10px] font-semibold rounded">
@@ -120,6 +139,11 @@ export function PolyHeader() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-white font-semibold">{walletDisplayName}</span>
+                      {isPetraWebWallet && (
+                        <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 text-[10px] font-semibold rounded">
+                          KEYLESS
+                        </span>
+                      )}
                       {isXChainWallet && (
                         <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 text-[10px] font-semibold rounded">
                           X-CHAIN
@@ -135,6 +159,15 @@ export function PolyHeader() {
                     </button>
                   </div>
                 </div>
+
+                {/* Petra Web Info */}
+                {isPetraWebWallet && (
+                  <div className="p-2.5 bg-purple-500/10 border border-purple-500/30 rounded-lg mb-3">
+                    <div className="text-purple-400 text-xs">
+                      Connected via {wallet?.name?.includes('Google') ? 'Google' : 'Apple'} (Keyless)
+                    </div>
+                  </div>
+                )}
 
                 {/* X-Chain Info */}
                 {isXChainWallet && (
