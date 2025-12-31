@@ -10,7 +10,7 @@ import { Link } from 'react-router-dom';
 import { PolyHeader } from './PolyHeader';
 import { TradeFeed } from './TradeFeed';
 import { BlockRiver } from './BlockRiver';
-import { HFTConnectButton } from './HFTConnectButton';
+import { HFTLaunchControl } from './HFTLaunchControl';
 import { useHFTConnection } from '../hooks/useHFTConnection';
 
 // Market outcomes for the demo
@@ -106,9 +106,9 @@ export function HFTDemoPage() {
           )}
         </motion.div>
 
-        {/* Connect Button */}
-        <div className="flex justify-center mb-8">
-          <HFTConnectButton
+        {/* Launch Control - Safety-locked with pre-flight checks */}
+        <div className="mb-8">
+          <HFTLaunchControl
             isConnected={isConnected}
             isRunning={isRunning}
             onStart={startTrading}
