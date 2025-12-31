@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { ChevronDown, ExternalLink, Wallet, LogOut, Copy, Check } from "lucide-react";
+import { ChevronDown, Wallet, LogOut, Copy, Check, Loader2, Plus } from "lucide-react";
 import { WalletSelector, getWalletIcon } from "../components/WalletSelector";
+import { Aptos, AptosConfig, Network, Account, Ed25519PrivateKey } from "@aptos-labs/ts-sdk";
 
 // Polymarket P logo without background (white version)
 function PolymarketLogo() {
@@ -13,12 +14,40 @@ function PolymarketLogo() {
   );
 }
 
+// Aptos logo with Polymarket blue ring
+function AptosKeylessIcon() {
+  return (
+    <div className="relative w-6 h-6">
+      {/* Blue ring */}
+      <div className="absolute inset-0 rounded-full border-2 border-[#3b82f6]" />
+      {/* Aptos logo centered */}
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 100 100"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+      >
+        <path d="M69.8 31.4H58.4C57.7 31.4 57 31.7 56.5 32.2L50.2 39.4C49.5 40.2 48.3 40.2 47.6 39.4L41.3 32.2C40.8 31.7 40.1 31.4 39.4 31.4H28L46.4 53.5C48.3 55.8 51.7 55.8 53.6 53.5L69.8 31.4Z" fill="white"/>
+        <path d="M28.2 68.6H39.6C40.3 68.6 41 68.3 41.5 67.8L47.8 60.6C48.5 59.8 49.7 59.8 50.4 60.6L56.7 67.8C57.2 68.3 57.9 68.6 58.6 68.6H70L51.6 46.5C49.7 44.2 46.3 44.2 44.4 46.5L28.2 68.6Z" fill="white"/>
+      </svg>
+    </div>
+  );
+}
+
+// Faucet deployer key for demo (testnet only)
+const FAUCET_KEY = "0x466C93219D56FC91BBFDD22B127FC9CB717FA9752CB4ED91DF3A1D7B33307BD2";
+const FUND_AMOUNT_APT = 50; // $50 worth of APT
+
 export function PolyHeader() {
   const navigate = useNavigate();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showWalletSelector, setShowWalletSelector] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isFunding, setIsFunding] = useState(false);
+  const [fundStatus, setFundStatus] = useState<"idle" | "success" | "error">("idle");
 
   // Use Aptos wallet adapter
   const { account, connected, disconnect, wallet } = useWallet();
@@ -29,20 +58,14 @@ export function PolyHeader() {
                           wallet?.name?.toLowerCase().includes('phantom') ||
                           wallet?.name?.toLowerCase().includes('solana');
 
-  // Check if connected via Petra Web (Google/Apple social login)
-  const isPetraWebWallet = wallet?.name?.toLowerCase().includes('google') ||
-                            wallet?.name?.toLowerCase().includes('apple') ||
-                            wallet?.url?.includes('web.petra.app');
+  // Check if connected via Aptos Keyless (Google/Apple social login)
+  const isKeylessWallet = wallet?.name?.toLowerCase().includes('google') ||
+                          wallet?.name?.toLowerCase().includes('apple') ||
+                          wallet?.url?.includes('web.petra.app');
 
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
-
-  // Google icon - official Gmail colors
-  const GOOGLE_ICON = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgdmlld0JveD0iMCAwIDEyOCAxMjgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iMjYiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik0xMTMuNzE2IDY1LjE1NjJDMTEzLjcxNiA2MC45Njg4IDExMy4zNDQgNTYuOTY4OCAxMTIuNjg4IDUzLjE1NjJINjRWNzUuODQzOEg5Mi4wNjI1Qzkwujc4MTIgODIuOTM3NSA4Ni42MjUgODkuMDMxMiA4MC40MDYyIDkyLjk2ODhWMTA3LjI4MUgxMDEuNDY5QzEwOS40MzggOTkuOTM3NSAxMTMuNzE2IDg4LjkwNjIgMTEzLjcxNiA2NS4xNTYyWiIgZmlsbD0iIzQyODVGNCIvPgo8cGF0aCBkPSJNNjQgMTIxQzc5LjgxMjUgMTIxIDkyLjk2ODggMTE1Ljg0NCAxMDEuNDY5IDEwNy4yODFMODAuNDA2MiA5Mi45Njg4Qzc1LjE4NzUgOTYuNDY4OCA2OC41IDk4LjU2MjUgNjQgOTguNTYyNUM0OC43ODEyIDk4LjU2MjUgMzUuOTM3NSA4Ni4yODEyIDMxLjMxMjUgNzAuMjgxMkgxMS40Njg4Vjg1LjEyNUMyMS40MDYyIDEwNC44MTIgNDEuMjgxMiAxMjEgNjQgMTIxWiIgZmlsbD0iIzM0QTg1MyIvPgo8cGF0aCBkPSJNMzEuMzEyNSA3MC4yODEyQzI5LjEyNSA2My4xODc1IDI5LjEyNSA1NS4zNzUgMzEuMzEyNSA0OC4yODEyVjMzLjQzNzVIMTEuNDY4OEMzLjE1NjI1IDQ5Ljg0MzggMy4xNTYyNSA2OC43MTg4IDExLjQ2ODggODUuMTI1TDMxLjMxMjUgNzAuMjgxMloiIGZpbGw9IiNGQkJDMDUiLz4KPHBhdGggZD0iTTY0IDI5LjQzNzVDNjkuMDYyNSAyOS4zNzUgNzQuMDMxMiAzMS4zNDM4IDc3Ljg0MzggMzUuMDMxMkw5My4yMTg4IDE5LjY1NjJDODQuMDMxMiAxMS4wOTM4IDcyLjAzMTIgNi40Mzc1IDY0IDYuNTYyNUM0MS4yODEyIDYuNTYyNSAyMS40MDYyIDIyLjc1IDExLjQ2ODggNDIuNDM3NUwzMS4zMTI1IDU3LjI4MTJDMzUuOTM3NSA0MS4yODEyIDQ4Ljc4MTIgMjkuNDM3NSA2NCAyOS40Mzc1WiIgZmlsbD0iI0VBNDMzNSIvPgo8L3N2Zz4K';
-
-  // Apple icon - black Apple logo on white background
-  const APPLE_ICON = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgdmlld0JveD0iMCAwIDEyOCAxMjgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iMjYiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik05NC4zMDU2IDk3LjVDOTAuMTM4OSAxMDMuNzUgODUuNjk0NCAxMDkuNzc4IDc4LjkxNjcgMTA5Ljg4OUM3Mi4xMzg5IDExMCA2OS44NjExIDEwNi4xMTEgNjIuMTk0NCAxMDYuMTExQzU0LjUyNzggMTA2LjExMSA1MiAxMDkuNzc4IDQ1LjYxMTEgMTEwQzM5LjA1NTYgMTEwLjI1IDMzLjkxNjcgMTAzLjQxNyAyOS43MjIyIDk3LjE5NDRDMjEuMTY2NyA4NC41NTU2IDE0LjgwNTYgNjEuNjM4OSAyMy42Mzg5IDQ2Ljk0NDRDMjguIDM5LjY5NDQgMzUuNjExMSAzNC45NzIyIDQzLjg2MTEgMzQuODMzM0M1MC4zMDU2IDM0LjY5NDQgNTYuNDE2NyAzOS4xMzg5IDYwLjM4ODkgMzkuMTM4OUM2NC4zNjExIDM5LjEzODkgNzEuNjk0NCAzMy43Nzc4IDc5LjUgMzQuNTU1NkM4Mi43NSAzNC42OTQ0IDkxLjkxNjcgMzUuODMzMyA5Ny44NjExIDQ0LjI1Qzk3LjM4ODkgNDQuNTgzMyA4Ni4xOTQ0IDUxLjMzMzMgODYuMzMzMyA2NS4yNUM4Ni41IDgxLjg2MTEgMTAwLjA1NiA4Ny4yNSAxMTAwLjI1IDg3LjM2MTFDMTAwLjA1NiA4Ny44NjExIDk3Ljg2MTEgOTQuNjM4OSA5NC4zMDU2IDk3LjVaTTcyIDI4QzY1LjgzMzMgMjguODMzMyA1OC44ODg5IDI1LjU1NTYgNTQuNzIyMiAyMC42OTQ0QzUwLjkxNjcgMTYuMTk0NCA0OC4xOTQ0IDkuNjk0NDQgNDkuMDgzMyAzQzU0LjUgMi42Mzg4OSA2MS44ODg5IDUuOTcyMjIgNjYuMTk0NCAxMC44ODg5QzcwLjMwNTYgMTUuNTU1NiA3My4zNjExIDIyLjA1NTYgNzIgMjhaIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4K';
 
   // Determine which icon to show based on login method
   const isGoogleLogin = wallet?.name?.toLowerCase().includes('google');
@@ -52,15 +75,9 @@ export function PolyHeader() {
     ? 'Google'
     : isAppleLogin
     ? 'Apple'
-    : isPetraWebWallet
-    ? 'Petra Web'
+    : isKeylessWallet
+    ? 'Aptos'
     : wallet?.name?.replace(' (Solana)', '').replace(' (Ethereum)', '') || 'Wallet';
-
-  const walletIcon = isGoogleLogin
-    ? GOOGLE_ICON
-    : isAppleLogin
-    ? APPLE_ICON
-    : getWalletIcon(wallet?.name || '', wallet?.icon);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -90,6 +107,55 @@ export function PolyHeader() {
     }
   };
 
+  // Fund user with APT directly from our faucet account
+  const handleFundWallet = async () => {
+    if (!account?.address || isFunding) return;
+
+    setIsFunding(true);
+    setFundStatus("idle");
+
+    try {
+      const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
+      const faucetAccount = Account.fromPrivateKey({
+        privateKey: new Ed25519PrivateKey(FAUCET_KEY),
+      });
+
+      const amountOctas = Math.floor(FUND_AMOUNT_APT * 100_000_000);
+      const recipientAddress = account.address.toString();
+
+      const txn = await aptos.transaction.build.simple({
+        sender: faucetAccount.accountAddress,
+        data: {
+          function: "0x1::aptos_account::transfer",
+          functionArguments: [recipientAddress, amountOctas],
+        },
+      });
+
+      const pending = await aptos.signAndSubmitTransaction({
+        signer: faucetAccount,
+        transaction: txn,
+      });
+
+      const result = await aptos.waitForTransaction({
+        transactionHash: pending.hash,
+      });
+
+      if (result.success) {
+        setFundStatus("success");
+        setTimeout(() => setFundStatus("idle"), 3000);
+      } else {
+        setFundStatus("error");
+        setTimeout(() => setFundStatus("idle"), 3000);
+      }
+    } catch (error) {
+      console.error("Funding error:", error);
+      setFundStatus("error");
+      setTimeout(() => setFundStatus("idle"), 3000);
+    } finally {
+      setIsFunding(false);
+    }
+  };
+
   return (
     <header className="sticky top-0 z-[60] px-4 py-2 flex items-center justify-between border-b border-[#2c3f4f]" style={{ backgroundColor: '#1c2b3a' }}>
       {/* Logo */}
@@ -110,23 +176,21 @@ export function PolyHeader() {
             onClick={() => setShowDropdown(!showDropdown)}
             className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#2a3d4e] hover:bg-[#3a4f60] transition-colors"
           >
-            {/* Wallet icon */}
-            {walletIcon ? (
-              <img src={walletIcon} alt={walletDisplayName} className="w-6 h-6 rounded-lg" />
+            {/* Wallet icon - Aptos logo with blue ring for keyless */}
+            {isKeylessWallet ? (
+              <AptosKeylessIcon />
             ) : (
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-purple-500 to-green-500" />
+              getWalletIcon(wallet?.name || '', wallet?.icon) ? (
+                <img src={getWalletIcon(wallet?.name || '', wallet?.icon)} alt={walletDisplayName} className="w-6 h-6 rounded-lg" />
+              ) : (
+                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-purple-500 to-green-500" />
+              )
             )}
             {/* Address */}
             <span className="text-white text-sm font-medium">
               {formatAddress(account.address.toString())}
             </span>
-            {/* Petra Web Badge */}
-            {isPetraWebWallet && (
-              <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 text-[10px] font-semibold rounded">
-                KEYLESS
-              </span>
-            )}
-            {/* X-Chain Badge */}
+            {/* X-Chain Badge only */}
             {isXChainWallet && (
               <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 text-[10px] font-semibold rounded">
                 X-CHAIN
@@ -144,19 +208,33 @@ export function PolyHeader() {
               {/* Wallet Info */}
               <div className="p-4 border-b border-[#3a4f60]">
                 <div className="flex items-center gap-3 mb-3">
-                  {walletIcon ? (
-                    <img src={walletIcon} alt={walletDisplayName} className="w-10 h-10 rounded-xl" />
+                  {isKeylessWallet ? (
+                    <div className="w-10 h-10 flex items-center justify-center">
+                      <div className="relative w-10 h-10">
+                        <div className="absolute inset-0 rounded-full border-[3px] border-[#3b82f6]" />
+                        <svg
+                          width="24"
+                          height="24"
+                          viewBox="0 0 100 100"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+                        >
+                          <path d="M69.8 31.4H58.4C57.7 31.4 57 31.7 56.5 32.2L50.2 39.4C49.5 40.2 48.3 40.2 47.6 39.4L41.3 32.2C40.8 31.7 40.1 31.4 39.4 31.4H28L46.4 53.5C48.3 55.8 51.7 55.8 53.6 53.5L69.8 31.4Z" fill="white"/>
+                          <path d="M28.2 68.6H39.6C40.3 68.6 41 68.3 41.5 67.8L47.8 60.6C48.5 59.8 49.7 59.8 50.4 60.6L56.7 67.8C57.2 68.3 57.9 68.6 58.6 68.6H70L51.6 46.5C49.7 44.2 46.3 44.2 44.4 46.5L28.2 68.6Z" fill="white"/>
+                        </svg>
+                      </div>
+                    </div>
                   ) : (
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-green-500" />
+                    getWalletIcon(wallet?.name || '', wallet?.icon) ? (
+                      <img src={getWalletIcon(wallet?.name || '', wallet?.icon)} alt={walletDisplayName} className="w-10 h-10 rounded-xl" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-green-500" />
+                    )
                   )}
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-white font-semibold">{walletDisplayName}</span>
-                      {isPetraWebWallet && (
-                        <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 text-[10px] font-semibold rounded">
-                          KEYLESS
-                        </span>
-                      )}
                       {isXChainWallet && (
                         <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 text-[10px] font-semibold rounded">
                           X-CHAIN
@@ -173,11 +251,11 @@ export function PolyHeader() {
                   </div>
                 </div>
 
-                {/* Petra Web Info */}
-                {isPetraWebWallet && (
-                  <div className="p-2.5 bg-purple-500/10 border border-purple-500/30 rounded-lg mb-3">
-                    <div className="text-purple-400 text-xs">
-                      Connected via {wallet?.name?.includes('Google') ? 'Google' : 'Apple'} (Keyless)
+                {/* Keyless Info */}
+                {isKeylessWallet && (
+                  <div className="p-2.5 bg-[#3b82f6]/10 border border-[#3b82f6]/30 rounded-lg mb-3">
+                    <div className="text-[#60a5fa] text-xs">
+                      Aptos Keyless via {wallet?.name?.includes('Google') ? 'Google' : 'Apple'}
                     </div>
                   </div>
                 )}
@@ -191,17 +269,35 @@ export function PolyHeader() {
                   </div>
                 )}
 
-                {/* Faucet Button */}
-                <a
-                  href={`https://aptos.dev/en/network/faucet?address=${account?.address.toString()}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full py-2.5 bg-[#22c55e] hover:bg-[#1ea54d] text-white text-sm font-medium rounded-lg transition-colors"
+                {/* Fund Button */}
+                <button
+                  onClick={handleFundWallet}
+                  disabled={isFunding}
+                  className={`flex items-center justify-center gap-2 w-full py-2.5 text-white text-sm font-medium rounded-lg transition-colors ${
+                    fundStatus === "success"
+                      ? "bg-green-600"
+                      : fundStatus === "error"
+                      ? "bg-red-600"
+                      : isFunding
+                      ? "bg-[#3b82f6]/50 cursor-not-allowed"
+                      : "bg-[#3b82f6] hover:bg-[#2563eb]"
+                  }`}
                 >
-                  <Wallet size={16} />
-                  Get Testnet APT
-                  <ExternalLink size={14} />
-                </a>
+                  {isFunding ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : fundStatus === "success" ? (
+                    <Check size={16} />
+                  ) : (
+                    <Plus size={16} />
+                  )}
+                  {fundStatus === "success"
+                    ? "+$50 Added!"
+                    : fundStatus === "error"
+                    ? "Failed - Try Again"
+                    : isFunding
+                    ? "Adding funds..."
+                    : "Add $50 Cash"}
+                </button>
               </div>
 
               {/* Disconnect */}

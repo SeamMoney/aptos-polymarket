@@ -47,7 +47,7 @@ export function HFTDemoPage() {
   const peakTps = stats.peakTps || 0;
 
   return (
-    <div className="min-h-screen bg-[#0d1117]">
+    <div className="min-h-screen bg-poly-bg">
       <PolyHeader />
 
       <div className="max-w-6xl mx-auto px-4 py-6">
@@ -73,7 +73,7 @@ export function HFTDemoPage() {
             </h1>
             <Zap className="text-yellow-400" size={28} />
           </div>
-          <p className="text-[#6b7a8a] text-sm">
+          <p className="text-pm-text-muted text-sm">
             30,000+ TPS on Aptos Testnet
           </p>
         </motion.div>
@@ -93,7 +93,7 @@ export function HFTDemoPage() {
           >
             {formatNumber(currentTps)}
           </div>
-          <div className="text-xl text-[#6b7a8a] mt-2">
+          <div className="text-xl text-pm-text-muted mt-2">
             Transactions Per Second
           </div>
 
@@ -125,20 +125,20 @@ export function HFTDemoPage() {
 
         {/* Stats Row */}
         <div className="grid grid-cols-3 gap-4 max-w-2xl mx-auto mb-8">
-          <div className="bg-[#1c2b3a] rounded-xl p-4 text-center border border-[#2c3f4f]">
+          <div className="bg-poly-card rounded-xl p-4 text-center border border-poly-border">
             <Activity size={20} className="mx-auto mb-2 text-[#60a5fa]" />
             <div className="text-2xl font-bold text-white">{formatNumber(stats.totalTrades)}</div>
-            <div className="text-xs text-[#6b7a8a]">Total Trades</div>
+            <div className="text-xs text-pm-text-muted">Total Trades</div>
           </div>
-          <div className="bg-[#1c2b3a] rounded-xl p-4 text-center border border-[#2c3f4f]">
-            <BarChart3 size={20} className="mx-auto mb-2 text-[#22c55e]" />
+          <div className="bg-poly-card rounded-xl p-4 text-center border border-poly-border">
+            <BarChart3 size={20} className="mx-auto mb-2 text-poly-green" />
             <div className="text-2xl font-bold text-white">{(stats.successRate || 0).toFixed(1)}%</div>
-            <div className="text-xs text-[#6b7a8a]">Success Rate</div>
+            <div className="text-xs text-pm-text-muted">Success Rate</div>
           </div>
-          <div className="bg-[#1c2b3a] rounded-xl p-4 text-center border border-[#2c3f4f]">
+          <div className="bg-poly-card rounded-xl p-4 text-center border border-poly-border">
             <Zap size={20} className="mx-auto mb-2 text-[#fbbf24]" />
             <div className="text-2xl font-bold text-white">{stats.avgLatency?.toFixed(0) || 0}ms</div>
-            <div className="text-xs text-[#6b7a8a]">Avg Latency</div>
+            <div className="text-xs text-pm-text-muted">Avg Latency</div>
           </div>
         </div>
 
@@ -149,9 +149,9 @@ export function HFTDemoPage() {
             animate={{ opacity: 1, y: 0 }}
             className="mb-8"
           >
-            <div className="bg-[#1c2b3a] rounded-xl p-4 border border-[#2c3f4f]">
+            <div className="bg-poly-card rounded-xl p-4 border border-poly-border">
               <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-                <BarChart3 size={16} className="text-[#60a5fa]" />
+                <BarChart3 size={16} className="text-pm-secondary" />
                 TPS History
               </h3>
               <TPSGraph history={tpsHistory} height={120} />
@@ -180,10 +180,10 @@ export function HFTDemoPage() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
           >
-            <div className="bg-[#1c2b3a] rounded-xl border border-[#2c3f4f] overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#2c3f4f]">
+            <div className="bg-poly-card rounded-xl border border-poly-border overflow-hidden">
+              <div className="px-4 py-3 border-b border-poly-border">
                 <span className="text-sm font-semibold text-white">Block River</span>
-                <span className="text-xs text-[#6b7a8a] ml-2">Live Visualization</span>
+                <span className="text-xs text-pm-text-muted ml-2">Live Visualization</span>
               </div>
               <BlockRiver height={300} />
             </div>
@@ -195,13 +195,13 @@ export function HFTDemoPage() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="max-w-xl mx-auto p-6 bg-[#1c2b3a] rounded-xl border border-[#2c3f4f]"
+            className="max-w-xl mx-auto p-6 bg-poly-card rounded-xl border border-poly-border"
           >
             <h3 className="text-white font-semibold mb-3">Start the HFT Server</h3>
-            <code className="block bg-black/30 p-4 rounded-lg text-green-400 font-mono text-sm mb-3">
+            <code className="block bg-poly-bg p-4 rounded-lg text-poly-green font-mono text-sm mb-3">
               ./scripts/run-3-workers.sh normal 60
             </code>
-            <p className="text-[#6b7a8a] text-sm">
+            <p className="text-pm-text-muted text-sm">
               Starts 3 workers with 20 accounts for ~30k TPS using your synced fullnode.
             </p>
           </motion.div>
