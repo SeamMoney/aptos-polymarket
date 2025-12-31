@@ -362,10 +362,16 @@ function App() {
 
             <div className="flex items-center justify-center gap-4 flex-wrap">
               <a
+                href="/demo-day"
+                className="px-6 py-3 bg-gradient-to-r from-[#1652f0] to-[#2d9cdb] text-white font-bold rounded-xl hover:from-[#164bcf] hover:to-[#1652f0] transition-all flex items-center gap-2 shadow-lg shadow-[#1652f0]/20"
+              >
+                <span>⚡</span> Demo Day Mode
+              </a>
+              <a
                 href="/demo"
                 className="px-6 py-3 bg-poly-green text-black font-bold rounded-xl hover:bg-poly-green/90 transition-all flex items-center gap-2"
               >
-                <span>⚡</span> Launch Demo Mode
+                Simple Demo
               </a>
               <a
                 href="#hft-demo"

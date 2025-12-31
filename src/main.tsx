@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './index.css';
 import App from './App';
-import { DemoMode } from './components';
+import { DemoMode, DemoMarketPage } from './components';
 import { NetworkProvider } from './contexts/NetworkContext';
 import { WalletProvider } from './contexts/WalletContext';
 
@@ -15,6 +15,7 @@ createRoot(document.getElementById('root')!).render(
           <Routes>
             <Route path="/" element={<App />} />
             <Route path="/demo" element={<DemoMode />} />
+            <Route path="/demo-day" element={<DemoMarketPage />} />
           </Routes>
         </WalletProvider>
       </NetworkProvider>
