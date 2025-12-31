@@ -625,9 +625,9 @@ export function OutcomeDetail() {
         </div>
       </div>
 
-      {/* Buy Yes / Buy No buttons - Fixed at bottom */}
+      {/* Buy Yes / Buy No buttons - Fixed at very bottom */}
       <div
-        className="fixed bottom-16 left-0 right-0 z-40 px-4 py-3"
+        className="fixed bottom-0 left-0 right-0 z-40 px-4 py-3 pb-safe"
         style={{ backgroundColor: '#1c2b3a', borderTop: '2px solid #2c3f4f' }}
       >
         <div className="max-w-lg mx-auto flex gap-3">
