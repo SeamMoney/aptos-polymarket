@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp, Sparkles } from "lucide-react";
+import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp } from "lucide-react";
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { PolyChart, generateOutcomePrices } from "./PolyChart";
