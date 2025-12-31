@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp, Play, Square, Loader2 } from "lucide-react";
+import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp } from "lucide-react";
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { PolyChart, generateOutcomePrices } from "./PolyChart";
@@ -54,8 +54,6 @@ export function MarketDetail() {
     marketReserves: hftReserves,
     trades: hftTrades,
     tpsHistory,
-    startTrading,
-    stopTrading,
   } = useHFTConnection();
 
   // Try to find market from on-chain data first, then fall back to mock data
@@ -642,55 +640,6 @@ export function MarketDetail() {
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* HFT Demo Controls - Fixed Bottom Bar (above bottom nav) */}
-      <div
-        className="fixed bottom-16 left-0 right-0 z-40 px-4 py-3"
-        style={{ backgroundColor: '#1c2b3a', borderTop: '2px solid #2c3f4f' }}
-      >
-        <div className="max-w-4xl mx-auto">
-          <div className="flex gap-3">
-            {!hftRunning ? (
-              <button
-                onClick={startTrading}
-                disabled={!hftConnected}
-                className={`flex-1 rounded-lg py-4 text-white text-base font-bold transition-colors flex items-center justify-center gap-2 ${
-                  hftConnected
-                    ? 'bg-[#4abe7a] hover:bg-[#3da86a]'
-                    : 'bg-[#3b82f6] hover:bg-[#2563eb]'
-                }`}
-              >
-                <Play size={20} fill="white" />
-                {hftConnected ? 'Start HFT Demo' : 'Start 30K TPS Demo'}
-              </button>
-            ) : (
-              <button
-                onClick={stopTrading}
-                className="flex-1 bg-[#e5534b] hover:bg-[#d4443c] rounded-lg py-4 text-white text-base font-bold transition-colors flex items-center justify-center gap-2"
-              >
-                <Square size={20} fill="white" />
-                Stop Demo
-              </button>
-            )}
-            {hftRunning && (
-              <div className="flex items-center gap-3 px-4 bg-[#2a3d4e] rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Loader2 size={16} className="text-[#60a5fa] animate-spin" />
-                  <span className="text-[#60a5fa] text-sm font-bold tabular-nums">{hftStats.currentTps || 0} TPS</span>
-                </div>
-                <div className="text-[#8297a3] text-xs">
-                  {hftStats.totalTrades || 0} trades
-                </div>
-              </div>
-            )}
-          </div>
-          {!hftConnected && (
-            <p className="text-[#6b7a8a] text-xs text-center mt-2">
-              Run <code className="bg-[#2a3d4e] px-1 rounded">npx tsx server/hft-server.ts</code> to enable demo
-            </p>
-          )}
         </div>
       </div>
 
