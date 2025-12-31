@@ -7,7 +7,7 @@ authors = []
 prediction_market = "_"
 
 [dev-addresses]
-prediction_market = "0xCAFE"
+prediction_market = "0x64a81cb9cbd14d45b87bb32ef73107a44f00069b6a96e70d75369fb7e3da5e68"
 
 [dependencies.AptosFramework]
 git = "https://github.com/aptos-labs/aptos-core.git"

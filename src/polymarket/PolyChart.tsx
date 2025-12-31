@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState, useCallback } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 
 const CHART_WIDTH = 600;
 const CHART_HEIGHT = 220;
-const CHART_PADDING_RIGHT = 20; // Padding so endpoints don't get cut off
+const CHART_PADDING_RIGHT = 20;
 
 interface OutcomeData {
   id: string;
@@ -58,9 +58,15 @@ const REAL_HISTORICAL_DATA = [
   { date: "12-31", hassett: 0.445, warsh: 0.325, waller: 0.107, rieder: 0.0445 },
 ];
 
-// Generate prices from real data based on outcome name
+// Seeded random for consistent chart patterns
+const seededRandom = (seed: number) => {
+  const x = Math.sin(seed * 12345.6789) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+// Generate prices - works for ANY market with realistic patterns
 export const generateOutcomePrices = (
-  _outcomeId: string,
+  outcomeId: string,
   basePrice: number,
   numPoints: number,
   patternIndex: number
@@ -68,29 +74,69 @@ export const generateOutcomePrices = (
   const prices: number[] = [];
   const dataLength = REAL_HISTORICAL_DATA.length;
 
+  // Generate a seed from the outcomeId for consistent patterns
+  const seed = outcomeId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + patternIndex;
+
+  // Check if we should use real historical data (for Fed Chair market)
+  const useRealData = patternIndex < 4;
+
   for (let i = 0; i < numPoints; i++) {
     const dataIndex = Math.floor((i / numPoints) * dataLength);
     const data = REAL_HISTORICAL_DATA[Math.min(dataIndex, dataLength - 1)];
 
     let price: number;
-    switch (patternIndex) {
-      case 0:
-        price = data.hassett;
-        break;
-      case 1:
-        price = data.warsh;
-        break;
-      case 2:
-        price = data.waller;
-        break;
-      case 3:
-        price = data.rieder;
-        break;
-      default:
-        price = basePrice;
+
+    if (useRealData) {
+      // Use real Fed Chair market data for first 4 outcomes
+      switch (patternIndex) {
+        case 0:
+          price = data.hassett;
+          break;
+        case 1:
+          price = data.warsh;
+          break;
+        case 2:
+          price = data.waller;
+          break;
+        case 3:
+          price = data.rieder;
+          break;
+        default:
+          price = basePrice;
+      }
+    } else {
+      // Generate synthetic but realistic price patterns for other markets
+      const t = i / numPoints;
+
+      // Create different pattern types based on patternIndex
+      const patternType = patternIndex % 6;
+
+      switch (patternType) {
+        case 0: // Rising trend
+          price = basePrice * 0.6 + (basePrice * 0.8) * t + seededRandom(seed + i) * 0.1;
+          break;
+        case 1: // Falling trend
+          price = basePrice * 1.4 - (basePrice * 0.8) * t + seededRandom(seed + i) * 0.1;
+          break;
+        case 2: // Volatile/choppy
+          price = basePrice + Math.sin(t * 12 + seed) * 0.15 + seededRandom(seed + i) * 0.08;
+          break;
+        case 3: // Steady with small fluctuations
+          price = basePrice + seededRandom(seed + i) * 0.06 - 0.03;
+          break;
+        case 4: // U-shaped recovery
+          price = basePrice + Math.pow((t - 0.5) * 2, 2) * 0.2 - 0.1 + seededRandom(seed + i) * 0.05;
+          break;
+        case 5: // Inverted U (rise then fall)
+          price = basePrice - Math.pow((t - 0.5) * 2, 2) * 0.2 + 0.1 + seededRandom(seed + i) * 0.05;
+          break;
+        default:
+          price = basePrice;
+      }
     }
 
-    const noise = (Math.random() - 0.5) * 0.005;
+    // Add small noise for realism
+    const noise = (seededRandom(seed * 1000 + i) - 0.5) * 0.01;
     prices.push(Math.max(0.01, Math.min(0.99, price + noise)));
   }
 
@@ -120,9 +166,9 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH }: Poly
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [cursorX, setCursorX] = useState<number>(0);
+  const [isTouching, setIsTouching] = useState(false);
 
   const numPoints = outcomes[0]?.prices.length || 100;
-
   const innerWidth = width - CHART_PADDING_RIGHT;
 
   // Pre-calculate all paths
@@ -145,11 +191,12 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH }: Poly
     });
   }, [outcomes, width, innerWidth]);
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
+  // Calculate position from x coordinate
+  const updatePosition = useCallback(
+    (clientX: number) => {
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const x = Math.max(0, Math.min(width, e.clientX - rect.left));
+      const x = Math.max(0, Math.min(width, clientX - rect.left));
       setCursorX(x);
       const idx = Math.round((x / width) * (numPoints - 1));
       setActiveIndex(idx);
@@ -158,22 +205,93 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH }: Poly
     [width, numPoints, onIndexChange]
   );
 
+  // Mouse events
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (isTouching) return; // Ignore mouse events during touch
+      updatePosition(e.clientX);
+    },
+    [updatePosition, isTouching]
+  );
+
   const handleMouseLeave = useCallback(() => {
+    if (isTouching) return;
+    setActiveIndex(null);
+    onIndexChange?.(null);
+  }, [onIndexChange, isTouching]);
+
+  // Touch events for mobile
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      e.preventDefault(); // Prevent text selection and scroll
+      setIsTouching(true);
+      if (e.touches.length > 0) {
+        updatePosition(e.touches[0].clientX);
+      }
+    },
+    [updatePosition]
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      e.preventDefault(); // Prevent scroll while dragging
+      if (e.touches.length > 0) {
+        updatePosition(e.touches[0].clientX);
+      }
+    },
+    [updatePosition]
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    setIsTouching(false);
     setActiveIndex(null);
     onIndexChange?.(null);
   }, [onIndexChange]);
+
+  // Prevent context menu on long press
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const preventDefault = (e: Event) => e.preventDefault();
+
+    container.addEventListener('contextmenu', preventDefault);
+    container.addEventListener('selectstart', preventDefault);
+
+    return () => {
+      container.removeEventListener('contextmenu', preventDefault);
+      container.removeEventListener('selectstart', preventDefault);
+    };
+  }, []);
 
   return (
     <div className="px-4">
       <div className="flex">
         <div
           ref={containerRef}
-          className="relative cursor-crosshair"
-          style={{ width, height: CHART_HEIGHT }}
+          className="relative cursor-crosshair select-none"
+          style={{
+            width,
+            height: CHART_HEIGHT,
+            touchAction: 'none', // Disable browser touch actions
+            WebkitUserSelect: 'none',
+            WebkitTouchCallout: 'none',
+          }}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
         >
-          <svg width={width} height={CHART_HEIGHT}>
+          <svg
+            width={width}
+            height={CHART_HEIGHT}
+            style={{
+              touchAction: 'none',
+              userSelect: 'none',
+            }}
+          >
             {/* Faint grid lines */}
             {[0, 0.25, 0.5, 0.75, 1].map((pct) => (
               <line
@@ -189,15 +307,26 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH }: Poly
               />
             ))}
 
-            {/* Polymarket logo watermark */}
-            <image
-              href="/images/icon-white.svg"
-              x={width - 60}
-              y={CHART_HEIGHT - 50}
-              width={40}
-              height={40}
-              opacity={0.15}
-            />
+            {/* Polymarket watermark - moved to left with text */}
+            <g opacity={0.12}>
+              <image
+                href="/images/icon-white.svg"
+                x={16}
+                y={CHART_HEIGHT - 36}
+                width={24}
+                height={24}
+              />
+              <text
+                x={44}
+                y={CHART_HEIGHT - 18}
+                fill="#ffffff"
+                fontSize={12}
+                fontWeight={600}
+                fontFamily="system-ui, -apple-system, sans-serif"
+              >
+                Polymarket
+              </text>
+            </g>
 
             {/* Chart lines - thicker strokes */}
             {chartPaths.map(({ id, path, color, lastX, lastY }) => (
@@ -230,7 +359,7 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH }: Poly
         </div>
 
         {/* Y-axis */}
-        <div className="ml-3 flex flex-col justify-between" style={{ height: CHART_HEIGHT }}>
+        <div className="ml-3 flex flex-col justify-between select-none" style={{ height: CHART_HEIGHT }}>
           <span className="text-poly-textMuted text-xs">100%</span>
           <span className="text-poly-textMuted text-xs">75%</span>
           <span className="text-poly-textMuted text-xs">50%</span>
@@ -240,7 +369,7 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH }: Poly
       </div>
 
       {/* X-axis */}
-      <div className="flex justify-between mt-1" style={{ width }}>
+      <div className="flex justify-between mt-1 select-none" style={{ width }}>
         <span className="text-poly-textMuted text-xs">Sep</span>
         <span className="text-poly-textMuted text-xs">Dec</span>
       </div>
@@ -264,7 +393,7 @@ function HoverLabels({ outcomes, activeIndex, chartWidth }: HoverLabelsProps) {
 
   return (
     <div
-      className="absolute top-0 left-0 right-0 pointer-events-none"
+      className="absolute top-0 left-0 right-0 pointer-events-none select-none"
       style={{ height: CHART_HEIGHT }}
     >
       {/* Date at top right */}

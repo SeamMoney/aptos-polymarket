@@ -2,7 +2,7 @@ import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import type { InputViewFunctionData } from '@aptos-labs/ts-sdk';
 
 // Contract configuration - Deployed on Aptos Testnet
-export const PREDICTION_MARKET_ADDRESS = '0x64a81cb9cbd14d45b87bb32ef73107a44f00069b6a96e70d75369fb7e3da5e68';
+export const PREDICTION_MARKET_ADDRESS = '0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4';
 
 // Testnet USDC token metadata address
 export const USDC_ADDRESS = '0x69091fbab5f7d635ee7ac5098cf0c1efbe31d68fec0f2cd565e8d168daf52832';

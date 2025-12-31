@@ -10,7 +10,7 @@ import {
   Ed25519PrivateKey,
 } from '@aptos-labs/ts-sdk';
 
-const CONTRACT_ADDRESS = '0x64a81cb9cbd14d45b87bb32ef73107a44f00069b6a96e70d75369fb7e3da5e68';
+const CONTRACT_ADDRESS = '0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4';
 const MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
 
 async function main() {
@@ -40,7 +40,7 @@ async function main() {
   const category = 'Politics';
   const outcomes = ['Trump', 'Biden', 'DeSantis', 'RFK Jr', 'Other'];
   const endTime = Math.floor(Date.now() / 1000) + 86400 * 30; // 30 days
-  const initialLiquidity = 5_00000000; // 5 APT
+  const initialLiquidity = 50000000; // 0.5 APT (reduced for available balance)
 
   console.log('\nMarket Details:');
   console.log('  Question:', question);

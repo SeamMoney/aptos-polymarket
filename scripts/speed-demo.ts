@@ -16,7 +16,7 @@ import {
   Ed25519PrivateKey,
 } from '@aptos-labs/ts-sdk';
 
-const CONTRACT_ADDRESS = '0x64a81cb9cbd14d45b87bb32ef73107a44f00069b6a96e70d75369fb7e3da5e68';
+const CONTRACT_ADDRESS = '0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4';
 const MODULE = `${CONTRACT_ADDRESS}::market`;
 const KNOWN_MARKET = '0x9ec8c2987a5d0598969bb48f3acee94dd6bd5570420cbe5993d65e48500380c4';
 

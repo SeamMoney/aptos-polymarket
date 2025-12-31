@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { TradingSheet } from "./TradingSheet";
 import { mockMarkets } from "./mockData";
+import { usePolymarkets } from "../hooks/usePolymarkets";
 
 const CHART_HEIGHT = 280;
 const CHART_PADDING_RIGHT = 60;
@@ -125,12 +126,29 @@ export function OutcomeDetail() {
   const [showTradingSheet, setShowTradingSheet] = useState(false);
   const [tradeType, setTradeType] = useState<"yes" | "no">("yes");
 
+  // Get trading functions from hook
+  const {
+    getMarket,
+    buyYes,
+    buyNo,
+    sellYes,
+    sellNo,
+    buyOutcome,
+    sellOutcome,
+  } = usePolymarkets();
+
   useEffect(() => {
     const timer = setTimeout(() => setIsLoaded(true), 100);
     return () => clearTimeout(timer);
   }, []);
 
-  const market = useMemo(() => mockMarkets.find((m) => m.id === marketId), [marketId]);
+  // Try to find market from on-chain data first, then fall back to mock data
+  const market = useMemo(() => {
+    const onChainMarket = getMarket(marketId || "");
+    if (onChainMarket) return onChainMarket;
+    return mockMarkets.find((m) => m.id === marketId);
+  }, [marketId, getMarket]);
+
   const outcome = useMemo(
     () => market?.outcomes?.find((o) => o.id === outcomeId),
     [market, outcomeId]
@@ -652,6 +670,12 @@ export function OutcomeDetail() {
           isVisible={showTradingSheet}
           onClose={() => setShowTradingSheet(false)}
           initialType={tradeType}
+          onBuyYes={buyYes}
+          onBuyNo={buyNo}
+          onSellYes={sellYes}
+          onSellNo={sellNo}
+          onBuyOutcome={buyOutcome}
+          onSellOutcome={sellOutcome}
         />
       )}
     </motion.div>

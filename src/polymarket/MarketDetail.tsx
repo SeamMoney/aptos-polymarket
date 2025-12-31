@@ -8,6 +8,7 @@ import { PolyChart, generateOutcomePrices } from "./PolyChart";
 import { TradingSheet } from "./TradingSheet";
 import { ExpandedOrderBook } from "./ExpandedOrderBook";
 import { mockMarkets, categories } from "./mockData";
+import { usePolymarkets } from "../hooks/usePolymarkets";
 import type { Category, Outcome } from "./types";
 
 const timeRanges = ["1H", "6H", "1D", "1W", "1M", "ALL"];
@@ -26,7 +27,23 @@ export function MarketDetail() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [showStickyTitle, setShowStickyTitle] = useState(false);
 
-  const market = useMemo(() => mockMarkets.find((m) => m.id === id), [id]);
+  // Get trading functions from hook
+  const {
+    getMarket,
+    buyYes,
+    buyNo,
+    sellYes,
+    sellNo,
+    buyOutcome,
+    sellOutcome,
+  } = usePolymarkets();
+
+  // Try to find market from on-chain data first, then fall back to mock data
+  const market = useMemo(() => {
+    const onChainMarket = getMarket(id || "");
+    if (onChainMarket) return onChainMarket;
+    return mockMarkets.find((m) => m.id === id);
+  }, [id, getMarket]);
 
   // Animate in on mount
   useEffect(() => {
@@ -504,6 +521,12 @@ export function MarketDetail() {
         isVisible={showTradingSheet}
         onClose={() => setShowTradingSheet(false)}
         initialType={tradeType}
+        onBuyYes={buyYes}
+        onBuyNo={buyNo}
+        onSellYes={sellYes}
+        onSellNo={sellNo}
+        onBuyOutcome={buyOutcome}
+        onSellOutcome={sellOutcome}
       />
     </motion.div>
   );

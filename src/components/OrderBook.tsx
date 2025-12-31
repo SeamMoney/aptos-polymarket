@@ -18,119 +18,88 @@ interface OrderBookProps {
   noReserve: number;
 }
 
-interface OrderLevel {
-  price: number;
-  size: number;
-  total: number;
-  orders: number;
-  side: 'bid' | 'ask';
+interface LiquidityLevel {
+  amount: number;      // APT input
+  tokensOut: number;   // Tokens received
+  avgPrice: number;    // Average execution price (in cents)
+  slippage: number;    // Slippage percentage
+  side: 'buy' | 'sell';
 }
 
-export function OrderBook({ trades, yesPrice, noPrice, yesReserve: _yesReserve, noReserve: _noReserve }: OrderBookProps) {
-  // Reserve props kept for future use
-  void _yesReserve; void _noReserve;
+// CPMM formula: tokens_out = reserve_out * amount_in / (reserve_in + amount_in)
+function calculateBuyOutput(baseReserve: number, outcomeReserve: number, amountIn: number): number {
+  if (baseReserve <= 0 || outcomeReserve <= 0) return 0;
+  return (outcomeReserve * amountIn) / (baseReserve + amountIn);
+}
 
-  const [showDepth, setShowDepth] = useState(true);
+// Calculate spot price (price for infinitesimal trade)
+function calculateSpotPrice(baseReserve: number, outcomeReserve: number): number {
+  if (baseReserve <= 0 || outcomeReserve <= 0) return 50;
+  const total = baseReserve + outcomeReserve;
+  return (baseReserve / total) * 100;
+}
+
+export function OrderBook({ trades, yesPrice, noPrice, yesReserve, noReserve }: OrderBookProps) {
+  const [showSlippage, setShowSlippage] = useState(true);
   const [animatedTrades, setAnimatedTrades] = useState<Set<string>>(new Set());
 
-  // Update counter to force recalculation
-  const [updateCounter, setUpdateCounter] = useState(0);
+  // Calculate REAL liquidity depth from AMM reserves
+  const { buyLevels, sellLevels, maxAmount } = useMemo(() => {
+    // Use actual reserves if available, otherwise estimate from price
+    const baseReserve = yesReserve > 0 ? yesReserve : 1000;
+    const outcomeReserve = noReserve > 0 ? noReserve : 1000;
 
-  // Force update on new trades
-  useEffect(() => {
-    if (trades.length > 0) {
-      setUpdateCounter(c => c + 1); // eslint-disable-line react-hooks/set-state-in-effect
-    }
-  }, [trades.length]);
+    const spotPrice = calculateSpotPrice(baseReserve, outcomeReserve);
 
-  // Generate synthetic order book from AMM curve with trade-reactive sizing
-  const { bids, asks, maxTotal } = useMemo(() => {
-    const bidLevels: OrderLevel[] = [];
-    const askLevels: OrderLevel[] = [];
+    // Trade sizes to show (in APT)
+    const tradeSizes = [0.1, 0.5, 1, 2, 5, 10, 25, 50];
 
-    const currentMidPrice = yesPrice;
+    // Calculate buy levels (buying YES tokens)
+    const buyLevels: LiquidityLevel[] = tradeSizes.map(amount => {
+      const tokensOut = calculateBuyOutput(baseReserve, outcomeReserve, amount);
+      const avgPrice = tokensOut > 0 ? (amount / tokensOut) * 100 : spotPrice;
+      const slippage = spotPrice > 0 ? ((avgPrice - spotPrice) / spotPrice) * 100 : 0;
 
-    // Calculate recent trade pressure to bias order sizes
-    const recentTrades = trades.slice(0, 20);
-    let buyPressure = 0;
-    let sellPressure = 0;
-    recentTrades.forEach(t => {
-      if (t.actionDisplay.includes('BUY')) buyPressure += t.amount;
-      else sellPressure += t.amount;
-    });
-    const pressureRatio = buyPressure / (buyPressure + sellPressure + 0.001);
+      return {
+        amount,
+        tokensOut,
+        avgPrice,
+        slippage: Math.abs(slippage),
+        side: 'buy' as const,
+      };
+    }).filter(l => l.tokensOut > 0);
 
-    // Seeded random for consistent but varying values
-    const seededRandom = (seed: number) => {
-      const x = Math.sin(seed * 9999 + updateCounter * 0.1) * 10000;
-      return x - Math.floor(x);
-    };
+    // Calculate sell levels (selling YES tokens = buying NO)
+    // Reverse the reserves for selling
+    const sellLevels: LiquidityLevel[] = tradeSizes.map(amount => {
+      const tokensOut = calculateBuyOutput(outcomeReserve, baseReserve, amount);
+      const avgPrice = tokensOut > 0 ? (amount / tokensOut) * 100 : (100 - spotPrice);
+      const basePrice = 100 - spotPrice;
+      const slippage = basePrice > 0 ? ((avgPrice - basePrice) / basePrice) * 100 : 0;
 
-    // Generate bid levels - scale to realistic trade sizes (0.01-0.5 APT range)
-    let bidTotal = 0;
-    for (let i = 0; i <= 8; i += 1) {
-      const priceOffset = i * 2;
-      const price = Math.max(1, currentMidPrice - priceOffset);
-      const distanceFactor = Math.exp(-priceOffset / 12);
+      return {
+        amount,
+        tokensOut,
+        avgPrice,
+        slippage: Math.abs(slippage),
+        side: 'sell' as const,
+      };
+    }).filter(l => l.tokensOut > 0);
 
-      // Realistic trade sizes based on actual bot activity
-      const pressureAdjust = 0.7 + (1 - pressureRatio) * 0.6;
-      const baseSize = 0.15 * distanceFactor * pressureAdjust; // ~0.15 APT base
-      const variance = 0.5 + seededRandom(price + i) * 1.0;
-      const size = baseSize * variance;
-      bidTotal += size;
+    const maxAmount = Math.max(
+      ...buyLevels.map(l => l.amount),
+      ...sellLevels.map(l => l.amount)
+    );
 
-      if (size > 0.01) {
-        bidLevels.push({
-          price,
-          size,
-          total: bidTotal,
-          orders: Math.floor(1 + seededRandom(price * 2 + i) * 4),
-          side: 'bid',
-        });
-      }
-    }
-
-    // Generate ask levels - scale to realistic trade sizes
-    let askTotal = 0;
-    for (let i = 0; i <= 8; i += 1) {
-      const priceOffset = i * 2;
-      const price = Math.min(99, currentMidPrice + priceOffset);
-      const distanceFactor = Math.exp(-priceOffset / 12);
-
-      const pressureAdjust = 0.7 + pressureRatio * 0.6;
-      const baseSize = 0.15 * distanceFactor * pressureAdjust;
-      const variance = 0.5 + seededRandom(price + i + 100) * 1.0;
-      const size = baseSize * variance;
-      askTotal += size;
-
-      if (size > 0.01) {
-        askLevels.push({
-          price,
-          size,
-          total: askTotal,
-          orders: Math.floor(1 + seededRandom(price * 2 + i + 100) * 4),
-          side: 'ask',
-        });
-      }
-    }
-
-    const maxTotal = Math.max(bidTotal, askTotal);
-
-    return {
-      bids: bidLevels.slice(0, 8),
-      asks: askLevels.slice(0, 8).reverse(),
-      maxTotal
-    };
-     
-  }, [yesPrice, trades, updateCounter]);
+    return { buyLevels, sellLevels, maxAmount };
+  }, [yesReserve, noReserve]);
 
   // Track recently animated trades
   useEffect(() => {
     if (trades.length > 0) {
       const latestTrade = trades[0];
       if (latestTrade.success) {
-        setAnimatedTrades(prev => new Set([...prev, latestTrade.id])); // eslint-disable-line react-hooks/set-state-in-effect
+        setAnimatedTrades(prev => new Set([...prev, latestTrade.id]));
         setTimeout(() => {
           setAnimatedTrades(prev => {
             const next = new Set(prev);
@@ -142,107 +111,85 @@ export function OrderBook({ trades, yesPrice, noPrice, yesReserve: _yesReserve, 
     }
   }, [trades]);
 
-  // Recent trades aggregated by price level
-  const recentTradesByPrice = useMemo(() => {
-    const priceMap = new Map<number, { buys: number; sells: number; volume: number }>();
-
-    trades.slice(0, 50).forEach(trade => {
-      if (!trade.success) return;
-
-      // Estimate execution price based on action and current price
-      let execPrice: number;
-      if (trade.actionDisplay.includes('YES')) {
-        execPrice = Math.round(yesPrice);
-      } else {
-        execPrice = Math.round(100 - yesPrice);
-      }
-
-      // Round to nearest 2
-      execPrice = Math.round(execPrice / 2) * 2;
-
-      const existing = priceMap.get(execPrice) || { buys: 0, sells: 0, volume: 0 };
-      if (trade.actionDisplay.includes('BUY')) {
-        existing.buys += trade.amount;
-      } else {
-        existing.sells += trade.amount;
-      }
-      existing.volume += trade.amount;
-      priceMap.set(execPrice, existing);
-    });
-
-    return priceMap;
-  }, [trades, yesPrice]);
-
-  const formatSize = (size: number) => {
-    if (size >= 1) return size.toFixed(2);
-    if (size >= 0.1) return size.toFixed(3);
-    return size.toFixed(4);
+  const formatAmount = (amount: number) => {
+    if (amount >= 10) return amount.toFixed(0);
+    if (amount >= 1) return amount.toFixed(1);
+    return amount.toFixed(2);
   };
 
-  const spread = asks.length > 0 && bids.length > 0
-    ? (asks[asks.length - 1]?.price || 0) - (bids[0]?.price || 0)
-    : 0;
+  const formatTokens = (tokens: number) => {
+    if (tokens >= 100) return tokens.toFixed(0);
+    if (tokens >= 10) return tokens.toFixed(1);
+    return tokens.toFixed(2);
+  };
+
+  // TVL (Total Value Locked)
+  const tvl = yesReserve + noReserve;
 
   return (
     <div className="bg-poly-dark rounded-xl p-4">
+      {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <div className="text-sm text-gray-400 font-semibold">AMM Liquidity</div>
-          <span className="text-[10px] text-gray-600 bg-poly-card px-1.5 py-0.5 rounded">Synthetic</span>
+          <div className="text-sm text-gray-400 font-semibold">Liquidity Depth</div>
+          <span className="text-[10px] text-poly-green bg-poly-green/10 px-1.5 py-0.5 rounded font-medium">AMM</span>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowDepth(!showDepth)}
-            className={`text-xs px-2 py-1 rounded ${showDepth ? 'bg-poly-green/20 text-poly-green' : 'bg-poly-card text-gray-400'}`}
+            onClick={() => setShowSlippage(!showSlippage)}
+            className={`text-xs px-2 py-1 rounded transition-colors ${showSlippage ? 'bg-poly-green/20 text-poly-green' : 'bg-poly-card text-gray-400'}`}
           >
-            Depth
+            Slippage
           </button>
           <span className="text-xs text-gray-500">
-            Spread: {spread.toFixed(1)}%
+            TVL: {tvl.toFixed(0)} APT
           </span>
         </div>
       </div>
 
-      {/* Header */}
+      {/* Column Headers */}
       <div className="grid grid-cols-4 text-xs text-gray-500 mb-2 px-2">
-        <span>Price</span>
-        <span className="text-right">Size</span>
-        <span className="text-right">Total</span>
-        <span className="text-right">Orders</span>
+        <span>Trade Size</span>
+        <span className="text-right">Tokens</span>
+        <span className="text-right">Avg Price</span>
+        <span className="text-right">Slippage</span>
       </div>
 
-      {/* Asks (sell orders) - shown in reverse so lowest ask is at bottom */}
+      {/* Sell Side (asks) - selling YES tokens */}
       <div className="space-y-0.5 mb-2">
+        <div className="text-[10px] text-red-400/70 px-2 mb-1 font-medium">SELL YES →</div>
         <AnimatePresence mode="popLayout">
-          {asks.map((level) => {
-            const depthPercent = (level.total / maxTotal) * 100;
-            const isNearMid = Math.abs(level.price - yesPrice) < 3;
+          {sellLevels.slice().reverse().map((level) => {
+            const depthPercent = (level.amount / maxAmount) * 100;
+            const slippageColor = level.slippage < 1 ? 'text-gray-400' :
+                                  level.slippage < 5 ? 'text-yellow-400' : 'text-red-400';
 
             return (
               <motion.div
-                key={`ask-${level.price}`}
+                key={`sell-${level.amount}`}
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="relative grid grid-cols-4 text-xs py-1 px-2 rounded hover:bg-red-500/10 transition-colors"
+                className="relative grid grid-cols-4 text-xs py-1.5 px-2 rounded hover:bg-red-500/10 transition-colors cursor-pointer"
+                title={`Sell ${level.amount} APT worth of YES → Get ${level.tokensOut.toFixed(2)} NO tokens`}
               >
-                {/* Depth visualization */}
-                {showDepth && (
+                {/* Depth bar */}
+                {showSlippage && (
                   <div
-                    className="absolute right-0 top-0 bottom-0 bg-red-500/20 rounded-r"
-                    style={{ width: `${depthPercent}%` }}
+                    className="absolute right-0 top-0 bottom-0 bg-red-500/15 rounded-r transition-all"
+                    style={{ width: `${Math.min(depthPercent, 100)}%` }}
                   />
                 )}
-                <span className={`relative z-10 ${isNearMid ? 'text-red-400 font-bold' : 'text-red-400/70'}`}>
-                  {level.price.toFixed(1)}
+                <span className="relative z-10 text-red-400 font-medium">
+                  {formatAmount(level.amount)} APT
                 </span>
                 <span className="relative z-10 text-right text-gray-300">
-                  {formatSize(level.size)}
+                  {formatTokens(level.tokensOut)}
                 </span>
-                <span className="relative z-10 text-right text-gray-400">
-                  {formatSize(level.total)}
+                <span className="relative z-10 text-right text-gray-300">
+                  {level.avgPrice.toFixed(1)}¢
                 </span>
-                <span className="relative z-10 text-right text-gray-500">
-                  {level.orders}
+                <span className={`relative z-10 text-right font-mono ${slippageColor}`}>
+                  {level.slippage < 0.1 ? '<0.1%' : `${level.slippage.toFixed(1)}%`}
                 </span>
               </motion.div>
             );
@@ -250,82 +197,71 @@ export function OrderBook({ trades, yesPrice, noPrice, yesReserve: _yesReserve, 
         </AnimatePresence>
       </div>
 
-      {/* Spread / Mid Price */}
-      <div className="py-2 px-2 bg-poly-card rounded-lg mb-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-bold text-white">{yesPrice.toFixed(1)}</span>
-          <span className="text-xs text-gray-500">YES</span>
+      {/* Mid Price / Current Price */}
+      <div className="py-3 px-3 bg-poly-card rounded-lg mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col">
+            <span className="text-lg font-bold text-poly-green">{yesPrice.toFixed(1)}¢</span>
+            <span className="text-[10px] text-gray-500">YES</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">NO</span>
-          <span className="text-lg font-bold text-white">{noPrice.toFixed(1)}</span>
+        <div className="text-center">
+          <div className="text-xs text-gray-500">Spot Price</div>
+          <div className="text-sm text-gray-400">0% slippage</div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col items-end">
+            <span className="text-lg font-bold text-red-400">{noPrice.toFixed(1)}¢</span>
+            <span className="text-[10px] text-gray-500">NO</span>
+          </div>
         </div>
       </div>
 
-      {/* Bids (buy orders) */}
+      {/* Buy Side (bids) - buying YES tokens */}
       <div className="space-y-0.5">
+        <div className="text-[10px] text-poly-green/70 px-2 mb-1 font-medium">← BUY YES</div>
         <AnimatePresence mode="popLayout">
-          {bids.map((level) => {
-            const depthPercent = (level.total / maxTotal) * 100;
-            const isNearMid = Math.abs(level.price - yesPrice) < 3;
+          {buyLevels.map((level) => {
+            const depthPercent = (level.amount / maxAmount) * 100;
+            const slippageColor = level.slippage < 1 ? 'text-gray-400' :
+                                  level.slippage < 5 ? 'text-yellow-400' : 'text-red-400';
 
             return (
               <motion.div
-                key={`bid-${level.price}`}
+                key={`buy-${level.amount}`}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="relative grid grid-cols-4 text-xs py-1 px-2 rounded hover:bg-green-500/10 transition-colors"
+                className="relative grid grid-cols-4 text-xs py-1.5 px-2 rounded hover:bg-green-500/10 transition-colors cursor-pointer"
+                title={`Buy ${level.amount} APT worth of YES → Get ${level.tokensOut.toFixed(2)} YES tokens`}
               >
-                {/* Depth visualization */}
-                {showDepth && (
+                {/* Depth bar */}
+                {showSlippage && (
                   <div
-                    className="absolute left-0 top-0 bottom-0 bg-poly-green/20 rounded-l"
-                    style={{ width: `${depthPercent}%` }}
+                    className="absolute left-0 top-0 bottom-0 bg-poly-green/15 rounded-l transition-all"
+                    style={{ width: `${Math.min(depthPercent, 100)}%` }}
                   />
                 )}
-                <span className={`relative z-10 ${isNearMid ? 'text-poly-green font-bold' : 'text-poly-green/70'}`}>
-                  {level.price.toFixed(1)}
+                <span className="relative z-10 text-poly-green font-medium">
+                  {formatAmount(level.amount)} APT
                 </span>
                 <span className="relative z-10 text-right text-gray-300">
-                  {formatSize(level.size)}
+                  {formatTokens(level.tokensOut)}
                 </span>
-                <span className="relative z-10 text-right text-gray-400">
-                  {formatSize(level.total)}
+                <span className="relative z-10 text-right text-gray-300">
+                  {level.avgPrice.toFixed(1)}¢
                 </span>
-                <span className="relative z-10 text-right text-gray-500">
-                  {level.orders}
+                <span className={`relative z-10 text-right font-mono ${slippageColor}`}>
+                  {level.slippage < 0.1 ? '<0.1%' : `${level.slippage.toFixed(1)}%`}
                 </span>
               </motion.div>
             );
           })}
         </AnimatePresence>
-      </div>
-
-      {/* Recent Trades Summary */}
-      <div className="mt-4 pt-3 border-t border-poly-border">
-        <div className="text-xs text-gray-500 mb-2">Recent Trade Volume by Price</div>
-        <div className="flex flex-wrap gap-1">
-          {Array.from(recentTradesByPrice.entries())
-            .sort((a, b) => b[0] - a[0])
-            .slice(0, 10)
-            .map(([price, data]) => (
-              <div
-                key={price}
-                className="px-2 py-1 rounded text-xs bg-poly-card"
-                title={`Buys: ${data.buys.toFixed(4)} | Sells: ${data.sells.toFixed(4)}`}
-              >
-                <span className="text-gray-400">{price}:</span>
-                <span className={`ml-1 font-mono ${data.buys > data.sells ? 'text-poly-green' : 'text-red-400'}`}>
-                  {data.volume.toFixed(2)}
-                </span>
-              </div>
-            ))}
-        </div>
       </div>
 
       {/* Trade Tape - Last 5 trades */}
-      <div className="mt-3 pt-3 border-t border-poly-border">
-        <div className="text-xs text-gray-500 mb-2">Trade Tape</div>
+      <div className="mt-4 pt-3 border-t border-poly-border">
+        <div className="text-xs text-gray-500 mb-2">Recent Trades</div>
         <div className="space-y-1">
           <AnimatePresence mode="popLayout">
             {trades.slice(0, 5).map((trade) => (
@@ -346,7 +282,7 @@ export function OrderBook({ trades, yesPrice, noPrice, yesReserve: _yesReserve, 
                   <span className={trade.actionDisplay.includes('BUY') ? 'text-poly-green' : 'text-red-400'}>
                     {trade.actionDisplay.includes('BUY') ? '↑' : '↓'}
                   </span>
-                  <span className={trade.actionDisplay.includes('YES') ? 'text-poly-green' : 'text-red-400'}>
+                  <span className={trade.actionDisplay.includes('BUY') ? 'text-poly-green' : 'text-red-400'}>
                     {trade.actionDisplay}
                   </span>
                 </div>
@@ -354,6 +290,14 @@ export function OrderBook({ trades, yesPrice, noPrice, yesReserve: _yesReserve, 
               </motion.div>
             ))}
           </AnimatePresence>
+        </div>
+      </div>
+
+      {/* AMM Info */}
+      <div className="mt-3 pt-3 border-t border-poly-border">
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <span>CPMM Formula: x × y = k</span>
+          <span>Fee: 0.3%</span>
         </div>
       </div>
     </div>

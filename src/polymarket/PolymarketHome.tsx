@@ -1,12 +1,13 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Search, SlidersHorizontal, Bookmark, X } from "lucide-react";
+import { Search, Bookmark, X, RefreshCw, Loader2 } from "lucide-react";
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { MarketCard } from "./MarketCard";
 import { mockMarkets, categories } from "./mockData";
-import type { Category } from "./types";
+import { usePolymarkets } from "../hooks/usePolymarkets";
+import type { Category, Market } from "./types";
 
 const topicFilters = ["All", "Trump", "Venezuela", "New Years", "Ukraine", "Mideast"];
 const timeFilters = ["All", "15 Min", "Hourly", "4 Hour", "Daily", "Weekly", "Monthly"];
@@ -17,17 +18,29 @@ export function PolymarketHome() {
   const [selectedTopic, setSelectedTopic] = useState("All");
   const [selectedTime, setSelectedTime] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showRealMarkets, setShowRealMarkets] = useState(true);
+
+  // Fetch real on-chain markets
+  const { markets: onChainMarkets, loading, error, refresh } = usePolymarkets();
+
+  // Combine on-chain markets with mock markets (on-chain first)
+  const allMarkets: Market[] = useMemo(() => {
+    if (showRealMarkets && onChainMarkets.length > 0) {
+      return [...onChainMarkets, ...mockMarkets];
+    }
+    return mockMarkets;
+  }, [onChainMarkets, showRealMarkets]);
 
   // Search results when searching
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
-    return mockMarkets.filter((m) =>
+    return allMarkets.filter((m) =>
       m.question.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [searchQuery]);
+  }, [searchQuery, allMarkets]);
 
   const filteredMarkets = useMemo(() => {
-    let filtered = mockMarkets;
+    let filtered = allMarkets;
 
     if (
       selectedCategory !== "All" &&
@@ -44,7 +57,7 @@ export function PolymarketHome() {
     }
 
     return filtered;
-  }, [selectedCategory]);
+  }, [selectedCategory, allMarkets]);
 
   const isSearching = searchQuery.trim().length > 0;
 
@@ -89,13 +102,49 @@ export function PolymarketHome() {
             </button>
           )}
         </div>
-        <button className="p-2 hover:opacity-70 transition-opacity">
-          <SlidersHorizontal size={22} color="#6E7681" strokeWidth={2.5} />
+        <button
+          onClick={refresh}
+          className={`p-2 hover:opacity-70 transition-opacity ${loading ? 'animate-spin' : ''}`}
+          title="Refresh markets"
+        >
+          {loading ? (
+            <Loader2 size={22} color="#5BA3D9" strokeWidth={2.5} />
+          ) : (
+            <RefreshCw size={22} color="#6E7681" strokeWidth={2.5} />
+          )}
         </button>
         <button className="p-2 hover:opacity-70 transition-opacity">
           <Bookmark size={22} color="#6E7681" strokeWidth={2.5} />
         </button>
       </div>
+
+      {/* On-chain markets indicator */}
+      {onChainMarkets.length > 0 && (
+        <div className="px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-xs text-[#8297a3]">
+              {onChainMarkets.length} live on Aptos Testnet
+            </span>
+          </div>
+          <button
+            onClick={() => setShowRealMarkets(!showRealMarkets)}
+            className={`text-xs px-2 py-1 rounded ${
+              showRealMarkets
+                ? 'bg-[#1e3a5f] text-[#5BA3D9]'
+                : 'bg-poly-surface text-[#8297a3]'
+            }`}
+          >
+            {showRealMarkets ? 'Live' : 'Demo'}
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="px-4 py-2">
+          <p className="text-xs text-red-400">{error}</p>
+        </div>
+      )}
 
       {/* Show search results when searching */}
       {isSearching ? (

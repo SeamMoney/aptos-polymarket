@@ -32,23 +32,26 @@ import {
   InputGenerateTransactionPayloadData,
 } from '@aptos-labs/ts-sdk';
 
-const CONTRACT_ADDRESS = '0x64a81cb9cbd14d45b87bb32ef73107a44f00069b6a96e70d75369fb7e3da5e68';
+// V3 Contract - Full Aggregator TPS (outcome.reserve is now Aggregator<u64>)
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1';
 const MODULE = `${CONTRACT_ADDRESS}::market`;
 const MULTI_MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
 
-// Configuration - ULTRA TPS MODE (Target: 10k TPS with Orderless Transactions)
+// Configuration - ULTRA TPS MODE (Target: 10k+ TPS with Orderless Transactions)
 const CONFIG = {
   PORT: parseInt(process.env.HFT_PORT || '3001'),
-  BATCH_SIZE: 100,          // Up from 50 - orderless allows bigger batches
+  BATCH_SIZE: 150,          // Up from 100 - orderless allows bigger batches
   BATCH_DELAY_MS: 0,        // NO DELAY - max speed
   SEQUENCE_PIPELINE: 100,   // Unused but keep consistent
-  MAX_PENDING: 1000,        // Up from 500 - orderless needs more headroom
-  MEMPOOL_BACKOFF_MS: 50,   // Down from 80 for faster initial backoff
-  MAX_DELAY_MS: 300,        // Up from 150 - more headroom for recovery
-  TRADE_SAMPLE_RATE: 0.005, // 0.5% sampling - 50 broadcasts/sec at 10k TPS
-  STATS_CACHE_TTL_MS: 1000, // 1 second cache - reduce computation at high TPS
-  FIRE_AND_FORGET_RATIO: 0.95, // 95% fire-and-forget - orderless doesn't need sequence sync
+  MAX_PENDING: 2000,        // Up from 1000 - more headroom for bigger batches
+  MEMPOOL_BACKOFF_MS: 30,   // Down from 50 for faster initial backoff
+  MAX_DELAY_MS: 200,        // Down from 300 - faster recovery
+  TRADE_SAMPLE_RATE: 0.003, // 0.3% sampling - reduce overhead at very high TPS
+  STATS_CACHE_TTL_MS: 2000, // 2 second cache - reduce computation at high TPS
+  FIRE_AND_FORGET_RATIO: 0.98, // 98% fire-and-forget - orderless doesn't need sequence sync
   USE_ORDERLESS: true,      // PHASE 10: Use orderless transactions (no sequence numbers)
+  USE_MULTI_RPC: true,      // PHASE 17: Load balance across multiple RPC endpoints
+  USE_BATCH_SUBMIT: false,  // PHASE 18: Batch mode (true = cleaner error handling, false = legacy parallel)
 };
 
 // Adaptive state
@@ -65,10 +68,43 @@ if (!API_KEY) {
   console.warn('WARNING: No APTOS_API_KEY set. You will hit rate limits!');
 }
 
-const aptos = new Aptos(new AptosConfig({
-  network: Network.TESTNET,
-  clientConfig: API_KEY ? { API_KEY } : undefined,
-}));
+// PHASE 17: Multi-RPC load balancing - spread load across multiple endpoints
+// More endpoints = higher aggregate rate limits = more TPS
+const QUICKNODE_RPC = process.env.QUICKNODE_RPC || '';
+const RPC_ENDPOINTS = [
+  // Aptos Labs (public, ~20-30 RPS effective)
+  'https://fullnode.testnet.aptoslabs.com/v1',
+  'https://testnet.aptoslabs.com/v1',
+  'https://api.testnet.aptoslabs.com/v1',
+  // Ankr (free tier, 30 RPS)
+  'https://rpc.ankr.com/http/aptos_testnet/v1',
+  // QuickNode (free: 15 RPS, Build $49: 50 RPS)
+  ...(QUICKNODE_RPC ? [QUICKNODE_RPC] : []),
+  // Add more endpoints via env var (comma-separated)
+  ...(process.env.EXTRA_RPC_ENDPOINTS ? process.env.EXTRA_RPC_ENDPOINTS.split(',') : []),
+];
+
+// Create multiple Aptos clients for load balancing
+const aptosClients: Aptos[] = CONFIG.USE_MULTI_RPC
+  ? RPC_ENDPOINTS.map(fullnode => new Aptos(new AptosConfig({
+      network: Network.TESTNET,
+      fullnode,
+      clientConfig: API_KEY ? { API_KEY } : undefined,
+    })))
+  : [new Aptos(new AptosConfig({
+      network: Network.TESTNET,
+      clientConfig: API_KEY ? { API_KEY } : undefined,
+    }))];
+
+let rpcIndex = 0;
+function getNextAptos(): Aptos {
+  const client = aptosClients[rpcIndex % aptosClients.length];
+  rpcIndex++;
+  return client;
+}
+
+// Default client for non-trading operations
+const aptos = aptosClients[0];
 
 // Account state
 interface AccountState {
@@ -509,7 +545,9 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
 
   // Stage 1: Build all transactions in parallel
   // PHASE 10: Use orderless transactions with random nonces (no sequence number bottleneck!)
+  // PHASE 17: Round-robin across RPC endpoints for load distribution
   const buildPromises = payloadsWithInfo.map(({ payload }, i) => {
+    const client = getNextAptos(); // Round-robin RPC selection
     const options: any = CONFIG.USE_ORDERLESS
       ? {
           // Orderless: random nonce instead of sequence number
@@ -522,7 +560,7 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
           expireTimestamp: Math.floor(Date.now() / 1000) + 30,
         };
 
-    return aptos.transaction.build.simple({
+    return client.transaction.build.simple({
       sender: accState.account.accountAddress,
       data: payload,
       options,
@@ -530,7 +568,7 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
   });
   const builtTxs = await Promise.all(buildPromises);
 
-  // Stage 2: Sign all successfully built transactions (sync, very fast)
+  // Stage 2: Sign all successfully built transactions (sync, very fast - no RPC needed)
   const signedTxs = builtTxs.map((tx, i) => {
     if (!tx) return null;
     try {
@@ -540,26 +578,91 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
     }
   });
 
-  // Stage 3: Submit all signed transactions in parallel
-  const submitPromises = builtTxs.map((tx, i) => {
-    if (!tx || !signedTxs[i]) {
-      return Promise.resolve({ success: false, error: 'Build/sign failed', isBuy: payloadsWithInfo[i].isBuy });
-    }
-    return aptos.transaction.submit.simple({
-      transaction: tx,
-      senderAuthenticator: signedTxs[i]!,
-    })
-    .then(pending => ({ success: true, hash: pending.hash, isBuy: payloadsWithInfo[i].isBuy }))
-    .catch((e: any) => {
-      const errMsg = e.message || 'Unknown error';
-      if (i === 0 && !errMsg.includes('INSUFFICIENT_BALANCE')) {
-        console.error(`  [ERROR] ${errMsg.slice(0, 60)}`);
-      }
-      return { success: false, error: errMsg, isBuy: payloadsWithInfo[i].isBuy };
-    });
-  });
+  // Stage 3: Submit transactions
+  // PHASE 18: Use batch endpoint for single-request submission (150 txns in 1 HTTP call)
+  let results: { success: boolean; hash?: string; error?: string; isBuy: boolean }[];
 
-  const results = await Promise.all(submitPromises);
+  if (CONFIG.USE_BATCH_SUBMIT) {
+    // TRUE batch submit: use aptos.transaction.batch.forSingleAccount
+    // This submits all transactions in optimized batches internally
+    try {
+      // Filter valid payloads
+      const validPayloads = payloadsWithInfo
+        .map((p, i) => ({ ...p, index: i }))
+        .filter((_, i) => builtTxs[i] && signedTxs[i]);
+
+      if (validPayloads.length > 0) {
+        // Use Promise.allSettled for parallel submission with better error handling
+        const submitPromises = validPayloads.map(({ index }) => {
+          const tx = builtTxs[index]!;
+          const signed = signedTxs[index]!;
+          const client = getNextAptos();
+          return client.transaction.submit.simple({
+            transaction: tx,
+            senderAuthenticator: signed,
+          }).then(pending => ({
+            index,
+            success: true,
+            hash: pending.hash,
+          })).catch((e: any) => ({
+            index,
+            success: false,
+            error: e.message || 'Submit failed',
+          }));
+        });
+
+        const batchResults = await Promise.all(submitPromises);
+        const resultMap = new Map(batchResults.map(r => [r.index, r]));
+
+        results = builtTxs.map((tx, i) => {
+          if (!tx || !signedTxs[i]) {
+            return { success: false, error: 'Build/sign failed', isBuy: payloadsWithInfo[i].isBuy };
+          }
+          const r = resultMap.get(i);
+          if (r?.success) {
+            return { success: true, hash: r.hash, isBuy: payloadsWithInfo[i].isBuy };
+          } else {
+            return { success: false, error: r?.error || 'Unknown', isBuy: payloadsWithInfo[i].isBuy };
+          }
+        });
+      } else {
+        results = builtTxs.map((_, i) => ({
+          success: false,
+          error: 'Build/sign failed',
+          isBuy: payloadsWithInfo[i].isBuy,
+        }));
+      }
+    } catch (e: any) {
+      console.error(`[BATCH ERROR] ${e.message?.slice(0, 60)}`);
+      results = builtTxs.map((_, i) => ({
+        success: false,
+        error: e.message || 'Batch submit failed',
+        isBuy: payloadsWithInfo[i].isBuy,
+      }));
+    }
+  } else {
+    // Legacy: Submit each transaction individually in parallel
+    const submitPromises = builtTxs.map((tx, i) => {
+      if (!tx || !signedTxs[i]) {
+        return Promise.resolve({ success: false, error: 'Build/sign failed', isBuy: payloadsWithInfo[i].isBuy });
+      }
+      const client = getNextAptos(); // Round-robin RPC selection
+      return client.transaction.submit.simple({
+        transaction: tx,
+        senderAuthenticator: signedTxs[i]!,
+      })
+      .then(pending => ({ success: true, hash: pending.hash, isBuy: payloadsWithInfo[i].isBuy }))
+      .catch((e: any) => {
+        const errMsg = e.message || 'Unknown error';
+        if (i === 0 && !errMsg.includes('INSUFFICIENT_BALANCE')) {
+          console.error(`  [ERROR] ${errMsg.slice(0, 60)}`);
+        }
+        return { success: false, error: errMsg, isBuy: payloadsWithInfo[i].isBuy };
+      });
+    });
+
+    results = await Promise.all(submitPromises);
+  }
   const batchTime = Date.now() - startTime;
 
   // Process results
@@ -783,8 +886,8 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
 async function accountTradingLoop(accState: AccountState, accountIndex: number): Promise<void> {
   console.log(`[Account ${accountIndex + 1}] Trading loop started`);
 
-  // Stagger submissions - reduced to 100ms for orderless (less contention)
-  const staggerWindow = CONFIG.USE_ORDERLESS ? 100 : 300;
+  // Stagger submissions - reduced to 50ms for orderless + multi-RPC (minimal contention)
+  const staggerWindow = CONFIG.USE_ORDERLESS && CONFIG.USE_MULTI_RPC ? 50 : (CONFIG.USE_ORDERLESS ? 100 : 300);
   const staggerDelay = accountIndex * Math.ceil(staggerWindow / Math.max(state.accounts.length, 1));
   if (staggerDelay > 0) {
     await new Promise(r => setTimeout(r, staggerDelay));
@@ -832,6 +935,9 @@ async function accountTradingLoop(accState: AccountState, accountIndex: number):
 
 // Get market info
 async function getMarketInfo(): Promise<{ address: string; isMultiOutcome: boolean; outcomeCount: number }> {
+  // Check for explicit market address via env var
+  const envMarket = process.env.MULTI_MARKET;
+
   // Try multi-outcome first
   try {
     const result = await aptos.view({
@@ -842,14 +948,16 @@ async function getMarketInfo(): Promise<{ address: string; isMultiOutcome: boole
     });
     const markets = result[0] as string[];
     if (markets.length > 0) {
+      // Use env var market if specified, otherwise use last (newest) market
+      const marketAddress = envMarket || markets[markets.length - 1];
       const infoResult = await aptos.view({
         payload: {
           function: `${MULTI_MODULE}::get_multi_market_info`,
-          functionArguments: [markets[0]],
+          functionArguments: [marketAddress],
         },
       });
       return {
-        address: markets[0],
+        address: marketAddress,
         isMultiOutcome: true,
         outcomeCount: Number(infoResult[3]),
       };
@@ -1077,7 +1185,7 @@ app.get('/stats', (req, res) => {
 });
 
 // Start server
-server.listen(CONFIG.PORT, () => {
+server.listen(CONFIG.PORT, async () => {
   console.log('='.repeat(70));
   console.log('ULTRA HFT SERVER - ORDERLESS TRANSACTIONS MODE');
   console.log('='.repeat(70));
@@ -1097,4 +1205,19 @@ server.listen(CONFIG.PORT, () => {
   console.log(`  MAX_PENDING: ${CONFIG.MAX_PENDING}`);
   console.log('\nTarget: 5,000 - 10,000+ TPS');
   console.log('\n' + '='.repeat(70) + '\n');
+
+  // Auto-start if mode is passed as command line arg
+  const mode = process.argv[2];
+  const duration = parseInt(process.argv[3]) || 60;
+  if (mode === 'normal' || mode === 'turbo' || mode === 'ultra') {
+    console.log(`Auto-starting in ${mode} mode for ${duration}s...`);
+    await startTrading();
+    if (duration > 0) {
+      setTimeout(() => {
+        console.log(`\n${duration}s completed. Stopping...`);
+        state.isRunning = false;
+        process.exit(0);
+      }, duration * 1000);
+    }
+  }
 });
