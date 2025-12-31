@@ -7,16 +7,10 @@ import {
   Bookmark,
   Code2,
   Settings,
-  Play,
-  Square,
-  Loader2,
 } from "lucide-react";
 import { TradingSheet } from "./TradingSheet";
-import { LiveOrderBook } from "./LiveOrderBook";
-import { TPSChart } from "./TPSChart";
 import { mockMarkets } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
-import { useHFTConnection } from "../hooks/useHFTConnection";
 
 const CHART_HEIGHT = 220;
 const CHART_PADDING_RIGHT = 50;
@@ -136,20 +130,6 @@ export function OutcomeDetail() {
     sellOutcome,
     loading: marketsLoading,
   } = usePolymarkets();
-
-  // HFT connection for live demo
-  const {
-    isConnected: hftConnected,
-    isRunning: hftRunning,
-    stats: hftStats,
-    marketInfo: hftMarketInfo,
-    marketReserves: hftReserves,
-    trades: hftTrades,
-    tpsHistory,
-    startTrading,
-    stopTrading,
-    error: hftError,
-  } = useHFTConnection();
 
   useEffect(() => {
     const timer = setTimeout(() => setIsLoaded(true), 100);
@@ -312,7 +292,6 @@ export function OutcomeDetail() {
   }
 
   const yesPrice = Math.round(outcome.price * 100);
-  const noPrice = 100 - yesPrice;
   const timeRanges = ["1H", "6H", "1D", "1W", "1M", "ALL"];
 
   const firstPrice = priceHistory[0] || outcome.price;
@@ -347,15 +326,6 @@ export function OutcomeDetail() {
 
         <div className="flex items-center gap-3">
           <span className="text-[#8297a3] text-sm">{outcome.volume} Vol.</span>
-          {hftConnected && (
-            <TPSChart
-              currentTps={hftStats.currentTps || 0}
-              peakTps={hftStats.peakTps || 0}
-              tpsHistory={tpsHistory}
-              isRunning={hftRunning}
-              compact
-            />
-          )}
           <button className="p-1.5 hover:opacity-70 transition-opacity">
             <Bookmark size={20} color="#8297a3" strokeWidth={2} />
           </button>
@@ -589,38 +559,6 @@ export function OutcomeDetail() {
           </div>
         </div>
 
-        {/* Live Order Book */}
-        <div
-          className={`px-4 mb-4 transition-all duration-300 delay-400 ${
-            isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-          }`}
-        >
-          <LiveOrderBook
-            yesPrice={hftMarketInfo?.yesPrice || yesPrice}
-            noPrice={hftMarketInfo?.noPrice || noPrice}
-            yesReserve={hftReserves.yesReserve}
-            noReserve={hftReserves.noReserve}
-            trades={hftTrades}
-            isConnected={hftConnected}
-          />
-        </div>
-
-        {/* Full TPS Chart when running */}
-        {hftRunning && (
-          <div
-            className={`px-4 mb-4 transition-all duration-300 ${
-              isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-            }`}
-          >
-            <TPSChart
-              currentTps={hftStats.currentTps || 0}
-              peakTps={hftStats.peakTps || 0}
-              tpsHistory={tpsHistory}
-              isRunning={hftRunning}
-            />
-          </div>
-        )}
-
         {/* Rules */}
         <div
           className={`px-4 mb-6 transition-all duration-300 delay-500 ${
@@ -632,56 +570,6 @@ export function OutcomeDetail() {
             This market will resolve according to the next individual appointed to be Chair of the Federal Reserve by
             the President of the United States.
           </p>
-        </div>
-      </div>
-
-      {/* HFT Demo Controls - Fixed Bottom Bar (above bottom nav) */}
-      <div
-        className="fixed bottom-16 left-0 right-0 z-40 px-4 py-3"
-        style={{ backgroundColor: '#1c2b3a', borderTop: '2px solid #2c3f4f' }}
-      >
-        <div className="max-w-lg mx-auto">
-          {hftError && (
-            <div className="mb-3 p-2 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm text-center">
-              {hftError}
-            </div>
-          )}
-          <div className="flex gap-3">
-            {!hftRunning ? (
-              <button
-                onClick={startTrading}
-                disabled={!hftConnected}
-                className="flex-1 bg-[#4abe7a] hover:bg-[#3da86a] disabled:bg-[#4abe7a]/50 disabled:cursor-not-allowed rounded-lg py-4 text-white text-base font-bold transition-colors flex items-center justify-center gap-2"
-              >
-                <Play size={20} fill="white" />
-                {hftConnected ? 'Start HFT Demo' : 'Connecting...'}
-              </button>
-            ) : (
-              <button
-                onClick={stopTrading}
-                className="flex-1 bg-[#e5534b] hover:bg-[#d4443c] rounded-lg py-4 text-white text-base font-bold transition-colors flex items-center justify-center gap-2"
-              >
-                <Square size={20} fill="white" />
-                Stop Demo
-              </button>
-            )}
-            {hftRunning && (
-              <div className="flex items-center gap-3 px-4 bg-[#2a3d4e] rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Loader2 size={16} className="text-[#60a5fa] animate-spin" />
-                  <span className="text-[#60a5fa] text-sm font-bold tabular-nums">{hftStats.currentTps || 0} TPS</span>
-                </div>
-                <div className="text-[#8297a3] text-xs">
-                  {hftStats.totalTrades || 0} trades
-                </div>
-              </div>
-            )}
-          </div>
-          {!hftConnected && (
-            <p className="text-[#6b7a8a] text-xs text-center mt-2">
-              Run <code className="bg-[#2a3d4e] px-1 rounded">npx tsx server/hft-server.ts</code> to enable demo
-            </p>
-          )}
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { X, Loader2, AlertCircle } from "lucide-react";
@@ -57,7 +57,8 @@ function WalletButton({
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { connected, connect, wallets, connecting } = useWallet();
+  const { connected, connect, wallets } = useWallet();
+  const [connecting, setConnecting] = useState(false);
 
   // Redirect if already connected
   useEffect(() => {
@@ -68,10 +69,13 @@ export function LoginPage() {
 
   const handleWalletConnect = async (walletName: string) => {
     try {
+      setConnecting(true);
       await connect(walletName);
       // Navigation will happen via the useEffect above when connected becomes true
     } catch (error) {
       console.error(`Failed to connect ${walletName}:`, error);
+    } finally {
+      setConnecting(false);
     }
   };
 
