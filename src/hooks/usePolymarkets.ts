@@ -121,9 +121,16 @@ export function usePolymarkets(): PolymarketsHook {
 
   // Convert multi-outcome markets to Polymarket format
   // Filter duplicates by question, keeping the one with highest volume
+  // Also filter out specific markets we don't want to show
   const convertedMultiMarkets: Market[] = useMemo(() => {
     // First, deduplicate by question - keep highest volume
     const deduped = multiMarkets.reduce((acc, market) => {
+      // Filter out 2024 presidential election market
+      if (market.question.toLowerCase().includes('2024') &&
+          market.question.toLowerCase().includes('presidential')) {
+        return acc;
+      }
+
       const existing = acc.find(m => m.question === market.question);
       if (!existing) {
         acc.push(market);
