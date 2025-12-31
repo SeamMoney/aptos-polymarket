@@ -26,58 +26,73 @@ const seededRandom = (seed: number) => {
   return x - Math.floor(x);
 };
 
-// Generate volatile price history for the outcome
+// Generate price history that ENDS at the current price
 const generatePriceHistory = (
   outcomeId: string,
-  basePrice: number,
+  currentPrice: number,  // Chart must end at this price
   numPoints: number
 ) => {
   const seed = outcomeId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const points: number[] = [];
 
-  // Determine pattern type based on seed
-  const patternType = seed % 6;
+  // Ensure current price is reasonable
+  const endPrice = Math.max(0.05, Math.min(0.95, currentPrice));
 
-  // Ensure base price stays in reasonable range (20%-80%)
-  const safeBase = Math.max(0.20, Math.min(0.80, basePrice));
+  // Determine pattern type and starting price
+  const patternType = seed % 6;
+  let startPrice: number;
+
+  switch (patternType) {
+    case 0: // Rising - started lower
+      startPrice = Math.max(0.08, endPrice - 0.15 - seededRandom(seed) * 0.2);
+      break;
+    case 1: // Falling - started higher
+      startPrice = Math.min(0.92, endPrice + 0.15 + seededRandom(seed) * 0.2);
+      break;
+    case 2: // Volatile around current
+      startPrice = endPrice + (seededRandom(seed) - 0.5) * 0.15;
+      break;
+    case 3: // Spike then back down
+      startPrice = endPrice - 0.05 + seededRandom(seed) * 0.1;
+      break;
+    case 4: // Dip then recovery
+      startPrice = endPrice + 0.05 - seededRandom(seed) * 0.1;
+      break;
+    default: // Sideways
+      startPrice = endPrice + (seededRandom(seed) - 0.5) * 0.1;
+  }
+
+  startPrice = Math.max(0.08, Math.min(0.92, startPrice));
 
   for (let i = 0; i < numPoints; i++) {
+    const t = i / (numPoints - 1); // 0 to 1
     const rand = seededRandom(seed * 1000 + i);
     const rand2 = seededRandom(seed * 2000 + i);
-    const t = i / numPoints;
 
-    // Base trend based on pattern type
-    let trend: number;
-    switch (patternType) {
-      case 0: // Rising trend
-        trend = safeBase * 0.7 + (safeBase * 0.5) * t;
-        break;
-      case 1: // Falling trend
-        trend = safeBase * 1.2 - (safeBase * 0.4) * t;
-        break;
-      case 2: // Swings around base
-        trend = safeBase + Math.sin(t * 8 + seed) * 0.15 + Math.cos(t * 5) * 0.08;
-        break;
-      case 3: // Spike and settle
-        trend = t < 0.4 ? safeBase + t * 0.35 : safeBase + 0.14 - (t - 0.4) * 0.15;
-        break;
-      case 4: // Dip and recovery
-        trend = t < 0.5 ? safeBase - t * 0.2 : safeBase - 0.1 + (t - 0.5) * 0.3;
-        break;
-      default: // Choppy sideways
-        trend = safeBase + Math.sin(t * 15) * 0.1 + Math.cos(t * 7 + seed) * 0.06;
+    // Linear interpolation from start to end
+    const baseValue = startPrice + (endPrice - startPrice) * t;
+
+    // Add volatility that diminishes toward the end
+    const volatilityScale = Math.sin(t * Math.PI) * 0.8;
+    const volatility = (rand - 0.5) * 0.08 * volatilityScale + (rand2 - 0.5) * 0.05 * volatilityScale;
+
+    // Add occasional jumps in the middle
+    let jump = 0;
+    if (t > 0.1 && t < 0.9) {
+      const jumpChance = seededRandom(seed * 3000 + i);
+      if (jumpChance > 0.95) jump = (rand - 0.5) * 0.08;
+      else if (jumpChance < 0.05) jump = (rand - 0.5) * 0.08;
     }
 
-    // Add moderate volatility
-    const volatility = (rand - 0.5) * 0.1 + (rand2 - 0.5) * 0.06;
+    let price = baseValue + volatility + jump;
+    price = Math.max(0.05, Math.min(0.95, price));
 
-    // Add occasional smaller jumps
-    const jumpChance = seededRandom(seed * 3000 + i);
-    const jump = jumpChance > 0.92 ? (rand - 0.5) * 0.1 : jumpChance < 0.08 ? (rand - 0.5) * 0.1 : 0;
+    // Force exact end price on last point
+    if (i === numPoints - 1) {
+      price = endPrice;
+    }
 
-    const price = trend + volatility + jump;
-    // Clamp to reasonable range (10%-90%) to avoid touching edges
-    points.push(Math.max(0.10, Math.min(0.90, price)));
+    points.push(price);
   }
 
   return points;

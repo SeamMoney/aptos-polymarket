@@ -17,141 +17,84 @@ interface PolyChartProps {
   width?: number;
 }
 
-// Real historical data from Polymarket Fed Chair market
-const REAL_HISTORICAL_DATA = [
-  { date: "08-06", hassett: 0.31, warsh: 0.34, waller: 0.15, rieder: 0.02 },
-  { date: "08-07", hassett: 0.385, warsh: 0.34, waller: 0.17, rieder: 0.02 },
-  { date: "08-08", hassett: 0.275, warsh: 0.195, waller: 0.445, rieder: 0.02 },
-  { date: "08-09", hassett: 0.2, warsh: 0.195, waller: 0.305, rieder: 0.02 },
-  { date: "08-10", hassett: 0.185, warsh: 0.18, waller: 0.4, rieder: 0.02 },
-  { date: "08-11", hassett: 0.165, warsh: 0.19, waller: 0.415, rieder: 0.02 },
-  { date: "08-12", hassett: 0.17, warsh: 0.185, waller: 0.375, rieder: 0.02 },
-  { date: "08-13", hassett: 0.175, warsh: 0.175, waller: 0.34, rieder: 0.02 },
-  { date: "08-14", hassett: 0.175, warsh: 0.17, waller: 0.325, rieder: 0.0135 },
-  { date: "08-15", hassett: 0.165, warsh: 0.145, waller: 0.285, rieder: 0.0145 },
-  { date: "08-16", hassett: 0.175, warsh: 0.145, waller: 0.295, rieder: 0.0145 },
-  { date: "08-17", hassett: 0.155, warsh: 0.125, waller: 0.315, rieder: 0.043 },
-  { date: "08-18", hassett: 0.155, warsh: 0.125, waller: 0.33, rieder: 0.042 },
-  { date: "08-19", hassett: 0.165, warsh: 0.13, waller: 0.35, rieder: 0.028 },
-  { date: "08-20", hassett: 0.155, warsh: 0.135, waller: 0.3, rieder: 0.0235 },
-  { date: "09-01", hassett: 0.18, warsh: 0.15, waller: 0.28, rieder: 0.025 },
-  { date: "09-15", hassett: 0.22, warsh: 0.18, waller: 0.25, rieder: 0.03 },
-  { date: "09-30", hassett: 0.25, warsh: 0.20, waller: 0.22, rieder: 0.028 },
-  { date: "10-15", hassett: 0.30, warsh: 0.22, waller: 0.18, rieder: 0.025 },
-  { date: "10-31", hassett: 0.35, warsh: 0.25, waller: 0.16, rieder: 0.022 },
-  { date: "11-15", hassett: 0.42, warsh: 0.28, waller: 0.14, rieder: 0.018 },
-  { date: "11-30", hassett: 0.48, warsh: 0.30, waller: 0.13, rieder: 0.015 },
-  { date: "12-17", hassett: 0.515, warsh: 0.305, waller: 0.1245, rieder: 0.0135 },
-  { date: "12-18", hassett: 0.515, warsh: 0.23, waller: 0.1625, rieder: 0.029 },
-  { date: "12-19", hassett: 0.515, warsh: 0.275, waller: 0.1375, rieder: 0.021 },
-  { date: "12-20", hassett: 0.535, warsh: 0.195, waller: 0.1575, rieder: 0.072 },
-  { date: "12-21", hassett: 0.545, warsh: 0.21, waller: 0.121, rieder: 0.0785 },
-  { date: "12-22", hassett: 0.555, warsh: 0.21, waller: 0.1235, rieder: 0.071 },
-  { date: "12-23", hassett: 0.61, warsh: 0.185, waller: 0.1145, rieder: 0.061 },
-  { date: "12-24", hassett: 0.625, warsh: 0.215, waller: 0.0875, rieder: 0.0375 },
-  { date: "12-25", hassett: 0.58, warsh: 0.225, waller: 0.1065, rieder: 0.063 },
-  { date: "12-26", hassett: 0.535, warsh: 0.245, waller: 0.111, rieder: 0.055 },
-  { date: "12-27", hassett: 0.475, warsh: 0.295, waller: 0.109, rieder: 0.065 },
-  { date: "12-28", hassett: 0.41, warsh: 0.35, waller: 0.1135, rieder: 0.056 },
-  { date: "12-29", hassett: 0.415, warsh: 0.315, waller: 0.118, rieder: 0.059 },
-  { date: "12-30", hassett: 0.435, warsh: 0.325, waller: 0.1095, rieder: 0.062 },
-  { date: "12-31", hassett: 0.445, warsh: 0.325, waller: 0.107, rieder: 0.0445 },
-];
-
 // Seeded random for consistent chart patterns
 const seededRandom = (seed: number) => {
   const x = Math.sin(seed * 12345.6789) * 43758.5453;
   return x - Math.floor(x);
 };
 
-// Generate prices - works for ANY market with realistic patterns
+// Generate prices that END at the current price - critical for accuracy
 export const generateOutcomePrices = (
   outcomeId: string,
-  basePrice: number,
+  currentPrice: number,  // This is the ACTUAL current price - chart must end here
   numPoints: number,
   patternIndex: number
 ): number[] => {
   const prices: number[] = [];
-  const dataLength = REAL_HISTORICAL_DATA.length;
 
   // Generate a seed from the outcomeId for consistent patterns
   const seed = outcomeId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + patternIndex;
 
-  // Check if we should use real historical data (for Fed Chair market)
-  const useRealData = patternIndex < 4;
+  // Ensure current price is reasonable
+  const endPrice = Math.max(0.05, Math.min(0.95, currentPrice));
+
+  // Determine a plausible starting price based on pattern
+  const patternType = patternIndex % 6;
+  let startPrice: number;
+
+  switch (patternType) {
+    case 0: // Rising - started lower
+      startPrice = Math.max(0.08, endPrice - 0.15 - seededRandom(seed) * 0.2);
+      break;
+    case 1: // Falling - started higher
+      startPrice = Math.min(0.92, endPrice + 0.15 + seededRandom(seed) * 0.2);
+      break;
+    case 2: // Volatile around current
+      startPrice = endPrice + (seededRandom(seed) - 0.5) * 0.15;
+      break;
+    case 3: // Spike then back down
+      startPrice = endPrice - 0.05 + seededRandom(seed) * 0.1;
+      break;
+    case 4: // Dip then recovery
+      startPrice = endPrice + 0.05 - seededRandom(seed) * 0.1;
+      break;
+    default: // Sideways
+      startPrice = endPrice + (seededRandom(seed) - 0.5) * 0.1;
+  }
+
+  startPrice = Math.max(0.08, Math.min(0.92, startPrice));
 
   for (let i = 0; i < numPoints; i++) {
-    const dataIndex = Math.floor((i / numPoints) * dataLength);
-    const data = REAL_HISTORICAL_DATA[Math.min(dataIndex, dataLength - 1)];
+    const t = i / (numPoints - 1); // 0 to 1
+    const rand = seededRandom(seed * 1000 + i);
+    const rand2 = seededRandom(seed * 2000 + i);
 
-    let price: number;
+    // Linear interpolation from start to end
+    const baseValue = startPrice + (endPrice - startPrice) * t;
 
-    if (useRealData) {
-      // Use real Fed Chair market data for first 4 outcomes
-      switch (patternIndex) {
-        case 0:
-          price = data.hassett;
-          break;
-        case 1:
-          price = data.warsh;
-          break;
-        case 2:
-          price = data.waller;
-          break;
-        case 3:
-          price = data.rieder;
-          break;
-        default:
-          price = basePrice;
-      }
-    } else {
-      // Generate synthetic volatile price patterns for other markets
-      const t = i / numPoints;
-      const rand = seededRandom(seed + i);
-      const rand2 = seededRandom(seed * 2 + i);
+    // Add volatility that diminishes toward the end (so we hit exact price)
+    const volatilityScale = Math.sin(t * Math.PI) * 0.8; // Peaks in middle, zero at ends
+    const volatility = (rand - 0.5) * 0.08 * volatilityScale + (rand2 - 0.5) * 0.05 * volatilityScale;
 
-      // Create different pattern types based on patternIndex
-      const patternType = patternIndex % 6;
-
-      // Ensure base price stays in reasonable range (15%-85%)
-      const safeBase = Math.max(0.20, Math.min(0.80, basePrice));
-
-      let trend: number;
-      switch (patternType) {
-        case 0: // Volatile rising trend
-          trend = safeBase * 0.7 + (safeBase * 0.5) * t;
-          break;
-        case 1: // Volatile falling trend
-          trend = safeBase * 1.2 - (safeBase * 0.4) * t;
-          break;
-        case 2: // Wild swings around base
-          trend = safeBase + Math.sin(t * 10 + seed) * 0.15 + Math.cos(t * 6) * 0.08;
-          break;
-        case 3: // Spike and settle
-          trend = t < 0.35 ? safeBase + t * 0.4 : safeBase + 0.14 - (t - 0.35) * 0.2;
-          break;
-        case 4: // Dip and recovery
-          trend = t < 0.5 ? safeBase - t * 0.2 : safeBase - 0.1 + (t - 0.5) * 0.3;
-          break;
-        case 5: // Choppy sideways
-          trend = safeBase + Math.sin(t * 18) * 0.1 + Math.cos(t * 9 + seed) * 0.06;
-          break;
-        default:
-          trend = safeBase;
-      }
-
-      // Add moderate volatility
-      const volatility = (rand - 0.5) * 0.1 + (rand2 - 0.5) * 0.06;
-
-      // Add occasional smaller jumps
-      const jumpChance = seededRandom(seed * 3 + i);
-      const jump = jumpChance > 0.92 ? (rand - 0.5) * 0.12 : jumpChance < 0.08 ? (rand - 0.5) * 0.12 : 0;
-
-      price = trend + volatility + jump;
+    // Add occasional jumps in the middle portion
+    let jump = 0;
+    if (t > 0.1 && t < 0.9) {
+      const jumpChance = seededRandom(seed * 3000 + i);
+      if (jumpChance > 0.95) jump = (rand - 0.5) * 0.08;
+      else if (jumpChance < 0.05) jump = (rand - 0.5) * 0.08;
     }
 
-    // Clamp to reasonable range (10%-90%) to avoid touching edges
-    prices.push(Math.max(0.10, Math.min(0.90, price)));
+    let price = baseValue + volatility + jump;
+
+    // Clamp but ensure we don't stray too far from the interpolation
+    price = Math.max(0.05, Math.min(0.95, price));
+
+    // Force exact end price on last point
+    if (i === numPoints - 1) {
+      price = endPrice;
+    }
+
+    prices.push(price);
   }
 
   return prices;
@@ -399,11 +342,14 @@ interface HoverLabelsProps {
 }
 
 function HoverLabels({ outcomes, activeIndex, chartWidth }: HoverLabelsProps) {
-  const dataLength = REAL_HISTORICAL_DATA.length;
-  const dataIndex = Math.floor(
-    (activeIndex / (outcomes[0]?.prices.length || 100)) * dataLength
-  );
-  const dateData = REAL_HISTORICAL_DATA[Math.min(dataIndex, dataLength - 1)];
+  const numPoints = outcomes[0]?.prices.length || 100;
+  const t = activeIndex / (numPoints - 1);
+
+  // Generate date label based on position (Sept to Dec range)
+  const months = ["Sep", "Oct", "Nov", "Dec"];
+  const monthIndex = Math.floor(t * 3.99);
+  const day = Math.floor((t * 4 - monthIndex) * 28) + 1;
+  const dateLabel = `${months[monthIndex]} ${day}`;
 
   return (
     <div
@@ -412,7 +358,7 @@ function HoverLabels({ outcomes, activeIndex, chartWidth }: HoverLabelsProps) {
     >
       {/* Date at top right */}
       <span className="absolute top-0 right-12 text-poly-textMuted text-xs">
-        {dateData?.date || ""} 2025
+        {dateLabel}, 2025
       </span>
 
       {/* Price labels */}
