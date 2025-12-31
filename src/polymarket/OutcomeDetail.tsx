@@ -507,10 +507,12 @@ export function OutcomeDetail() {
               {/* Cursor line - matches PolyChart */}
               {activeIndex !== null && chartPath.points[activeIndex] && (
                 <div
-                  className="absolute top-0 w-px bg-poly-textSecondary pointer-events-none"
+                  className="absolute top-0 pointer-events-none"
                   style={{
                     left: chartPath.points[activeIndex].x,
                     height: CHART_HEIGHT,
+                    width: 1,
+                    backgroundColor: 'rgba(255, 255, 255, 0.6)',
                   }}
                 />
               )}

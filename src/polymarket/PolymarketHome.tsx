@@ -104,6 +104,9 @@ export function PolymarketHome() {
         onSelectCategory={setSelectedCategory}
       />
 
+      {/* Aptos Banner */}
+      <AptosBanner />
+
       {/* Search Bar Row */}
       <div className="px-4 py-2 flex items-center gap-3">
         <div className="flex-1 flex items-center bg-poly-card rounded-full px-4 py-2.5">
@@ -281,6 +284,9 @@ export function PolymarketHome() {
               );
             })}
           </div>
+
+          {/* Aptos Features - Quick Stats */}
+          <AptosFeatures />
 
           {/* Markets List */}
           <div className="pb-6">
