@@ -39,7 +39,7 @@ export function BreakingPage() {
         className="mx-4 mt-2 mb-4"
       >
         <Link
-          to={featuredMarket ? `/market/${featuredMarket.address}` : "/demo-day"}
+          to={featuredMarket ? `/market/multi-${featuredMarket.address}` : "/demo-day"}
           className="block rounded-xl overflow-hidden"
           style={{
             background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
@@ -171,7 +171,7 @@ export function BreakingPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.25 + index * 0.05 }}
-              onClick={() => navigate(`/market/${market.address}`)}
+              onClick={() => navigate(`/market/multi-${market.address}`)}
               className="flex items-start w-full py-4 border-b border-[#2c3f4f] last:border-b-0 hover:bg-[#1c2b3a]/50 transition-colors text-left rounded-lg -mx-2 px-2"
             >
               {/* Market Image */}

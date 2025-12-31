@@ -86,14 +86,34 @@ export function MarketDetail() {
   const numPoints = timeRange === "ALL" ? 150 : timeRange === "1M" ? 80 : timeRange === "1W" ? 40 : 60;
 
   const chartOutcomes = useMemo(() => {
-    if (!market?.outcomes) return [];
-    return market.outcomes.map((outcome, idx) => ({
-      id: outcome.id,
-      name: outcome.name,
-      color: outcome.color,
-      prices: generateOutcomePrices(outcome.id, outcome.price, numPoints, idx),
-    }));
-  }, [market?.outcomes, numPoints]);
+    // Handle multi-outcome markets
+    if (market?.outcomes && market.outcomes.length > 0) {
+      return market.outcomes.map((outcome, idx) => ({
+        id: outcome.id,
+        name: outcome.name,
+        color: outcome.color,
+        prices: generateOutcomePrices(outcome.id, outcome.price, numPoints, idx),
+      }));
+    }
+    // Handle binary markets (yesPrice/noPrice)
+    if (market?.yesPrice !== undefined) {
+      return [
+        {
+          id: "yes",
+          name: "Yes",
+          color: "#4abe7a",
+          prices: generateOutcomePrices("yes", market.yesPrice, numPoints, 0),
+        },
+        {
+          id: "no",
+          name: "No",
+          color: "#e5534b",
+          prices: generateOutcomePrices("no", market.noPrice || (1 - market.yesPrice), numPoints, 1),
+        },
+      ];
+    }
+    return [];
+  }, [market?.outcomes, market?.yesPrice, market?.noPrice, numPoints]);
 
   const handleBuyYes = (outcome: Outcome) => {
     setSelectedOutcome(outcome);
