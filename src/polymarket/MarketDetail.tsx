@@ -5,7 +5,8 @@ import { motion } from "framer-motion";
 import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp, Wallet } from "lucide-react";
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
-import { PolyChart, generateOutcomePrices } from "./PolyChart";
+import { PolyChart } from "./PolyChart";
+import { PRICE_HISTORY, TOP_CANDIDATES, CANDIDATE_COLORS } from "./priceData";
 import { TradingSheet } from "./TradingSheet";
 import { LiveOrderBook } from "./LiveOrderBook";
 import { TradeFeed } from "./TradeFeed";
@@ -117,38 +118,74 @@ export function MarketDetail() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Generate chart data
-  const numPoints = timeRange === "ALL" ? 150 : timeRange === "1M" ? 80 : timeRange === "1W" ? 40 : 60;
-
+  // Use real Polymarket price data for chart
   const chartOutcomes = useMemo(() => {
-    // Handle multi-outcome markets
-    if (market?.outcomes && market.outcomes.length > 0) {
-      return market.outcomes.map((outcome, idx) => ({
-        id: outcome.id,
-        name: outcome.name,
-        color: outcome.color,
-        prices: generateOutcomePrices(outcome.id, outcome.price, numPoints, idx),
-      }));
+    // Check if this is the VP nominee market (has matching candidates)
+    const isVPMarket = market?.outcomes?.some(o =>
+      TOP_CANDIDATES.includes(o.name)
+    );
+
+    if (isVPMarket && market?.outcomes) {
+      // Use real historical data
+      return TOP_CANDIDATES.map((candidateName, idx) => {
+        const outcome = market.outcomes?.find(o => o.name === candidateName);
+        const prices = PRICE_HISTORY.map(row => row[idx + 1]); // +1 to skip timestamp
+
+        return {
+          id: candidateName.toLowerCase().replace(/\s+/g, '-'),
+          name: candidateName,
+          color: CANDIDATE_COLORS[candidateName] || outcome?.color || "#666",
+          prices,
+        };
+      });
     }
-    // Handle binary markets (yesPrice/noPrice)
+
+    // Fallback for other markets - use simple synthetic data
+    if (market?.outcomes && market.outcomes.length > 0) {
+      return market.outcomes.map((outcome) => {
+        // Create simple price array that trends to current price
+        const numPoints = 100;
+        const prices: number[] = [];
+        const endPrice = outcome.price;
+        const startPrice = endPrice + (Math.random() - 0.5) * 0.1;
+
+        for (let i = 0; i < numPoints; i++) {
+          const t = i / (numPoints - 1);
+          const price = startPrice + (endPrice - startPrice) * t + (Math.random() - 0.5) * 0.02;
+          prices.push(Math.max(0.01, Math.min(0.99, price)));
+        }
+        prices[numPoints - 1] = endPrice;
+
+        return {
+          id: outcome.id,
+          name: outcome.name,
+          color: outcome.color,
+          prices,
+        };
+      });
+    }
+
+    // Handle binary markets
     if (market?.yesPrice !== undefined) {
+      const numPoints = 100;
       return [
         {
           id: "yes",
           name: "Yes",
           color: "#4abe7a",
-          prices: generateOutcomePrices("yes", market.yesPrice, numPoints, 0),
+          prices: Array(numPoints).fill(market.yesPrice),
         },
         {
           id: "no",
           name: "No",
           color: "#e5534b",
-          prices: generateOutcomePrices("no", market.noPrice || (1 - market.yesPrice), numPoints, 1),
+          prices: Array(numPoints).fill(market.noPrice || (1 - market.yesPrice)),
         },
       ];
     }
+
     return [];
-  }, [market?.outcomes, market?.yesPrice, market?.noPrice, numPoints]);
+  }, [market?.outcomes, market?.yesPrice, market?.noPrice]);
 
   const handleBuyYes = (outcome: Outcome) => {
     setSelectedOutcome(outcome);
@@ -297,20 +334,23 @@ export function MarketDetail() {
         </div>
 
         {/* Outcome Legend - Clickable to highlight */}
-        {market.outcomes && (
+        {chartOutcomes.length > 0 && (
           <div
             className={`px-4 pb-4 flex flex-wrap gap-3 transition-all duration-300 delay-200 ${
               isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
-            {market.outcomes.map((outcome) => {
-              const isHighlighted = highlightedOutcomeId === outcome.id;
+            {chartOutcomes.map((outcome) => {
+              const outcomeId = outcome.id;
+              const isHighlighted = highlightedOutcomeId === outcomeId;
               const isDimmed = highlightedOutcomeId && !isHighlighted;
+              // Get the last price from the price array (current price)
+              const currentPrice = outcome.prices[outcome.prices.length - 1];
 
               return (
                 <button
-                  key={outcome.id}
-                  onClick={() => setHighlightedOutcomeId(isHighlighted ? null : outcome.id)}
+                  key={outcomeId}
+                  onClick={() => setHighlightedOutcomeId(isHighlighted ? null : outcomeId)}
                   className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-all ${
                     isHighlighted
                       ? "bg-poly-surface ring-1 ring-poly-blue"
@@ -326,7 +366,7 @@ export function MarketDetail() {
                   <span className={`text-xs transition-colors ${
                     isDimmed ? "text-poly-textMuted" : "text-poly-textSecondary"
                   }`}>
-                    {outcome.name} {Math.round(outcome.price * 100)}%
+                    {outcome.name} {Math.round(currentPrice * 100)}%
                   </span>
                 </button>
               );
@@ -345,6 +385,7 @@ export function MarketDetail() {
             onIndexChange={setActiveIndex}
             width={Math.min(800, window.innerWidth - 80)}
             highlightedOutcomeId={highlightedOutcomeId}
+            timestamps={PRICE_HISTORY.map(row => row[0])}
           />
         </div>
 

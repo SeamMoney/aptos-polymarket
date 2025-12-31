@@ -16,6 +16,7 @@ interface PolyChartProps {
   onIndexChange?: (index: number | null) => void;
   width?: number;
   highlightedOutcomeId?: string | null; // When set, only this outcome is fully colored
+  timestamps?: number[]; // Optional real timestamps for hover labels
 }
 
 // Seeded random for consistent chart patterns
@@ -144,7 +145,7 @@ const generatePath = (
   return path;
 };
 
-export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highlightedOutcomeId }: PolyChartProps) {
+export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highlightedOutcomeId, timestamps }: PolyChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [cursorX, setCursorX] = useState<number>(0);
@@ -360,6 +361,7 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
               outcomes={outcomes}
               activeIndex={activeIndex}
               chartWidth={width}
+              timestamps={timestamps}
             />
           )}
         </div>
@@ -388,17 +390,25 @@ interface HoverLabelsProps {
   outcomes: OutcomeData[];
   activeIndex: number;
   chartWidth: number;
+  timestamps?: number[];
 }
 
-function HoverLabels({ outcomes, activeIndex, chartWidth }: HoverLabelsProps) {
+function HoverLabels({ outcomes, activeIndex, chartWidth, timestamps }: HoverLabelsProps) {
   const numPoints = outcomes[0]?.prices.length || 100;
-  const t = activeIndex / (numPoints - 1);
 
-  // Generate date label based on position (Sept to Dec range)
-  const months = ["Sep", "Oct", "Nov", "Dec"];
-  const monthIndex = Math.floor(t * 3.99);
-  const day = Math.floor((t * 4 - monthIndex) * 28) + 1;
-  const dateLabel = `${months[monthIndex]} ${day}`;
+  // Use real timestamp if available
+  let dateLabel: string;
+  if (timestamps && timestamps[activeIndex]) {
+    const date = new Date(timestamps[activeIndex] * 1000);
+    dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } else {
+    // Fallback: Generate date label based on position (Sept to Dec range)
+    const t = activeIndex / (numPoints - 1);
+    const months = ["Sep", "Oct", "Nov", "Dec"];
+    const monthIndex = Math.floor(t * 3.99);
+    const day = Math.floor((t * 4 - monthIndex) * 28) + 1;
+    dateLabel = `${months[monthIndex]} ${day}`;
+  }
 
   return (
     <div
