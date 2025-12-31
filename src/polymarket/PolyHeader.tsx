@@ -78,9 +78,9 @@ export function PolyHeader() {
   const isAppleLogin = wallet?.name?.toLowerCase().includes('apple');
 
   const walletDisplayName = isGoogleLogin
-    ? 'Google'
+    ? 'Aptos'
     : isAppleLogin
-    ? 'Apple'
+    ? 'Aptos'
     : isKeylessWallet
     ? 'Aptos'
     : wallet?.name?.replace(' (Solana)', '').replace(' (Ethereum)', '') || 'Wallet';
