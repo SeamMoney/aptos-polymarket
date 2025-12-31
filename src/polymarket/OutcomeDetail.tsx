@@ -116,7 +116,7 @@ export function OutcomeDetail() {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [showTradingSheet, setShowTradingSheet] = useState(false);
-  const [tradeType, _setTradeType] = useState<"yes" | "no">("yes");
+  const [tradeType, setTradeType] = useState<"yes" | "no">("yes");
   const [_isTouching, setIsTouching] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -633,6 +633,7 @@ export function OutcomeDetail() {
         <div className="max-w-lg mx-auto flex gap-3">
           <button
             onClick={() => {
+              setTradeType("yes");
               setShowTradingSheet(true);
             }}
             className="flex-1 bg-[#3dac67] rounded-lg py-3.5 text-white text-base font-semibold hover:bg-[#359b5c] transition-colors"
@@ -641,6 +642,7 @@ export function OutcomeDetail() {
           </button>
           <button
             onClick={() => {
+              setTradeType("no");
               setShowTradingSheet(true);
             }}
             className="flex-1 bg-[#e13836] rounded-lg py-3.5 text-white text-base font-semibold hover:bg-[#c9312f] transition-colors"
