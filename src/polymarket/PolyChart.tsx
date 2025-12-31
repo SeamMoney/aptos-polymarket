@@ -113,43 +113,45 @@ export const generateOutcomePrices = (
       // Create different pattern types based on patternIndex
       const patternType = patternIndex % 6;
 
+      // Ensure base price stays in reasonable range (15%-85%)
+      const safeBase = Math.max(0.20, Math.min(0.80, basePrice));
+
       let trend: number;
       switch (patternType) {
         case 0: // Volatile rising trend
-          trend = basePrice * 0.4 + (basePrice * 1.0) * t;
+          trend = safeBase * 0.7 + (safeBase * 0.5) * t;
           break;
         case 1: // Volatile falling trend
-          trend = basePrice * 1.6 - (basePrice * 1.0) * t;
+          trend = safeBase * 1.2 - (safeBase * 0.4) * t;
           break;
-        case 2: // Wild swings
-          trend = basePrice + Math.sin(t * 10 + seed) * 0.3 + Math.cos(t * 6) * 0.15;
+        case 2: // Wild swings around base
+          trend = safeBase + Math.sin(t * 10 + seed) * 0.15 + Math.cos(t * 6) * 0.08;
           break;
-        case 3: // Spike and crash
-          trend = t < 0.35 ? basePrice + t * 1.2 : basePrice + 0.42 - (t - 0.35) * 0.9;
+        case 3: // Spike and settle
+          trend = t < 0.35 ? safeBase + t * 0.4 : safeBase + 0.14 - (t - 0.35) * 0.2;
           break;
-        case 4: // V-shaped recovery
-          trend = t < 0.5 ? basePrice - t * 0.5 : basePrice - 0.25 + (t - 0.5) * 0.8;
+        case 4: // Dip and recovery
+          trend = t < 0.5 ? safeBase - t * 0.2 : safeBase - 0.1 + (t - 0.5) * 0.3;
           break;
-        case 5: // Choppy sideways with spikes
-          trend = basePrice + Math.sin(t * 18) * 0.15 + Math.cos(t * 9 + seed) * 0.1;
+        case 5: // Choppy sideways
+          trend = safeBase + Math.sin(t * 18) * 0.1 + Math.cos(t * 9 + seed) * 0.06;
           break;
         default:
-          trend = basePrice;
+          trend = safeBase;
       }
 
-      // Add significant volatility
-      const volatility = (rand - 0.5) * 0.18 + (rand2 - 0.5) * 0.12;
+      // Add moderate volatility
+      const volatility = (rand - 0.5) * 0.1 + (rand2 - 0.5) * 0.06;
 
-      // Add sudden jumps/drops occasionally
+      // Add occasional smaller jumps
       const jumpChance = seededRandom(seed * 3 + i);
-      const jump = jumpChance > 0.9 ? (rand - 0.5) * 0.25 : jumpChance < 0.1 ? (rand - 0.5) * 0.25 : 0;
+      const jump = jumpChance > 0.92 ? (rand - 0.5) * 0.12 : jumpChance < 0.08 ? (rand - 0.5) * 0.12 : 0;
 
       price = trend + volatility + jump;
     }
 
-    // Add small noise for realism
-    const noise = (seededRandom(seed * 1000 + i) - 0.5) * 0.01;
-    prices.push(Math.max(0.01, Math.min(0.99, price + noise)));
+    // Clamp to reasonable range (10%-90%) to avoid touching edges
+    prices.push(Math.max(0.10, Math.min(0.90, price)));
   }
 
   return prices;
