@@ -31,6 +31,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
           mainnet: import.meta.env.VITE_APTOS_API_KEY_MAINNET,
         },
         aptosConnect: {
+          dappId: 'b5c4f4e2-8d7a-4f3b-9c1e-6a2d8f5e7b3c', // UUID for Polymarket on Aptos
           dappName: 'Polymarket on Aptos',
           dappImageURI,
         },
