@@ -611,7 +611,7 @@ export function MarketDetail() {
 
       {/* HFT Demo Controls - Fixed Bottom Bar (above bottom nav) */}
       <div
-        className="fixed bottom-20 left-0 right-0 z-40 px-4 py-4"
+        className="fixed bottom-16 left-0 right-0 z-40 px-4 py-3"
         style={{ backgroundColor: '#1c2b3a', borderTop: '2px solid #2c3f4f' }}
       >
         <div className="max-w-4xl mx-auto">
