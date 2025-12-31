@@ -7,6 +7,19 @@ import { X, Loader2, ExternalLink } from 'lucide-react';
 // Wallet category type
 type WalletCategory = 'aptos' | 'solana' | 'ethereum';
 
+// Custom wallet icons (override outdated icons from adapters)
+const WALLET_ICONS: Record<string, string> = {
+  // New Petra purple logo
+  'Petra': 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiByeD0iMjAiIGZpbGw9IiM2MzQzRUMiLz4KPHBhdGggZD0iTTI1IDMyLjVDMjUgMjguMzU3OSAyOC4zNTc5IDI1IDMyLjUgMjVINTBWNTBIMzIuNUMyOC4zNTc5IDUwIDI1IDQ2LjY0MjEgMjUgNDIuNVYzMi41WiIgZmlsbD0id2hpdGUiLz4KPHBhdGggZD0iTTUwIDI1SDY3LjVDNzEuNjQyMSAyNSA3NSAyOC4zNTc5IDc1IDMyLjVWNDIuNUM3NSA0Ni42NDIxIDcxLjY0MjEgNTAgNjcuNSA1MEg1MFYyNVoiIGZpbGw9IndoaXRlIi8+CjxwYXRoIGQ9Ik01MCA1MEg2Ny41Qzc1IDUwIDc1IDU3LjUgNzUgNjIuNUM3NSA2Ny41IDc1IDc1IDY3LjUgNzVINTBWNTBaIiBmaWxsPSJ3aGl0ZSIgZmlsbC1vcGFjaXR5PSIwLjYiLz4KPHBhdGggZD0iTTI1IDYyLjVDMjUgNTcuNSAyNSA1MCAzMi41IDUwSDUwVjc1SDMyLjVDMjguMzU3OSA3NSAyNSA3MS42NDIxIDI1IDY3LjVWNjIuNVoiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuNiIvPgo8L3N2Zz4=',
+  // Phantom
+  'Phantom': 'https://phantom.app/img/phantom-logo.svg',
+  'Phantom (Solana)': 'https://phantom.app/img/phantom-logo.svg',
+  // MetaMask
+  'MetaMask (Ethereum)': 'https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg',
+  // Rainbow
+  'Rainbow (Ethereum)': 'https://avatars.githubusercontent.com/u/48327834?s=200&v=4',
+};
+
 interface WalletSelectorProps {
   isOpen: boolean;
   onClose: () => void;
@@ -125,15 +138,18 @@ function WalletButton({
   const chainLabel = getChainLabel();
   const displayName = wallet.name.replace(' (Solana)', '').replace(' (Ethereum)', '');
 
+  // Use custom icon if available, otherwise fall back to wallet's icon
+  const walletIcon = WALLET_ICONS[wallet.name] || WALLET_ICONS[displayName] || wallet.icon;
+
   return (
     <button
       onClick={handleClick}
       disabled={connecting}
       className="w-full flex items-center gap-3 p-3 bg-[#1c2b3a] hover:bg-[#2a3d4e] rounded-xl transition-colors disabled:opacity-50"
     >
-      {wallet.icon ? (
+      {walletIcon ? (
         <img
-          src={wallet.icon}
+          src={walletIcon}
           alt={wallet.name}
           className={`w-10 h-10 rounded-xl ${!isInstalled ? 'opacity-50' : ''}`}
         />
@@ -366,9 +382,9 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
                 href="https://petra.app"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-[#2a3d4e] hover:bg-[#3a4f60] text-white text-sm font-medium rounded-lg transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#6343EC] hover:bg-[#5333DC] text-white text-sm font-medium rounded-lg transition-colors"
               >
-                <img src="https://petra.app/favicon.ico" alt="Petra" className="w-4 h-4" />
+                <img src={WALLET_ICONS['Petra']} alt="Petra" className="w-5 h-5 rounded" />
                 Download Petra chrome extension
               </a>
             </div>

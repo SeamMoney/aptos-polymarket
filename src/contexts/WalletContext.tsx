@@ -1,6 +1,13 @@
 import { type ReactNode } from 'react';
 import { AptosWalletAdapterProvider } from '@aptos-labs/wallet-adapter-react';
 import { Network } from '@aptos-labs/ts-sdk';
+import { setupAutomaticEthereumWalletDerivation } from '@aptos-labs/derived-wallet-ethereum';
+import { setupAutomaticSolanaWalletDerivation } from '@aptos-labs/derived-wallet-solana';
+
+// Initialize X-Chain wallet derivation at module level
+// This allows Phantom, MetaMask, Rainbow, etc. to derive Aptos accounts
+setupAutomaticEthereumWalletDerivation({ defaultNetwork: Network.TESTNET });
+setupAutomaticSolanaWalletDerivation({ defaultNetwork: Network.TESTNET });
 
 interface WalletProviderProps {
   children: ReactNode;
