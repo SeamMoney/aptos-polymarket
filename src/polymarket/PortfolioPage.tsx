@@ -29,14 +29,39 @@ interface TradeHistoryItem {
   success: boolean;
 }
 
-// Position item type
+// Position item type with full PNL tracking
 interface PositionItem {
   outcomeIndex: number;
   outcomeName: string;
   tokens: number;
-  currentPrice: number;
+  currentPrice: number;      // Current price (0-100)
+  entryPrice: number;        // Average entry price (0-100)
+  costBasis: number;         // Total APT spent
+  currentValue: number;      // Current value in APT
+  pnl: number;               // Profit/Loss in APT
+  pnlPercent: number;        // PNL as percentage
+  priceHistory: number[];    // Price history for sparkline
+}
+
+// Trade record for cost basis tracking
+interface TradeRecord {
+  timestamp: number;
+  outcomeIndex: number;
+  outcomeName: string;
+  type: 'buy' | 'sell';
+  tokens: number;
+  pricePerToken: number;     // Price at time of trade (0-100)
+  totalCost: number;         // APT spent/received
+  txHash: string;
+}
+
+// Position snapshot for history
+interface PositionSnapshot {
+  timestamp: number;
+  outcomeIndex: number;
+  tokens: number;
+  price: number;
   value: number;
-  pnl: number;
 }
 
 // Balance history entry type
@@ -45,8 +70,104 @@ interface BalanceHistoryEntry {
   balance: number;
 }
 
-// Storage key for balance history
+// Storage keys
 const BALANCE_HISTORY_KEY = 'portfolio_balance_history';
+const TRADE_RECORDS_KEY = 'portfolio_trade_records';
+const POSITION_HISTORY_KEY = 'portfolio_position_history';
+
+// Get trade records from localStorage
+function getTradeRecords(): TradeRecord[] {
+  try {
+    const stored = localStorage.getItem(TRADE_RECORDS_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error('Error reading trade records:', e);
+  }
+  return [];
+}
+
+// Save trade record
+function saveTradeRecord(trade: TradeRecord) {
+  try {
+    const records = getTradeRecords();
+    // Check if trade already exists (by txHash)
+    if (!records.find(r => r.txHash === trade.txHash)) {
+      records.push(trade);
+      // Keep last 1000 trades
+      const trimmed = records.slice(-1000);
+      localStorage.setItem(TRADE_RECORDS_KEY, JSON.stringify(trimmed));
+    }
+  } catch (e) {
+    console.error('Error saving trade record:', e);
+  }
+}
+
+// Get position history for sparklines
+function getPositionHistory(outcomeIndex: number): PositionSnapshot[] {
+  try {
+    const stored = localStorage.getItem(POSITION_HISTORY_KEY);
+    if (stored) {
+      const all: PositionSnapshot[] = JSON.parse(stored);
+      return all.filter(p => p.outcomeIndex === outcomeIndex);
+    }
+  } catch (e) {
+    console.error('Error reading position history:', e);
+  }
+  return [];
+}
+
+// Save position snapshot (called periodically)
+function savePositionSnapshot(snapshot: PositionSnapshot) {
+  try {
+    const stored = localStorage.getItem(POSITION_HISTORY_KEY);
+    const all: PositionSnapshot[] = stored ? JSON.parse(stored) : [];
+
+    // Only save if value changed or hasn't been saved in last minute
+    const lastForOutcome = all.filter(p => p.outcomeIndex === snapshot.outcomeIndex).pop();
+    const now = Date.now();
+    if (!lastForOutcome ||
+        Math.abs(lastForOutcome.value - snapshot.value) > 0.01 ||
+        now - lastForOutcome.timestamp > 60000) {
+      all.push(snapshot);
+      // Keep last 2000 snapshots across all positions
+      const trimmed = all.slice(-2000);
+      localStorage.setItem(POSITION_HISTORY_KEY, JSON.stringify(trimmed));
+    }
+  } catch (e) {
+    console.error('Error saving position snapshot:', e);
+  }
+}
+
+// Calculate cost basis and average entry price for an outcome
+function calculateCostBasis(outcomeIndex: number): { costBasis: number; avgEntryPrice: number; totalTokensBought: number } {
+  const trades = getTradeRecords().filter(t => t.outcomeIndex === outcomeIndex);
+
+  let totalCost = 0;
+  let totalTokensBought = 0;
+  let totalTokensSold = 0;
+
+  for (const trade of trades) {
+    if (trade.type === 'buy') {
+      totalCost += trade.totalCost;
+      totalTokensBought += trade.tokens;
+    } else {
+      // For sells, reduce proportionally
+      totalTokensSold += trade.tokens;
+    }
+  }
+
+  const netTokens = totalTokensBought - totalTokensSold;
+  const avgEntryPrice = netTokens > 0 ? (totalCost / totalTokensBought) * 100 : 0;
+  const adjustedCostBasis = netTokens > 0 ? (totalCost * (netTokens / totalTokensBought)) : 0;
+
+  return {
+    costBasis: adjustedCostBasis,
+    avgEntryPrice,
+    totalTokensBought: netTokens,
+  };
+}
 
 // Get balance history from localStorage
 function getBalanceHistory(): BalanceHistoryEntry[] {
@@ -79,6 +200,54 @@ function saveBalanceToHistory(balance: number) {
   } catch (e) {
     console.error('Error saving balance history:', e);
   }
+}
+
+// Export saveTradeRecord for use in TradingSheet
+export { saveTradeRecord };
+export type { TradeRecord };
+
+// Mini Sparkline chart for position PNL
+function PositionSparkline({ data, isPositive }: { data: number[]; isPositive: boolean }) {
+  if (data.length < 2) {
+    // Show flat line if not enough data
+    return (
+      <svg width="60" height="24" className="flex-shrink-0">
+        <line x1="0" y1="12" x2="60" y2="12" stroke="#4a5568" strokeWidth="1.5" />
+      </svg>
+    );
+  }
+
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+
+  const points = data.map((value, i) => {
+    const x = (i / (data.length - 1)) * 60;
+    const y = 22 - ((value - min) / range) * 20;
+    return `${x},${y}`;
+  }).join(' ');
+
+  const color = isPositive ? '#22c55e' : '#ef4444';
+
+  return (
+    <svg width="60" height="24" className="flex-shrink-0">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* End dot */}
+      <circle
+        cx={(data.length - 1) / (data.length - 1) * 60}
+        cy={22 - ((data[data.length - 1] - min) / range) * 20}
+        r="2.5"
+        fill={color}
+      />
+    </svg>
+  );
 }
 
 // Polymarket Logo for branding (using official logo)
@@ -527,15 +696,42 @@ export function PortfolioPage() {
       for (let i = 0; i < labels.length; i++) {
         const tokens = tokenBalances[i] / 100_000_000; // Convert from octas
         if (tokens > 0.0001) { // Only show non-zero positions
-          const currentPrice = prices[i] / 100; // Price is 0-100, convert to 0-1
-          const value = tokens * currentPrice;
+          const currentPrice = prices[i]; // Keep as 0-100
+          const currentValue = tokens * (currentPrice / 100); // Value in APT
+
+          // Get cost basis from trade history
+          const { costBasis, avgEntryPrice } = calculateCostBasis(i);
+
+          // Calculate PNL
+          const pnl = currentValue - costBasis;
+          const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+
+          // Get position history for sparkline
+          const history = getPositionHistory(i);
+          const priceHistory = history.length > 0
+            ? history.slice(-20).map(h => h.value)
+            : [costBasis, currentValue]; // Default to straight line
+
+          // Save current snapshot for future sparklines
+          savePositionSnapshot({
+            timestamp: Date.now(),
+            outcomeIndex: i,
+            tokens,
+            price: currentPrice,
+            value: currentValue,
+          });
+
           userPositions.push({
             outcomeIndex: i,
             outcomeName: labels[i],
             tokens,
-            currentPrice: prices[i],
-            value,
-            pnl: 0, // Would need historical data to calculate PNL
+            currentPrice,
+            entryPrice: avgEntryPrice || currentPrice, // Use current if no history
+            costBasis,
+            currentValue,
+            pnl,
+            pnlPercent,
+            priceHistory,
           });
         }
       }
@@ -916,34 +1112,91 @@ export function PortfolioPage() {
                 <p className="text-[#6b7a8a] text-sm mt-1">Buy outcome tokens to see them here.</p>
               </div>
             ) : (
-              positions.map((position) => (
-                <div
-                  key={position.outcomeIndex}
-                  className="bg-poly-card rounded-lg p-4 border border-[#2c3f4f]"
-                >
+              <>
+                {/* Total PNL Summary */}
+                <div className="bg-poly-card rounded-lg p-4 border border-[#2c3f4f] mb-4">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold">
-                        {position.outcomeName.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="text-white font-medium">{position.outcomeName}</p>
-                        <p className="text-[#6b7a8a] text-sm">
-                          {position.tokens.toFixed(2)} tokens @ {position.currentPrice}%
-                        </p>
-                      </div>
+                    <div>
+                      <p className="text-[#8297a3] text-sm">Total Position Value</p>
+                      <p className="text-white text-2xl font-bold">
+                        ${positions.reduce((sum, p) => sum + p.currentValue, 0).toFixed(2)}
+                      </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-white font-semibold">
-                        ${position.value.toFixed(2)}
-                      </p>
-                      <p className={`text-sm ${position.currentPrice >= 50 ? 'text-green-400' : 'text-[#8297a3]'}`}>
-                        {position.currentPrice}% chance
-                      </p>
+                      <p className="text-[#8297a3] text-sm">Total P&L</p>
+                      {(() => {
+                        const totalPnl = positions.reduce((sum, p) => sum + p.pnl, 0);
+                        const totalCost = positions.reduce((sum, p) => sum + p.costBasis, 0);
+                        const totalPnlPercent = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+                        return (
+                          <p className={`text-xl font-bold ${totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)} APT
+                            <span className="text-sm ml-1">({totalPnlPercent >= 0 ? '+' : ''}{totalPnlPercent.toFixed(1)}%)</span>
+                          </p>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
-              ))
+
+                {/* Position Cards */}
+                {positions.map((position) => (
+                  <div
+                    key={position.outcomeIndex}
+                    className="bg-poly-card rounded-lg p-4 border border-[#2c3f4f]"
+                  >
+                    {/* Row 1: Name, Sparkline, Current Value */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm">
+                          {position.outcomeName.slice(0, 2)}
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">{position.outcomeName}</p>
+                          <p className="text-[#6b7a8a] text-xs">
+                            {position.tokens.toFixed(2)} tokens
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <PositionSparkline data={position.priceHistory} isPositive={position.pnl >= 0} />
+                        <div className="text-right">
+                          <p className="text-white font-semibold">
+                            ${position.currentValue.toFixed(2)}
+                          </p>
+                          <p className={`text-sm font-medium ${position.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {position.pnl >= 0 ? '+' : ''}{position.pnl.toFixed(2)} APT
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row 2: Entry/Current Price, Cost Basis, PNL % */}
+                    <div className="grid grid-cols-4 gap-2 pt-3 border-t border-[#2c3f4f]">
+                      <div>
+                        <p className="text-[#6b7a8a] text-xs">Entry</p>
+                        <p className="text-white text-sm font-medium">{position.entryPrice.toFixed(1)}%</p>
+                      </div>
+                      <div>
+                        <p className="text-[#6b7a8a] text-xs">Current</p>
+                        <p className={`text-sm font-medium ${position.currentPrice >= position.entryPrice ? 'text-green-400' : 'text-red-400'}`}>
+                          {position.currentPrice.toFixed(1)}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[#6b7a8a] text-xs">Cost</p>
+                        <p className="text-white text-sm font-medium">{position.costBasis.toFixed(2)} APT</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[#6b7a8a] text-xs">Return</p>
+                        <p className={`text-sm font-medium ${position.pnlPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {position.pnlPercent >= 0 ? '+' : ''}{position.pnlPercent.toFixed(1)}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </>
             )}
           </div>
         ) : (

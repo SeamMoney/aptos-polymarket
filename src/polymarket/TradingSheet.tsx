@@ -163,6 +163,27 @@ export function TradingSheet({
       const hash = result?.hash || result?.transaction?.hash;
       if (hash) {
         setTxHash(hash);
+
+        // Save trade record for cost basis tracking
+        const outcomeIndex = isMultiOutcome ? getOutcomeIndex() : (tradeType === "yes" ? 0 : 1);
+        const outcomeName = selectedOutcome?.name || (tradeType === "yes" ? "Yes" : "No");
+        const currentPriceForTrade = selectedOutcome
+          ? Math.round(selectedOutcome.price * 100)
+          : tradeType === "yes"
+          ? Math.round(market.yesPrice * 100)
+          : Math.round(market.noPrice * 100);
+
+        const tradeRecord: TradeRecord = {
+          timestamp: Date.now(),
+          outcomeIndex,
+          outcomeName,
+          type: direction,
+          tokens: amount / 100, // Amount in APT
+          pricePerToken: currentPriceForTrade,
+          totalCost: amount / 100, // APT spent
+          txHash: hash,
+        };
+        saveTradeRecord(tradeRecord);
       }
 
       setTxStatus("success");
