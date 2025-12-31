@@ -443,7 +443,7 @@ export function OutcomeDetail() {
                 height={CHART_HEIGHT}
                 style={{ touchAction: 'none', userSelect: 'none' }}
               >
-                {/* Faint grid lines - matches PolyChart */}
+                {/* Grid lines - more visible */}
                 {[0, 0.25, 0.5, 0.75, 1].map((pct) => (
                   <line
                     key={pct}
@@ -451,28 +451,28 @@ export function OutcomeDetail() {
                     y1={CHART_HEIGHT * (1 - pct)}
                     x2={chartWidth}
                     y2={CHART_HEIGHT * (1 - pct)}
-                    stroke="#30363D"
-                    strokeWidth={0.5}
-                    strokeDasharray="2,8"
-                    opacity={0.4}
+                    stroke="#4a5568"
+                    strokeWidth={1}
+                    strokeDasharray="4,6"
+                    opacity={0.5}
                   />
                 ))}
 
-                {/* Polymarket watermark - matches PolyChart */}
-                <g opacity={0.06}>
+                {/* Polymarket watermark - top right corner away from chart data */}
+                <g opacity={0.15}>
                   <image
                     href="/images/icon-white.svg"
-                    x={16}
-                    y={CHART_HEIGHT - 36}
-                    width={24}
-                    height={24}
+                    x={chartWidth - 120}
+                    y={8}
+                    width={20}
+                    height={20}
                   />
                   <text
-                    x={44}
-                    y={CHART_HEIGHT - 18}
+                    x={chartWidth - 96}
+                    y={22}
                     fill="#ffffff"
-                    fontSize={12}
-                    fontWeight={600}
+                    fontSize={11}
+                    fontWeight={500}
                     fontFamily="system-ui, -apple-system, sans-serif"
                   >
                     Polymarket
