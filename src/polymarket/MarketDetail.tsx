@@ -1,14 +1,16 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp } from "lucide-react";
+import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp, Play, Square, Loader2 } from "lucide-react";
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { PolyChart, generateOutcomePrices } from "./PolyChart";
 import { TradingSheet } from "./TradingSheet";
-import { ExpandedOrderBook } from "./ExpandedOrderBook";
+import { LiveOrderBook } from "./LiveOrderBook";
+import { TPSChart } from "./TPSChart";
 import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
+import { useHFTConnection } from "../hooks/useHFTConnection";
 import type { Category, Outcome } from "./types";
 
 const timeRanges = ["1H", "6H", "1D", "1W", "1M", "ALL"];
@@ -37,6 +39,20 @@ export function MarketDetail() {
     buyOutcome,
     sellOutcome,
   } = usePolymarkets();
+
+  // HFT connection for live demo
+  const {
+    isConnected: hftConnected,
+    isRunning: hftRunning,
+    stats: hftStats,
+    marketInfo: hftMarketInfo,
+    marketReserves: hftReserves,
+    trades: hftTrades,
+    tpsHistory,
+    startTrading,
+    stopTrading,
+    error: hftError,
+  } = useHFTConnection();
 
   // Try to find market from on-chain data first, then fall back to mock data
   const market = useMemo(() => {
@@ -140,14 +156,25 @@ export function MarketDetail() {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto pb-24">
-        {/* Volume Header */}
+      <div className="max-w-4xl mx-auto pb-32">
+        {/* Volume Header with TPS */}
         <div
           className={`px-4 py-3 flex items-center justify-between transition-all duration-300 delay-100 ${
             isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
           }`}
         >
-          <span className="text-[#8297a3] text-sm">{market.volume} Vol.</span>
+          <div className="flex items-center gap-4">
+            <span className="text-[#8297a3] text-sm">{market.volume} Vol.</span>
+            {hftConnected && (
+              <TPSChart
+                currentTps={hftStats.currentTps || 0}
+                peakTps={hftStats.peakTps || 0}
+                tpsHistory={tpsHistory}
+                isRunning={hftRunning}
+                compact
+              />
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <button className="p-2 hover:bg-poly-surface rounded-lg transition-colors">
               <Link2 size={18} color="#8297a3" strokeWidth={2.5} />
@@ -255,11 +282,31 @@ export function MarketDetail() {
             isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
           }`}
         >
-          <ExpandedOrderBook
-            marketId={market.id}
-            basePrice={market.outcomes?.[0]?.price || market.yesPrice}
+          <LiveOrderBook
+            yesPrice={hftMarketInfo?.yesPrice || market.yesPrice * 100}
+            noPrice={hftMarketInfo?.noPrice || market.noPrice * 100}
+            yesReserve={hftReserves.yesReserve}
+            noReserve={hftReserves.noReserve}
+            trades={hftTrades}
+            isConnected={hftConnected}
           />
         </div>
+
+        {/* Full TPS Chart when running */}
+        {hftRunning && (
+          <div
+            className={`px-4 pb-6 transition-all duration-300 ${
+              isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+            }`}
+          >
+            <TPSChart
+              currentTps={hftStats.currentTps || 0}
+              peakTps={hftStats.peakTps || 0}
+              tpsHistory={tpsHistory}
+              isRunning={hftRunning}
+            />
+          </div>
+        )}
 
         {/* Outcomes List with Buy Buttons */}
         {market.outcomes && (
@@ -511,6 +558,56 @@ export function MarketDetail() {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* HFT Demo Controls - Fixed Bottom Bar */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-40 px-4 py-4"
+        style={{ backgroundColor: '#1c2b3a', borderTop: '2px solid #2c3f4f' }}
+      >
+        <div className="max-w-4xl mx-auto">
+          {hftError && (
+            <div className="mb-3 p-2 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm text-center">
+              {hftError}
+            </div>
+          )}
+          <div className="flex gap-3">
+            {!hftRunning ? (
+              <button
+                onClick={startTrading}
+                disabled={!hftConnected}
+                className="flex-1 bg-[#4abe7a] hover:bg-[#3da86a] disabled:bg-[#4abe7a]/50 disabled:cursor-not-allowed rounded-lg py-4 text-white text-base font-bold transition-colors flex items-center justify-center gap-2"
+              >
+                <Play size={20} fill="white" />
+                {hftConnected ? 'Start HFT Demo' : 'Connecting...'}
+              </button>
+            ) : (
+              <button
+                onClick={stopTrading}
+                className="flex-1 bg-[#e5534b] hover:bg-[#d4443c] rounded-lg py-4 text-white text-base font-bold transition-colors flex items-center justify-center gap-2"
+              >
+                <Square size={20} fill="white" />
+                Stop Demo
+              </button>
+            )}
+            {hftRunning && (
+              <div className="flex items-center gap-3 px-4 bg-[#2a3d4e] rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Loader2 size={16} className="text-[#60a5fa] animate-spin" />
+                  <span className="text-[#60a5fa] text-sm font-bold tabular-nums">{hftStats.currentTps || 0} TPS</span>
+                </div>
+                <div className="text-[#8297a3] text-xs">
+                  {hftStats.totalTrades || 0} trades
+                </div>
+              </div>
+            )}
+          </div>
+          {!hftConnected && (
+            <p className="text-[#6b7a8a] text-xs text-center mt-2">
+              Run <code className="bg-[#2a3d4e] px-1 rounded">npx tsx server/hft-server.ts</code> to enable demo
+            </p>
+          )}
         </div>
       </div>
 

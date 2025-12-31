@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Search, Bookmark, X, RefreshCw, Loader2 } from "lucide-react";
@@ -19,17 +19,30 @@ export function PolymarketHome() {
   const [selectedTime, setSelectedTime] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [showRealMarkets, setShowRealMarkets] = useState(true);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   // Fetch real on-chain markets
   const { markets: onChainMarkets, loading, error, refresh } = usePolymarkets();
 
+  // Mark initial load as done once loading completes for the first time
+  useEffect(() => {
+    if (!loading && !initialLoadDone) {
+      setInitialLoadDone(true);
+    }
+  }, [loading, initialLoadDone]);
+
   // Combine on-chain markets with mock markets (on-chain first)
+  // Wait for initial load to prevent visual swap
   const allMarkets: Market[] = useMemo(() => {
+    // During initial load, show nothing or minimal skeleton
+    if (!initialLoadDone && loading) {
+      return [];
+    }
     if (showRealMarkets && onChainMarkets.length > 0) {
       return [...onChainMarkets, ...mockMarkets];
     }
     return mockMarkets;
-  }, [onChainMarkets, showRealMarkets]);
+  }, [onChainMarkets, showRealMarkets, initialLoadDone, loading]);
 
   // Search results when searching
   const searchResults = useMemo(() => {
@@ -236,6 +249,23 @@ export function PolymarketHome() {
 
           {/* Markets List */}
           <div className="pb-6">
+            {/* Loading skeleton during initial load */}
+            {!initialLoadDone && loading && (
+              <div className="px-4 space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="bg-poly-card rounded-xl p-4 animate-pulse">
+                    <div className="flex gap-3">
+                      <div className="w-12 h-12 bg-poly-surface rounded-lg" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 bg-poly-surface rounded w-3/4" />
+                        <div className="h-3 bg-poly-surface rounded w-1/2" />
+                      </div>
+                      <div className="w-16 h-8 bg-poly-surface rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {filteredMarkets.map((market, index) => (
               <motion.div
                 key={market.id}
