@@ -581,12 +581,18 @@ export function PortfolioPage() {
 
   const timeRanges = ["1D", "1W", "1M", "ALL"];
 
-  // Save balance to history when it changes
+  // Calculate total portfolio value (wallet + positions)
+  const totalPortfolioValue = useMemo(() => {
+    const positionValue = positions.reduce((sum, p) => sum + p.currentValue, 0);
+    return balance + positionValue;
+  }, [balance, positions]);
+
+  // Save total portfolio value to history when it changes
   useEffect(() => {
-    if (balance > 0) {
-      saveBalanceToHistory(balance);
+    if (totalPortfolioValue > 0) {
+      saveBalanceToHistory(totalPortfolioValue);
     }
-  }, [balance]);
+  }, [totalPortfolioValue]);
 
   // Fetch wallet balance (supports both legacy CoinStore and new Fungible Assets)
   const fetchBalance = useCallback(async () => {
@@ -910,12 +916,12 @@ export function PortfolioPage() {
     }
   }, [connected]); // Intentionally not including fetchTrades and fetchPositions to prevent loops
 
-  // Format balance for display
+  // Format balance for display (in APT, not USD)
   const formatBalance = (val: number) => {
     if (val >= 1000) {
-      return `$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return `${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} APT`;
     }
-    return `$${val.toFixed(2)}`;
+    return `${val.toFixed(2)} APT`;
   };
 
   return (
@@ -969,10 +975,10 @@ export function PortfolioPage() {
           {/* Portfolio Value */}
           <div className="mb-1">
             <span className="text-white text-4xl font-bold">
-              {showBalance ? formatBalance(balance) : "••••••"}
+              {showBalance ? formatBalance(totalPortfolioValue) : "••••••"}
             </span>
           </div>
-          <span className="text-[#8297a3] text-base">{connected ? "APT Balance" : "Connect wallet"}</span>
+          <span className="text-[#8297a3] text-base">{connected ? "Total Portfolio Value" : "Connect wallet"}</span>
 
           {/* Withdraw Button */}
           <button className="w-full mt-5 py-3.5 bg-[#3d5060] rounded-lg flex items-center justify-center gap-2 text-[#8297a3] text-base font-medium hover:bg-[#4a6070] transition-colors">
@@ -1010,9 +1016,9 @@ export function PortfolioPage() {
 
           <div className="flex items-start justify-between mb-4">
             <div>
-              {/* Show hover value or current balance */}
+              {/* Show hover value or current total portfolio value */}
               <span className="text-white text-3xl font-bold">
-                {hoverValue ? formatBalance(hoverValue.balance) : formatBalance(balance)}
+                {hoverValue ? formatBalance(hoverValue.balance) : formatBalance(totalPortfolioValue)}
               </span>
               {/* Show PNL change when hovering */}
               {hoverValue && (
@@ -1038,7 +1044,7 @@ export function PortfolioPage() {
 
           <ProfitChart
             timeRange={timeRange}
-            balance={balance}
+            balance={totalPortfolioValue}
             onHoverValue={setHoverValue}
           />
         </div>

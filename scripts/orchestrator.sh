@@ -22,8 +22,9 @@ set -e
 FULLNODE_IP="164.92.117.18"
 FULLNODE_URL="http://${FULLNODE_IP}:8080/v1"
 
-# Worker VM (2 vCPU, 4GB)
-WORKER_VM_IP="147.182.237.239"
+# Worker VMs
+WORKER_VM1_IP="147.182.237.239"  # Worker 2
+WORKER_VM2_IP="161.35.231.0"     # Worker 3 (NEW)
 WORKER_VM_USER="root"
 
 # Contract addresses
@@ -33,12 +34,15 @@ MARKET_ADDRESS="0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd
 # API Keys
 APTOS_API_KEY="AG-3JMDT54EN4DCLULDWAUXCYGQ56JJQCYHH"
 
-# Account keys split between workers
-# Worker 1 (Local Mac): First 10 accounts
-LOCAL_KEYS="0x6e2fca34586261b6f22a973c20024b78ddb370d87f7c974315fb97ba56716a7f,0xe61d22b3dc37c537a20d5b301c4d2b409b2f93cd7b2915f3518d49517c2ab6c4,0x4542c2e4a39beee8202eee0cddeceea886687b21b54b8f50c17e729251fdd7f5,0xcf5154af9664bbc2634fddfcce2317ed788b35de7f004ac0e24aefd68a0b10c5,ed25519-priv-0xb7d1f406e48c2eddffe987f98445dd4a353e8e9d1630d878621ded084bdd77c7,ed25519-priv-0xa8088ee787b847f6304807a8b09d1afc15409082ee9c8b7eda6919b0ecb86ea8,ed25519-priv-0xb5305eb83498dcba61242ccc91fac35263d9b44bddaf5e7417adbaceb1cfcb36,ed25519-priv-0xc27a6a8b6ed3013da99dc924b2f6af17f1448dedce91691f97d9e778c0761655,ed25519-priv-0xd6402b3493af005ed02b07f6cd7ffdfd37fae6d4d9c88fec6ff38e90f01b21c1,ed25519-priv-0xd375af1a686835905e15bf82f24fcaeed4b1b5b5fabe22c80e998acb804aa295"
+# Account keys split between 3 workers (20 accounts total)
+# Worker 1 (Local Mac): 7 accounts (1-7)
+LOCAL_KEYS="0x6e2fca34586261b6f22a973c20024b78ddb370d87f7c974315fb97ba56716a7f,0xe61d22b3dc37c537a20d5b301c4d2b409b2f93cd7b2915f3518d49517c2ab6c4,0x4542c2e4a39beee8202eee0cddeceea886687b21b54b8f50c17e729251fdd7f5,0xcf5154af9664bbc2634fddfcce2317ed788b35de7f004ac0e24aefd68a0b10c5,ed25519-priv-0xb7d1f406e48c2eddffe987f98445dd4a353e8e9d1630d878621ded084bdd77c7,ed25519-priv-0xa8088ee787b847f6304807a8b09d1afc15409082ee9c8b7eda6919b0ecb86ea8,ed25519-priv-0xb5305eb83498dcba61242ccc91fac35263d9b44bddaf5e7417adbaceb1cfcb36"
 
-# Worker 2 (VM): Last 10 accounts
-VM_KEYS="ed25519-priv-0xC5BA2ED0F5C40EE298E844B1140B6BB31C2671B747C8E9DF4B76054C4C5A8761,ed25519-priv-0x536C886483209657C9B30663B295C7CB007EB57E07931D3E41AF69067897D465,ed25519-priv-0x3E9CB6207207A266F298B1B13648D707BF886766221C3253F30AF68530A79749,ed25519-priv-0x4641D0FDD221B48EF4A45C8DC77D6D4F12D6848E01B7686134564A8CAE5BE637,ed25519-priv-0xFB2AFF37DFED247E9CF407FFA41208A41A78877C1990ADD1F94E00FCE1A5CCAC,ed25519-priv-0x9E338A7FB43F8280CCD82B2929B66F4ED1B7AA7900C40E06EAD934BC7CDEF315,ed25519-priv-0x8E7D4B0196840DA3A7BA6EDEF3784E1B961263F06651B130F440F5D974920B1F,ed25519-priv-0x975CF351CE096E1350C9F9E89ED5CB8D7BEAAEBF7FC235B10F1A0852355EED7A,ed25519-priv-0xD945B44FCFA961B9E4F8DAA5139CF6B4CE9A1DF4838C75701EDC8A429739C097,ed25519-priv-0x292A25EDBE90DCB5F682908C1E7185E1CC127FAD74EEA218167115AA5962866C"
+# Worker 2 (VM1 - 147.182.237.239): 8 accounts (8-15)
+VM1_KEYS="ed25519-priv-0xc27a6a8b6ed3013da99dc924b2f6af17f1448dedce91691f97d9e778c0761655,ed25519-priv-0xd6402b3493af005ed02b07f6cd7ffdfd37fae6d4d9c88fec6ff38e90f01b21c1,ed25519-priv-0xd375af1a686835905e15bf82f24fcaeed4b1b5b5fabe22c80e998acb804aa295,ed25519-priv-0xC5BA2ED0F5C40EE298E844B1140B6BB31C2671B747C8E9DF4B76054C4C5A8761,ed25519-priv-0x536C886483209657C9B30663B295C7CB007EB57E07931D3E41AF69067897D465,ed25519-priv-0x3E9CB6207207A266F298B1B13648D707BF886766221C3253F30AF68530A79749,ed25519-priv-0x4641D0FDD221B48EF4A45C8DC77D6D4F12D6848E01B7686134564A8CAE5BE637,ed25519-priv-0xFB2AFF37DFED247E9CF407FFA41208A41A78877C1990ADD1F94E00FCE1A5CCAC"
+
+# Worker 3 (VM2 - 161.35.231.0): 5 accounts (16-20)
+VM2_KEYS="ed25519-priv-0x9E338A7FB43F8280CCD82B2929B66F4ED1B7AA7900C40E06EAD934BC7CDEF315,ed25519-priv-0x8E7D4B0196840DA3A7BA6EDEF3784E1B961263F06651B130F440F5D974920B1F,ed25519-priv-0x975CF351CE096E1350C9F9E89ED5CB8D7BEAAEBF7FC235B10F1A0852355EED7A,ed25519-priv-0xD945B44FCFA961B9E4F8DAA5139CF6B4CE9A1DF4838C75701EDC8A429739C097,ed25519-priv-0x292A25EDBE90DCB5F682908C1E7185E1CC127FAD74EEA218167115AA5962866C"
 
 # Colors
 RED='\033[0;31m'
@@ -60,7 +64,8 @@ print_header() {
 }
 
 check_ssh() {
-    ssh -o ConnectTimeout=5 -o BatchMode=yes ${WORKER_VM_USER}@${WORKER_VM_IP} "echo ok" &>/dev/null
+    local ip=$1
+    ssh -o ConnectTimeout=5 -o BatchMode=yes ${WORKER_VM_USER}@${ip} "echo ok" &>/dev/null
 }
 
 # ============================================
@@ -79,22 +84,38 @@ cmd_status() {
         echo -e "${RED}✗ Not reachable${NC}"
     fi
 
-    # Check worker VM
-    echo -n "Worker VM (${WORKER_VM_IP}): "
-    if check_ssh; then
+    # Check Worker VM1
+    echo -n "Worker VM1 (${WORKER_VM1_IP}): "
+    if check_ssh ${WORKER_VM1_IP}; then
         echo -e "${GREEN}✓ SSH OK${NC}"
-
-        # Check if HFT is set up
         echo -n "  └─ HFT Setup: "
-        if ssh ${WORKER_VM_USER}@${WORKER_VM_IP} "test -d /opt/aptos-hft" 2>/dev/null; then
+        if ssh ${WORKER_VM_USER}@${WORKER_VM1_IP} "test -d /opt/aptos-hft" 2>/dev/null; then
             echo -e "${GREEN}✓ Installed${NC}"
         else
-            echo -e "${YELLOW}✗ Not installed (run: ./scripts/orchestrator.sh setup)${NC}"
+            echo -e "${YELLOW}✗ Not installed${NC}"
         fi
-
-        # Check if HFT is running
         echo -n "  └─ HFT Server: "
-        if ssh ${WORKER_VM_USER}@${WORKER_VM_IP} "pgrep -f hft-ultra-server" &>/dev/null; then
+        if ssh ${WORKER_VM_USER}@${WORKER_VM1_IP} "pgrep -f hft-ultra-server" &>/dev/null; then
+            echo -e "${GREEN}✓ Running${NC}"
+        else
+            echo -e "${YELLOW}○ Not running${NC}"
+        fi
+    else
+        echo -e "${RED}✗ SSH failed${NC}"
+    fi
+
+    # Check Worker VM2
+    echo -n "Worker VM2 (${WORKER_VM2_IP}): "
+    if check_ssh ${WORKER_VM2_IP}; then
+        echo -e "${GREEN}✓ SSH OK${NC}"
+        echo -n "  └─ HFT Setup: "
+        if ssh ${WORKER_VM_USER}@${WORKER_VM2_IP} "test -d /opt/aptos-hft" 2>/dev/null; then
+            echo -e "${GREEN}✓ Installed${NC}"
+        else
+            echo -e "${YELLOW}✗ Not installed${NC}"
+        fi
+        echo -n "  └─ HFT Server: "
+        if ssh ${WORKER_VM_USER}@${WORKER_VM2_IP} "pgrep -f hft-ultra-server" &>/dev/null; then
             echo -e "${GREEN}✓ Running${NC}"
         else
             echo -e "${YELLOW}○ Not running${NC}"
@@ -269,13 +290,16 @@ cmd_test() {
 cmd_demo() {
     DURATION=${1:-60}
 
-    print_header "DEMO MODE: MAX TPS FOR ${DURATION} SECONDS"
+    print_header "DEMO MODE: 30K TPS FOR ${DURATION} SECONDS"
 
-    echo "This will:"
-    echo "  1. Start VM worker (10 accounts, full speed)"
-    echo "  2. Start local worker (10 accounts, full speed)"
-    echo "  3. Target: ~20,000 TPS combined"
-    echo "  4. Run for ${DURATION} seconds"
+    echo "This will start 3 workers:"
+    echo "  Worker 1 (Local):  7 accounts  → ~10K TPS"
+    echo "  Worker 2 (VM1):    8 accounts  → ~10K TPS"
+    echo "  Worker 3 (VM2):    5 accounts  → ~7K TPS"
+    echo "  ─────────────────────────────────────"
+    echo "  TOTAL:            20 accounts  → ~30K TPS"
+    echo ""
+    echo "Duration: ${DURATION} seconds"
     echo ""
     read -p "Start demo? (y/n) " -n 1 -r
     echo
@@ -284,24 +308,18 @@ cmd_demo() {
         exit 1
     fi
 
-    # Check VM is set up
-    if ! ssh ${WORKER_VM_USER}@${WORKER_VM_IP} "test -f /opt/aptos-hft/run-worker.sh" 2>/dev/null; then
-        echo -e "${RED}VM not set up. Run: ./scripts/orchestrator.sh setup${NC}"
-        exit 1
-    fi
-
     echo ""
-    echo "[1/2] Starting VM worker..."
-    ssh ${WORKER_VM_USER}@${WORKER_VM_IP} "
-        pkill -f hft-ultra-server 2>/dev/null || true
-        cd /opt/aptos-hft
-        nohup ./run-worker.sh normal ${DURATION} > /tmp/hft-worker.log 2>&1 &
-        echo 'VM worker started'
-    "
+    echo "[1/3] Starting Worker 2 (VM1: ${WORKER_VM1_IP})..."
+    ssh -t ${WORKER_VM_USER}@${WORKER_VM1_IP} "screen -dmS hft bash -c 'cd /opt/aptos-hft && ./run-worker.sh normal ${DURATION} > /tmp/hft-worker.log 2>&1'" 2>/dev/null || true
+    echo "  ✓ Started"
+
+    echo "[2/3] Starting Worker 3 (VM2: ${WORKER_VM2_IP})..."
+    ssh -t ${WORKER_VM_USER}@${WORKER_VM2_IP} "screen -dmS hft bash -c 'cd /opt/aptos-hft && ./run-worker.sh normal ${DURATION} > /tmp/hft-worker.log 2>&1'" 2>/dev/null || true
+    echo "  ✓ Started"
 
     sleep 2
 
-    echo "[2/2] Starting local worker..."
+    echo "[3/3] Starting Worker 1 (Local)..."
     echo ""
 
     # Run local worker in foreground
@@ -316,8 +334,14 @@ cmd_demo() {
     npx tsx server/hft-ultra-server.ts normal ${DURATION}
 
     echo ""
-    print_header "DEMO COMPLETE - VM WORKER LOGS"
-    ssh ${WORKER_VM_USER}@${WORKER_VM_IP} "tail -50 /tmp/hft-worker.log | grep -E '(TPS|Total|Success|Error)'" || echo "No logs available"
+    print_header "DEMO COMPLETE - COLLECTING LOGS"
+
+    echo "=== Worker 2 (VM1) Logs ==="
+    ssh ${WORKER_VM_USER}@${WORKER_VM1_IP} "tail -30 /tmp/hft-worker.log 2>/dev/null | grep -E '(TPS|Total|Success|Error|Fired)' | tail -10" || echo "No logs"
+
+    echo ""
+    echo "=== Worker 3 (VM2) Logs ==="
+    ssh ${WORKER_VM_USER}@${WORKER_VM2_IP} "tail -30 /tmp/hft-worker.log 2>/dev/null | grep -E '(TPS|Total|Success|Error|Fired)' | tail -10" || echo "No logs"
 
     echo ""
 }
@@ -332,8 +356,11 @@ cmd_stop() {
     echo "Stopping local worker..."
     pkill -f "hft-ultra-server" 2>/dev/null && echo "  ✓ Stopped" || echo "  ○ Not running"
 
-    echo "Stopping VM worker..."
-    ssh ${WORKER_VM_USER}@${WORKER_VM_IP} "pkill -f hft-ultra-server 2>/dev/null" && echo "  ✓ Stopped" || echo "  ○ Not running"
+    echo "Stopping VM1 worker (${WORKER_VM1_IP})..."
+    ssh ${WORKER_VM_USER}@${WORKER_VM1_IP} "pkill -f hft-ultra-server 2>/dev/null; screen -S hft -X quit 2>/dev/null" && echo "  ✓ Stopped" || echo "  ○ Not running"
+
+    echo "Stopping VM2 worker (${WORKER_VM2_IP})..."
+    ssh ${WORKER_VM_USER}@${WORKER_VM2_IP} "pkill -f hft-ultra-server 2>/dev/null; screen -S hft -X quit 2>/dev/null" && echo "  ✓ Stopped" || echo "  ○ Not running"
 
     echo ""
     echo "All workers stopped."
