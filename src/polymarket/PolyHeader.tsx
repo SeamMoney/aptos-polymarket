@@ -18,12 +18,12 @@ function PolymarketLogo() {
 function AptosKeylessIcon() {
   return (
     <div className="relative w-6 h-6">
-      {/* Blue ring */}
-      <div className="absolute inset-0 rounded-full border-2 border-[#3b82f6]" />
-      {/* Official Aptos logo centered */}
+      {/* Blue ring - thinner, matching sign up button color */}
+      <div className="absolute inset-0 rounded-full border border-[#289cdd]" />
+      {/* Official Aptos logo centered - slightly bigger */}
       <svg
-        width="14"
-        height="14"
+        width="16"
+        height="16"
         viewBox="0 0 600 600"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -245,7 +245,7 @@ export function PolyHeader() {
         <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setShowDropdown(!showDropdown)}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#2a3d4e] hover:bg-[#3a4f60] transition-colors"
+              className="flex items-center gap-2 px-3 py-2 rounded-md bg-[#2a3d4e] hover:bg-[#3a4f60] transition-colors"
             >
             {/* Wallet icon - Aptos logo with blue ring for keyless */}
             {isKeylessWallet ? (
@@ -282,10 +282,10 @@ export function PolyHeader() {
                   {isKeylessWallet ? (
                     <div className="w-10 h-10 flex items-center justify-center">
                       <div className="relative w-10 h-10">
-                        <div className="absolute inset-0 rounded-full border-[3px] border-[#3b82f6]" />
+                        <div className="absolute inset-0 rounded-full border-2 border-[#289cdd]" />
                         <svg
-                          width="22"
-                          height="22"
+                          width="26"
+                          height="26"
                           viewBox="0 0 600 600"
                           fill="none"
                           xmlns="http://www.w3.org/2000/svg"
