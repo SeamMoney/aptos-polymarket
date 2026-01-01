@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 
@@ -11,6 +11,14 @@ const aptos = new Aptos(new AptosConfig({
   network: Network.TESTNET,
   clientConfig: { API_KEY },
 }));
+
+// Global cache for multi markets
+let marketsCache: MultiMarket[] | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 60_000; // Cache for 60 seconds
+
+// Helper to delay between API calls
+const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 interface Outcome {
   index: number;
@@ -36,12 +44,31 @@ interface MultiMarket {
 export function useMultiMarkets() {
   const { account } = useWallet();
   const walletAddress = account?.address?.toString();
-  const [markets, setMarkets] = useState<MultiMarket[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [markets, setMarkets] = useState<MultiMarket[]>(marketsCache || []);
+  const [loading, setLoading] = useState(!marketsCache);
   const [error, setError] = useState<string | null>(null);
+  const fetchedRef = useRef(false);
 
-  const fetchMarkets = useCallback(async () => {
+  const fetchMarkets = useCallback(async (force = false) => {
+    // Use cache if valid
+    const now = Date.now();
+    if (!force && marketsCache && (now - cacheTimestamp) < CACHE_TTL_MS) {
+      setMarkets(marketsCache);
+      setLoading(false);
+      return;
+    }
+
+    // Prevent double fetch in React Strict Mode
+    if (fetchedRef.current && !force) return;
+    fetchedRef.current = true;
+
     try {
+      setLoading(true);
+      setError(null);
+
+      // Small delay before first call
+      await delay(100);
+
       // Get all multi-outcome market addresses
       const result = await aptos.view({
         payload: {
@@ -54,13 +81,19 @@ export function useMultiMarkets() {
 
       if (marketAddresses.length === 0) {
         setMarkets([]);
+        marketsCache = [];
+        cacheTimestamp = Date.now();
         setLoading(false);
         return;
       }
 
-      // Fetch details for each market
-      const marketPromises = marketAddresses.map(async (addr) => {
+      // Fetch details for each market SEQUENTIALLY with delays
+      const fetchedMarkets: MultiMarket[] = [];
+
+      for (const addr of marketAddresses) {
         try {
+          await delay(100); // Delay between markets
+
           // Get market info
           const infoResult = await aptos.view({
             payload: {
@@ -72,6 +105,8 @@ export function useMultiMarkets() {
           const [question, description, category, outcomeCount, endTime, resolved, winningOutcome, totalCollateral] =
             infoResult as [string, string, string, string, string, boolean, { vec: string[] }, string];
 
+          await delay(50); // Small delay
+
           // Get outcome labels
           const labelsResult = await aptos.view({
             payload: {
@@ -80,6 +115,8 @@ export function useMultiMarkets() {
             },
           });
           const labels = labelsResult[0] as string[];
+
+          await delay(50); // Small delay
 
           // Get prices
           const pricesResult = await aptos.view({
@@ -96,10 +133,11 @@ export function useMultiMarkets() {
             priceSum > 0 ? (p / priceSum) * 100 : 100 / rawPrices.length
           );
 
-          // Get user positions if wallet connected
+          // Get user positions if wallet connected (skip if rate limited)
           let userBalances: number[] = new Array(parseInt(outcomeCount)).fill(0);
           if (walletAddress) {
             try {
+              await delay(50);
               const positionsResult = await aptos.view({
                 payload: {
                   function: `${MODULE}::get_user_multi_positions`,
@@ -108,7 +146,7 @@ export function useMultiMarkets() {
               });
               userBalances = (positionsResult[0] as string[]).map(b => parseInt(b) / 100_000_000);
             } catch {
-              // User might not have positions
+              // User might not have positions or rate limited
             }
           }
 
@@ -121,7 +159,7 @@ export function useMultiMarkets() {
             userBalance: userBalances[i],
           }));
 
-          return {
+          fetchedMarkets.push({
             address: addr,
             question,
             description,
@@ -132,21 +170,33 @@ export function useMultiMarkets() {
             resolved,
             winningOutcome: winningOutcome.vec.length > 0 ? parseInt(winningOutcome.vec[0]) : null,
             totalCollateral: parseInt(totalCollateral) / 100_000_000,
-          };
-        } catch (err) {
+          });
+        } catch (err: unknown) {
+          // Check for rate limit error
+          const errMsg = err instanceof Error ? err.message : String(err);
+          if (errMsg.includes('429') || errMsg.includes('rate') || errMsg.includes('Blocked')) {
+            console.warn('Rate limited - using cached data for remaining markets');
+            break; // Stop fetching more markets
+          }
           console.error(`Error fetching market ${addr}:`, err);
-          return null;
         }
-      });
-
-      const fetchedMarkets = (await Promise.all(marketPromises)).filter(
-        (m): m is MultiMarket => m !== null
-      );
+      }
 
       setMarkets(fetchedMarkets);
+      marketsCache = fetchedMarkets;
+      cacheTimestamp = Date.now();
       setError(null);
-    } catch (err) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.error('Error fetching multi-outcome markets:', err);
+      // On rate limit, use cached data if available
+      if (errMsg.includes('429') || errMsg.includes('rate') || errMsg.includes('Blocked')) {
+        if (marketsCache) {
+          setMarkets(marketsCache);
+          setError('Rate limited - showing cached data');
+          return;
+        }
+      }
       setError('Failed to fetch markets');
     } finally {
       setLoading(false);
@@ -158,9 +208,12 @@ export function useMultiMarkets() {
     fetchMarkets();
   }, [fetchMarkets]);
 
-  // Refresh every 10 seconds
+  // Refresh every 30 seconds (not 10)
   useEffect(() => {
-    const interval = setInterval(fetchMarkets, 10000);
+    const interval = setInterval(() => {
+      fetchedRef.current = false;
+      fetchMarkets(true);
+    }, 30000);
     return () => clearInterval(interval);
   }, [fetchMarkets]);
 
@@ -220,11 +273,17 @@ export function useMultiMarkets() {
     return payload;
   };
 
+  // Manual refresh (resets fetchedRef and forces refresh)
+  const refresh = useCallback(() => {
+    fetchedRef.current = false;
+    fetchMarkets(true);
+  }, [fetchMarkets]);
+
   return {
     markets,
     loading,
     error,
-    refresh: fetchMarkets,
+    refresh,
     buyOutcome,
     sellOutcome,
     mintCompleteSet,
