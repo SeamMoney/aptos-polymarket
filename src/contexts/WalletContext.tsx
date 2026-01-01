@@ -25,6 +25,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
           mainnet: import.meta.env.VITE_APTOS_API_KEY_MAINNET,
         },
         crossChainWallets: true,
+        // Aptos Connect configuration for keyless wallets (Google/Apple login)
+        aptosConnect: {
+          dappId: 'aptos-polymarket',
+          dappName: 'Polymarket',
+        },
       }}
       onError={(error: unknown) => {
         console.error('Wallet adapter error:', error);
