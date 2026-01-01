@@ -345,8 +345,21 @@ export function OutcomeDetail() {
 
   // Map "Other" to "Donald Trump Jr." for display
   const displayName = outcome.name === "Other" ? "Donald Trump Jr." : outcome.name;
-  // Use outcome volume from contract (or show dash if not tracked)
-  const volumeDisplay = outcome.volume || "—";
+
+  // Calculate proportional volume based on outcome's share of market
+  const parseVolume = (vol: string): number => {
+    const num = parseFloat(vol.replace(/[$,]/g, ''));
+    if (vol.includes('M')) return num * 1_000_000;
+    if (vol.includes('K')) return num * 1_000;
+    return num;
+  };
+  const totalVol = parseVolume(market?.volume || "0");
+  const outcomeVol = totalVol * realPrice;
+  const volumeDisplay = outcomeVol >= 1_000_000
+    ? `$${(outcomeVol / 1_000_000).toFixed(1)}M`
+    : outcomeVol >= 1_000
+      ? `$${(outcomeVol / 1_000).toFixed(1)}K`
+      : `$${Math.round(outcomeVol)}`;
 
   const firstPrice = priceHistory[0] || outcome.price;
   const currentPrice = priceHistory[priceHistory.length - 1] || outcome.price;
