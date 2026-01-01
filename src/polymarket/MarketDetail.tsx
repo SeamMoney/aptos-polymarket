@@ -159,6 +159,17 @@ export function MarketDetail() {
       TOP_CANDIDATES.includes(o.name)
     );
 
+    // Number of points to show based on timeframe (for historical data fallback)
+    const TIMEFRAME_POINTS: Record<string, number> = {
+      '1H': 8,
+      '6H': 15,
+      '1D': 25,
+      '1W': 50,
+      '1M': 80,
+      'ALL': 100,
+    };
+    const pointsToShow = TIMEFRAME_POINTS[timeRange] || 100;
+
     // For shorter timeframes with live data, use live price history
     const useLiveData = timeRange !== 'ALL' && livePriceHistory.length > 10;
 
@@ -185,10 +196,12 @@ export function MarketDetail() {
         }
       }
 
-      // Use historical data with volatility for ALL timeframe
+      // Use historical data with volatility - slice based on timeframe
       return TOP_CANDIDATES.map((candidateName) => {
         const outcome = market.outcomes?.find(o => o.name === candidateName);
-        const prices = getCandidatePrices(candidateName); // Uses volatility function
+        const allPrices = getCandidatePrices(candidateName); // Uses volatility function
+        // Slice to show only the last N points based on timeframe
+        const prices = allPrices.slice(-pointsToShow);
 
         return {
           id: candidateName.toLowerCase().replace(/\s+/g, '-'),
@@ -208,7 +221,7 @@ export function MarketDetail() {
       };
 
       return market.outcomes.map((outcome, outcomeIdx) => {
-        const numPoints = 100;
+        const numPoints = pointsToShow;
         const prices: number[] = [];
         const endPrice = outcome.price;
         const seed = outcome.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) + outcomeIdx;
@@ -282,7 +295,7 @@ export function MarketDetail() {
       };
 
       const generateVolatilePrices = (endPrice: number, seed: number) => {
-        const numPoints = 100;
+        const numPoints = pointsToShow;
         const prices: number[] = [];
         let currentPrice = endPrice + (seededRandom(seed) - 0.5) * 0.2;
 
