@@ -395,6 +395,8 @@ interface HoverLabelsProps {
 
 function HoverLabels({ outcomes, activeIndex, chartWidth, timestamps }: HoverLabelsProps) {
   const numPoints = outcomes[0]?.prices.length || 100;
+  const LABEL_HEIGHT = 24; // Height of each label including padding
+  const MIN_GAP = 4; // Minimum gap between labels
 
   // Use real timestamp if available
   let dateLabel: string;
@@ -410,6 +412,37 @@ function HoverLabels({ outcomes, activeIndex, chartWidth, timestamps }: HoverLab
     dateLabel = `${months[monthIndex]} ${day}`;
   }
 
+  // Calculate label positions and resolve overlaps
+  const labels = outcomes
+    .map((outcome) => {
+      const price = outcome.prices[activeIndex];
+      if (price === undefined) return null;
+      const y = CHART_HEIGHT - price * CHART_HEIGHT - 12;
+      const percentage = Math.round(price * 100);
+      return { outcome, y, percentage };
+    })
+    .filter((l): l is NonNullable<typeof l> => l !== null)
+    .sort((a, b) => a.y - b.y); // Sort by Y position (top to bottom)
+
+  // Resolve overlapping labels by pushing them apart
+  for (let i = 1; i < labels.length; i++) {
+    const prev = labels[i - 1];
+    const curr = labels[i];
+    const minY = prev.y + LABEL_HEIGHT + MIN_GAP;
+    if (curr.y < minY) {
+      curr.y = minY;
+    }
+  }
+
+  // If labels overflow bottom, push everything up
+  const lastLabel = labels[labels.length - 1];
+  if (lastLabel && lastLabel.y + LABEL_HEIGHT > CHART_HEIGHT) {
+    const overflow = lastLabel.y + LABEL_HEIGHT - CHART_HEIGHT;
+    labels.forEach(l => l.y -= overflow);
+  }
+
+  const x = (activeIndex / (numPoints - 1)) * chartWidth;
+
   return (
     <div
       className="absolute top-0 left-0 right-0 pointer-events-none select-none"
@@ -420,23 +453,16 @@ function HoverLabels({ outcomes, activeIndex, chartWidth, timestamps }: HoverLab
         {dateLabel}, 2025
       </span>
 
-      {/* Price labels */}
-      {outcomes.map((outcome) => {
-        const price = outcome.prices[activeIndex];
-        if (price === undefined) return null;
-
-        const y = CHART_HEIGHT - price * CHART_HEIGHT;
-        const x = (activeIndex / (outcome.prices.length - 1)) * chartWidth;
-        const percentage = Math.round(price * 100);
-
+      {/* Price labels - positioned to avoid overlaps */}
+      {labels.map(({ outcome, y, percentage }) => {
         const textColor = outcome.color === "#f5a623" ? "#000" : "#fff";
 
         return (
           <div
             key={outcome.id}
-            className="absolute px-2 py-1 rounded text-xs font-semibold"
+            className="absolute px-2 py-1 rounded text-xs font-semibold whitespace-nowrap"
             style={{
-              top: y - 12,
+              top: Math.max(0, y),
               left: Math.min(x + 12, chartWidth - 130),
               backgroundColor: outcome.color,
               color: textColor,
