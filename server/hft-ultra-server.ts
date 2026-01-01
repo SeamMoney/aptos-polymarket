@@ -40,23 +40,24 @@ const MULTI_MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
 // Check if dryrun mode
 const IS_DRYRUN = process.argv[2] === 'dryrun' || process.env.HFT_DRYRUN === 'true';
 
-// Configuration - ULTRA TPS MODE (Target: 10k+ TPS with Orderless Transactions)
-// In dryrun mode: small batches, tiny trades, high sample rate for visibility
+// Configuration - DEMO MODE (Target: 10 TPS for live demo)
+// Small batches, small trades, high visibility
 const CONFIG = {
   PORT: parseInt(process.env.HFT_PORT || '3001'),
-  BATCH_SIZE: IS_DRYRUN ? 10 : 150,           // Dryrun: small batches
-  BATCH_DELAY_MS: IS_DRYRUN ? 100 : 0,        // Dryrun: throttle to ~100 TPS
-  SEQUENCE_PIPELINE: 100,
-  MAX_PENDING: IS_DRYRUN ? 50 : 2000,
-  MEMPOOL_BACKOFF_MS: 30,
+  BATCH_SIZE: 1,                              // 1 trade at a time for controlled TPS
+  BATCH_DELAY_MS: 100,                        // 100ms delay = ~10 TPS max
+  SEQUENCE_PIPELINE: 10,
+  MAX_PENDING: 20,
+  MEMPOOL_BACKOFF_MS: 50,
   MAX_DELAY_MS: 200,
-  TRADE_SAMPLE_RATE: IS_DRYRUN ? 0.5 : 0.003, // Dryrun: 50% sampling for visibility
-  STATS_CACHE_TTL_MS: IS_DRYRUN ? 500 : 2000,
-  FIRE_AND_FORGET_RATIO: IS_DRYRUN ? 0.5 : 0.98, // Dryrun: more confirmations
+  TRADE_SAMPLE_RATE: 0.5,                     // 50% sampling for good UI visibility
+  STATS_CACHE_TTL_MS: 500,
+  FIRE_AND_FORGET_RATIO: 0.8,                 // 80% fire-and-forget
   USE_ORDERLESS: true,
-  USE_MULTI_RPC: !IS_DRYRUN,  // Dryrun: single RPC for simplicity
+  USE_MULTI_RPC: false,                       // Single RPC for demo
   USE_BATCH_SUBMIT: false,
   IS_DRYRUN,
+  TARGET_TPS: 10,                             // Target 10 TPS
 };
 
 // Adaptive state
@@ -196,48 +197,42 @@ function broadcast(data: object) {
   });
 }
 
-// Get random amount - micro-trades with occasional whales for visual impact
+// Get random amount - DEMO MODE: Small trades for live demo
 function getRandomAmount(): number {
   // DRYRUN MODE: Tiny trades to minimize APT spent
   if (CONFIG.IS_DRYRUN) {
     return Math.random() * 0.004 + 0.001; // 0.001-0.005 APT only
   }
 
-  // Normal mode: Mostly micro-trades with occasional whales for chart/orderbook animation
-  // Distribution designed for visual impact while preserving funds:
-  //   - Average ~0.02 APT/trade
-  //   - At 30K TPS with 0.3% sampling → ~90 visible trades/sec
-  //   - Whale trades create visible spikes in UI
+  // DEMO MODE: Small trades to show activity without burning APT
+  // Target: ~0.05 APT average per trade
+  // At 10 TPS = ~30 APT/minute, ~1800 APT/hour
+  // At 10 TPS for 30 min = ~900 APT total
 
   const rand = Math.random();
 
-  // 0.1% chance: MEGA WHALE (8-15 APT) - massive spike!
-  if (rand < 0.001) {
-    return Math.random() * 7 + 8; // 8-15 APT
+  // 1% chance: Whale trade (0.5-1 APT) - occasional spike
+  if (rand < 0.01) {
+    return Math.random() * 0.5 + 0.5; // 0.5-1 APT
   }
 
-  // 0.5% chance: WHALE trade (2-6 APT) - big chart jumps!
-  if (rand < 0.006) {
-    return Math.random() * 4 + 2; // 2-6 APT
+  // 5% chance: Large trade (0.2-0.5 APT)
+  if (rand < 0.06) {
+    return Math.random() * 0.3 + 0.2; // 0.2-0.5 APT
   }
 
-  // 2% chance: Large trade (0.3-1 APT) - noticeable movement
-  if (rand < 0.025) {
-    return Math.random() * 0.7 + 0.3; // 0.3-1 APT
+  // 15% chance: Medium trade (0.05-0.2 APT)
+  if (rand < 0.21) {
+    return Math.random() * 0.15 + 0.05; // 0.05-0.2 APT
   }
 
-  // 5% chance: Medium-large trade (0.1-0.3 APT)
-  if (rand < 0.075) {
-    return Math.random() * 0.2 + 0.1; // 0.1-0.3 APT
+  // 35% chance: Small trade (0.02-0.05 APT)
+  if (rand < 0.56) {
+    return Math.random() * 0.03 + 0.02; // 0.02-0.05 APT
   }
 
-  // 15% chance: Medium trade (0.03-0.1 APT)
-  if (rand < 0.225) {
-    return Math.random() * 0.07 + 0.03; // 0.03-0.1 APT
-  }
-
-  // 77.5% chance: Micro trade (0.005-0.03 APT) - bulk of trades
-  return Math.random() * 0.025 + 0.005; // 0.005-0.03 APT
+  // 44% chance: Micro trade (0.01-0.02 APT)
+  return Math.random() * 0.01 + 0.01; // 0.01-0.02 APT
 }
 
 // Calculate current TPS
@@ -539,19 +534,91 @@ async function refreshSequenceNumber(accState: AccountState): Promise<void> {
   }
 }
 
-// Simulate realistic election market probabilities
-// Market: 0=Vance, 1=Rubio, 2=Trump, 3=DeSantis, 4=Carlson, 5=Other
-// Strategy: Buy Trump (index 2), sell everyone else → Trump emerges as frontrunner
-const TRUMP_INDEX = 2;  // Donald Trump is at index 2
+// ==================== MOMENTUM TRADING SYSTEM ====================
+// Creates dramatic price swings by concentrating trades on trending outcomes
 
-// Build transaction payload - simulate realistic election trading
+// Momentum state - tracks which outcome is "hot"
+let momentumState = {
+  hotOutcome: 0,           // Current focus outcome index
+  hotDirection: 'buy' as 'buy' | 'sell',  // Buy or sell the hot outcome
+  waveStartTime: Date.now(),
+  waveDurationMs: 15000,   // Each wave lasts 15 seconds
+  waveCount: 0,
+  intensityMultiplier: 1.0, // Increases trade concentration
+};
+
+// Outcome names for logging
+const OUTCOME_NAMES = ['J.D. Vance', 'Marco Rubio', 'Donald Trump', 'Ron DeSantis', 'Tucker Carlson', 'Other'];
+
+// Update momentum - called periodically to create waves
+function updateMomentum(): void {
+  const now = Date.now();
+  const elapsed = now - momentumState.waveStartTime;
+
+  // Time for a new wave?
+  if (elapsed > momentumState.waveDurationMs) {
+    momentumState.waveStartTime = now;
+    momentumState.waveCount++;
+
+    // Every wave, pick new focus with some patterns
+    const waveType = momentumState.waveCount % 6;
+
+    switch (waveType) {
+      case 0: // J.D. Vance surge
+        momentumState.hotOutcome = 0;
+        momentumState.hotDirection = 'buy';
+        momentumState.intensityMultiplier = 1.5;
+        break;
+      case 1: // Vance correction, Rubio rises
+        momentumState.hotOutcome = 1;
+        momentumState.hotDirection = 'buy';
+        momentumState.intensityMultiplier = 1.3;
+        break;
+      case 2: // Trump surprise rally
+        momentumState.hotOutcome = 2;
+        momentumState.hotDirection = 'buy';
+        momentumState.intensityMultiplier = 1.8; // Big spike!
+        break;
+      case 3: // Profit taking - sell leaders
+        momentumState.hotOutcome = 0; // Sell Vance
+        momentumState.hotDirection = 'sell';
+        momentumState.intensityMultiplier = 1.2;
+        break;
+      case 4: // DeSantis momentum
+        momentumState.hotOutcome = 3;
+        momentumState.hotDirection = 'buy';
+        momentumState.intensityMultiplier = 1.4;
+        break;
+      case 5: // Random chaos - fast switching
+        momentumState.hotOutcome = Math.floor(Math.random() * 6);
+        momentumState.hotDirection = Math.random() < 0.6 ? 'buy' : 'sell';
+        momentumState.intensityMultiplier = 2.0; // Maximum volatility
+        momentumState.waveDurationMs = 8000; // Shorter wave
+        break;
+    }
+
+    // Reset wave duration for next cycle (except during chaos)
+    if (waveType !== 5) {
+      momentumState.waveDurationMs = 12000 + Math.random() * 8000; // 12-20 seconds
+    }
+
+    console.log(`🌊 WAVE ${momentumState.waveCount}: ${momentumState.hotDirection.toUpperCase()} ${OUTCOME_NAMES[momentumState.hotOutcome]} (${momentumState.intensityMultiplier.toFixed(1)}x intensity)`);
+  }
+}
+
+// Build transaction payload - MOMENTUM-BASED trading for price swings
 function buildPayload(marketAddress: string): { payload: InputGenerateTransactionPayloadData; isBuy: boolean } {
   if (state.isMultiOutcome) {
-    const amount = BigInt(Math.floor(getRandomAmount() * 100_000_000));
+    // Update momentum state
+    updateMomentum();
+
+    const baseAmount = getRandomAmount();
+    // Apply intensity multiplier for hot trades
+    const amount = BigInt(Math.floor(baseAmount * momentumState.intensityMultiplier * 100_000_000));
     const rand = Math.random();
 
-    // 20% chance: Mint complete set (adds liquidity, gets tokens for selling)
-    if (rand < 0.20) {
+    // 10% chance: Mint complete set (needed to have tokens to sell)
+    if (rand < 0.10) {
       return {
         payload: {
           function: `${MULTI_MODULE}::mint_complete_set`,
@@ -561,39 +628,48 @@ function buildPayload(marketAddress: string): { payload: InputGenerateTransactio
       };
     }
 
-    // 45% chance: Sell non-Trump tokens → pushes their prices DOWN
-    if (rand < 0.65) {
-      // Sell: Vance(0), Rubio(1), DeSantis(3), Carlson(4), Other(5)
-      const sellRand = Math.random();
-      let sellIndex: number;
-      if (sellRand < 0.25) {
-        sellIndex = 0; // Vance (second place)
-      } else if (sellRand < 0.45) {
-        sellIndex = 1; // Rubio
-      } else if (sellRand < 0.65) {
-        sellIndex = 3; // DeSantis
-      } else if (sellRand < 0.85) {
-        sellIndex = 4; // Carlson
+    // 70% chance: Trade the HOT outcome (creates concentrated price movement)
+    if (rand < 0.80) {
+      if (momentumState.hotDirection === 'buy') {
+        return {
+          payload: {
+            function: `${MULTI_MODULE}::buy_outcome`,
+            functionArguments: [marketAddress, momentumState.hotOutcome, amount, 0n],
+          },
+          isBuy: true,
+        };
       } else {
-        sellIndex = 5; // Other
+        return {
+          payload: {
+            function: `${MULTI_MODULE}::sell_outcome`,
+            functionArguments: [marketAddress, momentumState.hotOutcome, amount, 0n],
+          },
+          isBuy: false,
+        };
       }
+    }
+
+    // 20% chance: Counter-trade other outcomes (creates relative movement)
+    const otherOutcome = (momentumState.hotOutcome + 1 + Math.floor(Math.random() * 5)) % 6;
+    const counterDirection = momentumState.hotDirection === 'buy' ? 'sell' : 'buy';
+
+    if (counterDirection === 'buy') {
+      return {
+        payload: {
+          function: `${MULTI_MODULE}::buy_outcome`,
+          functionArguments: [marketAddress, otherOutcome, amount, 0n],
+        },
+        isBuy: true,
+      };
+    } else {
       return {
         payload: {
           function: `${MULTI_MODULE}::sell_outcome`,
-          functionArguments: [marketAddress, sellIndex, amount, 0n],
+          functionArguments: [marketAddress, otherOutcome, amount, 0n],
         },
         isBuy: false,
       };
     }
-
-    // 35% chance: Buy Trump → pushes his price UP
-    return {
-      payload: {
-        function: `${MULTI_MODULE}::buy_outcome`,
-        functionArguments: [marketAddress, TRUMP_INDEX, amount, 0n],
-      },
-      isBuy: true,
-    };
   } else {
     const amount = BigInt(Math.floor(getRandomAmount() * 100_000_000));
     if (isBuy) {

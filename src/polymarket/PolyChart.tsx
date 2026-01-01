@@ -5,11 +5,14 @@ const CHART_HEIGHT = 220;
 const CHART_PADDING_RIGHT = 20;
 
 // RAF-based throttle for smooth 60fps updates
-const rafThrottle = <T extends (...args: unknown[]) => void>(fn: T): T => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const rafThrottle = <T extends (...args: any[]) => void>(fn: T): T => {
   let rafId: number | null = null;
-  let lastArgs: Parameters<T> | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let lastArgs: any[] | null = null;
 
-  const throttled = (...args: Parameters<T>) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const throttled = (...args: any[]) => {
     lastArgs = args;
     if (rafId === null) {
       rafId = requestAnimationFrame(() => {
@@ -175,7 +178,7 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
   const cursorLineRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [cursorX, setCursorX] = useState<number>(0);
-  const [isTouching, setIsTouching] = useState(false);
+  const [_isTouching, setIsTouching] = useState(false);
 
   // Use refs for intermediate values to avoid re-renders during drag
   const positionRef = useRef({ x: 0, index: 0 });

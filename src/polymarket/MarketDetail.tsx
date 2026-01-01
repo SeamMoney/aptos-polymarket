@@ -6,7 +6,7 @@ import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp, Wallet
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { PolyChart } from "./PolyChart";
-import { PRICE_HISTORY, TOP_CANDIDATES, CANDIDATE_COLORS, getCandidatePrices } from "./priceData";
+import { TOP_CANDIDATES, CANDIDATE_COLORS } from "./priceData";
 import { REAL_PRICE_HISTORY, LATEST_REAL_PRICES } from "./realPriceData";
 import { TradingSheet } from "./TradingSheet";
 import { LiveOrderBook } from "./LiveOrderBook";
@@ -17,7 +17,7 @@ import { SpeedComparison } from "./SpeedComparison";
 import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useHFTConnection } from "../hooks/useHFTConnection";
-import { useLivePrices, TIMEFRAMES } from "../hooks/useLivePrices";
+import { useLivePrices } from "../hooks/useLivePrices";
 import { useLiveTrades } from "../hooks/useLiveTrades";
 import type { Category, Outcome } from "./types";
 import type { Trade } from "../hooks/useHFTConnection";

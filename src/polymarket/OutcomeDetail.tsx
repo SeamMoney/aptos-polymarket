@@ -415,7 +415,7 @@ export function OutcomeDetail() {
             className="w-10 h-10 rounded-full mr-3 object-cover bg-poly-surface"
           />
           <div className="flex-1 flex items-center justify-between">
-            <span className="text-white text-base">{outcome.name}</span>
+            <span className="text-white text-base">{displayName}</span>
             <button className="hover:opacity-70">
               <Code2 size={16} color="#5c6b7a" strokeWidth={2.5} />
             </button>
