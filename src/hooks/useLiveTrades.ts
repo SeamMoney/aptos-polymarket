@@ -18,17 +18,17 @@ interface UseLiveTradesReturn {
   trades: LiveTrade[];
   isPolling: boolean;
   lastUpdate: number | null;
+  loadMore: () => void;
+  hasMore: boolean;
 }
 
-// Track seen transaction versions to avoid duplicates
-const seenVersions = new Set<string>();
-
-// GraphQL query for buy transactions
-const BUY_QUERY = `
-  query GetBuyTrades {
-    user_transactions(
+// GraphQL query for trades with pagination
+const TRADES_QUERY = (limit: number, offset: number) => `
+  query GetTrades {
+    buy: user_transactions(
       where: { entry_function_id_str: { _eq: "${CONTRACT_ADDRESS}::multi_outcome_market::buy_outcome" } },
-      limit: 30,
+      limit: ${limit},
+      offset: ${offset},
       order_by: { version: desc }
     ) {
       version
@@ -36,15 +36,10 @@ const BUY_QUERY = `
       entry_function_id_str
       timestamp
     }
-  }
-`;
-
-// GraphQL query for sell transactions
-const SELL_QUERY = `
-  query GetSellTrades {
-    user_transactions(
+    sell: user_transactions(
       where: { entry_function_id_str: { _eq: "${CONTRACT_ADDRESS}::multi_outcome_market::sell_outcome" } },
-      limit: 30,
+      limit: ${limit},
+      offset: ${offset},
       order_by: { version: desc }
     ) {
       version
@@ -57,58 +52,53 @@ const SELL_QUERY = `
 
 export function useLiveTrades(
   pollInterval: number = 5000,
-  maxTrades: number = 50,
-  enabled: boolean = true // Skip polling when HFT WebSocket is connected
+  maxTrades: number = 100,
+  enabled: boolean = true
 ): UseLiveTradesReturn {
   const [trades, setTrades] = useState<LiveTrade[]>([]);
   const [isPolling, setIsPolling] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
-  const tradesRef = useRef<LiveTrade[]>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
+  const seenVersionsRef = useRef<Set<string>>(new Set());
+  const isInitialFetchRef = useRef(true);
 
-  const fetchRecentTrades = useCallback(async () => {
+  const fetchTrades = useCallback(async (isLoadMore = false) => {
     try {
       setIsPolling(true);
 
-      // Fetch both buy and sell transactions in parallel
-      const [buyResponse, sellResponse] = await Promise.all([
-        fetch(INDEXER_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: BUY_QUERY })
-        }),
-        fetch(INDEXER_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: SELL_QUERY })
-        })
-      ]);
+      const currentOffset = isLoadMore ? offset : 0;
+      const limit = isLoadMore ? 20 : 30;
 
-      if (!buyResponse.ok || !sellResponse.ok) {
+      const response = await fetch(INDEXER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: TRADES_QUERY(limit, currentOffset) })
+      });
+
+      if (!response.ok) {
         throw new Error('Failed to fetch from indexer');
       }
 
-      const [buyResult, sellResult] = await Promise.all([
-        buyResponse.json(),
-        sellResponse.json()
-      ]);
+      const result = await response.json();
+      const buyTxs = result.data?.buy || [];
+      const sellTxs = result.data?.sell || [];
+      const allTxs = [...buyTxs, ...sellTxs];
 
-      const buyTxs = buyResult.data?.user_transactions || [];
-      const sellTxs = sellResult.data?.user_transactions || [];
-      const transactions = [...buyTxs, ...sellTxs];
+      // For initial fetch or load more, include all trades
+      // For polling updates, only include new trades
+      const txsToProcess = isInitialFetchRef.current || isLoadMore
+        ? allTxs
+        : allTxs.filter(tx => !seenVersionsRef.current.has(tx.version.toString()));
 
-      // Filter out already seen transactions
-      const unseenTxs = transactions.filter(tx => !seenVersions.has(tx.version.toString()));
-      if (unseenTxs.length === 0) {
+      if (txsToProcess.length === 0) {
+        if (isLoadMore) setHasMore(false);
         setIsPolling(false);
         return;
       }
 
-      // Mark all as seen immediately to prevent duplicates
-      unseenTxs.forEach(tx => seenVersions.add(tx.version.toString()));
-
-      // Batch fetch transaction details (limit to 10 at a time to avoid rate limits)
-      const txsToFetch = unseenTxs.slice(0, 10);
-      const detailPromises = txsToFetch.map(tx =>
+      // Batch fetch transaction details
+      const detailPromises = txsToProcess.slice(0, 20).map(tx =>
         fetch(`https://fullnode.testnet.aptoslabs.com/v1/transactions/by_version/${tx.version}`)
           .then(r => r.ok ? r.json() : null)
           .catch(() => null)
@@ -116,13 +106,13 @@ export function useLiveTrades(
 
       const details = await Promise.all(detailPromises);
 
-      const newTrades: LiveTrade[] = txsToFetch.map((tx, idx) => {
+      const newTrades: LiveTrade[] = txsToProcess.slice(0, 20).map((tx, idx) => {
         const detail = details[idx];
         const functionName = tx.entry_function_id_str || '';
         const isBuy = functionName.includes('buy_outcome');
 
         let outcomeIndex = 0;
-        let amountAPT = 1 + Math.random() * 5; // Default fallback
+        let amountAPT = 1 + Math.random() * 5;
         let txHash = tx.version.toString();
 
         if (detail?.payload?.arguments) {
@@ -137,7 +127,8 @@ export function useLiveTrades(
           }
         }
 
-        const timestamp = new Date(tx.timestamp).getTime();
+        // Mark as seen
+        seenVersionsRef.current.add(tx.version.toString());
 
         return {
           id: `${tx.version}-${txHash}`,
@@ -145,20 +136,40 @@ export function useLiveTrades(
           outcomeIndex,
           amount: amountAPT,
           price: 0,
-          timestamp,
+          timestamp: new Date(tx.timestamp).getTime(),
           txHash,
           trader: tx.sender,
         } as LiveTrade;
       });
 
       if (newTrades.length > 0) {
-        // Add new trades to the beginning, sort by timestamp descending
-        const allTrades = [...newTrades, ...tradesRef.current]
-          .sort((a, b) => b.timestamp - a.timestamp)
-          .slice(0, maxTrades);
-        tradesRef.current = allTrades;
-        setTrades(allTrades);
+        setTrades(prev => {
+          if (isLoadMore) {
+            // Append for load more
+            const combined = [...prev, ...newTrades];
+            // Remove duplicates by id
+            const unique = combined.filter((trade, idx, arr) =>
+              arr.findIndex(t => t.id === trade.id) === idx
+            );
+            return unique.sort((a, b) => b.timestamp - a.timestamp).slice(0, maxTrades);
+          } else if (isInitialFetchRef.current) {
+            // Replace for initial fetch
+            isInitialFetchRef.current = false;
+            return newTrades.sort((a, b) => b.timestamp - a.timestamp);
+          } else {
+            // Prepend for polling updates
+            const combined = [...newTrades, ...prev];
+            const unique = combined.filter((trade, idx, arr) =>
+              arr.findIndex(t => t.id === trade.id) === idx
+            );
+            return unique.sort((a, b) => b.timestamp - a.timestamp).slice(0, maxTrades);
+          }
+        });
         setLastUpdate(Date.now());
+
+        if (isLoadMore) {
+          setOffset(prev => prev + limit);
+        }
       }
 
       setIsPolling(false);
@@ -166,24 +177,38 @@ export function useLiveTrades(
       console.error('Error fetching trades:', error);
       setIsPolling(false);
     }
-  }, [maxTrades]);
+  }, [offset, maxTrades]);
 
-  // Poll for trades (skip when HFT WebSocket is connected to save resources)
+  const loadMore = useCallback(() => {
+    if (!isPolling && hasMore) {
+      fetchTrades(true);
+    }
+  }, [fetchTrades, isPolling, hasMore]);
+
+  // Initial fetch and polling
   useEffect(() => {
     if (!enabled) return;
 
-    // Initial fetch
-    fetchRecentTrades();
+    // Reset state on mount
+    seenVersionsRef.current.clear();
+    isInitialFetchRef.current = true;
+    setOffset(0);
+    setHasMore(true);
 
-    // Set up polling
-    const interval = setInterval(fetchRecentTrades, pollInterval);
+    // Initial fetch
+    fetchTrades(false);
+
+    // Set up polling for new trades
+    const interval = setInterval(() => fetchTrades(false), pollInterval);
 
     return () => clearInterval(interval);
-  }, [fetchRecentTrades, pollInterval, enabled]);
+  }, [enabled, pollInterval]); // Note: fetchTrades not in deps to avoid re-triggering
 
   return {
     trades,
     isPolling,
     lastUpdate,
+    loadMore,
+    hasMore,
   };
 }

@@ -102,7 +102,7 @@ export function MarketDetail() {
   } = useLivePrices(3000); // Poll every 3 seconds
 
   // Live trades from blockchain polling (disabled when HFT WebSocket is connected)
-  const { trades: blockchainTrades } = useLiveTrades(5000, 50, !hftConnected);
+  const { trades: blockchainTrades, loadMore, hasMore } = useLiveTrades(5000, 100, !hftConnected);
 
   // Combine HFT trades with blockchain trades, preferring HFT when available
   const combinedTrades: Trade[] = useMemo(() => {
@@ -615,6 +615,8 @@ export function MarketDetail() {
             isMultiOutcome={!!market?.outcomes}
             tvl={tvl || 0}
             outcomes={market?.outcomes?.map(o => o.name) || []}
+            onLoadMore={loadMore}
+            hasMore={hasMore}
           />
         </div>
 

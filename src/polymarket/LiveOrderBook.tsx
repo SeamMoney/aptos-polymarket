@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { ChevronDown, HelpCircle, ArrowUp, ArrowDown, ExternalLink } from 'lucide-react';
 import type { Trade } from '../hooks/useHFTConnection';
 
@@ -15,6 +15,8 @@ interface LiveOrderBookProps {
   isMultiOutcome?: boolean;
   tvl?: number;
   outcomes?: string[];
+  onLoadMore?: () => void;
+  hasMore?: boolean;
 }
 
 interface OrderLevel {
@@ -43,10 +45,23 @@ export function LiveOrderBook({
   isMultiOutcome: _isMultiOutcome = false,
   tvl = 0,
   outcomes = [],
+  onLoadMore,
+  hasMore = true,
 }: LiveOrderBookProps) {
+  const tradeListRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState<'book' | 'trades'>('book');
   const [animatedTrades, setAnimatedTrades] = useState<Set<string>>(new Set());
+
+  // Infinite scroll handler
+  const handleScroll = useCallback(() => {
+    if (!tradeListRef.current || !onLoadMore || !hasMore) return;
+    const { scrollTop, scrollHeight, clientHeight } = tradeListRef.current;
+    // Load more when within 100px of bottom
+    if (scrollHeight - scrollTop - clientHeight < 100) {
+      onLoadMore();
+    }
+  }, [onLoadMore, hasMore]);
 
   // Calculate order book levels - FIXED CALCULATIONS
   const { asks, bids, midPrice, spread } = useMemo(() => {
@@ -314,15 +329,19 @@ export function LiveOrderBook({
                 <span className="text-right font-semibold uppercase tracking-wider">Tx</span>
               </div>
 
-              {/* Trade stream list - CSS-only animations for high TPS performance */}
-              <div className="max-h-[400px] overflow-y-auto">
+              {/* Trade stream list - infinite scroll */}
+              <div
+                ref={tradeListRef}
+                onScroll={handleScroll}
+                className="max-h-[400px] overflow-y-auto"
+              >
                 {trades.length === 0 ? (
                   <div className="px-4 py-12 text-center text-[#6b7a8a]">
                     <div className="text-lg mb-2">No trades yet</div>
                     <div className="text-xs">Trades will appear here in real-time</div>
                   </div>
                 ) : (
-                  trades.slice(0, MAX_VISIBLE_TRADES).map((trade) => {
+                  trades.map((trade) => {
                     const isBuy = trade.action?.includes('buy') || trade.actionDisplay?.includes('BUY');
                     const isAnimated = animatedTrades.has(trade.id);
 
@@ -390,6 +409,17 @@ export function LiveOrderBook({
                       </div>
                     );
                   })
+                )}
+                {/* Load more indicator */}
+                {trades.length > 0 && hasMore && (
+                  <div className="px-4 py-3 text-center text-[#6b7a8a] text-xs">
+                    <div className="animate-pulse">Loading more trades...</div>
+                  </div>
+                )}
+                {trades.length > 0 && !hasMore && (
+                  <div className="px-4 py-3 text-center text-[#6b7a8a] text-xs">
+                    End of trade history
+                  </div>
                 )}
               </div>
 
