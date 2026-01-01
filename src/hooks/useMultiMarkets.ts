@@ -5,11 +5,11 @@ import { useWallet } from '@aptos-labs/wallet-adapter-react';
 const CONTRACT_ADDRESS = '0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1';
 const MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
 
-// Use API key to bypass rate limits (safe for testnet demo)
-const API_KEY = 'AG-3JMDT54EN4DCLULDWAUXCYGQ56JJQCYHH';
+// Use QuickNode RPC to avoid Aptos Labs rate limiting
+const QUICKNODE_RPC = 'https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1';
 const aptos = new Aptos(new AptosConfig({
   network: Network.TESTNET,
-  clientConfig: { API_KEY },
+  fullnode: QUICKNODE_RPC,
 }));
 
 interface Outcome {

@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import { PREDICTION_MARKET_ADDRESS } from '../utils/contracts';
 
-// Use API key to bypass rate limits (safe for testnet demo)
-const API_KEY = 'AG-3JMDT54EN4DCLULDWAUXCYGQ56JJQCYHH';
+// Use QuickNode RPC to avoid Aptos Labs rate limiting
+const QUICKNODE_RPC = 'https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1';
 const aptosConfig = new AptosConfig({
   network: Network.TESTNET,
-  clientConfig: { API_KEY },
+  fullnode: QUICKNODE_RPC,
 });
 const aptos = new Aptos(aptosConfig);
 
