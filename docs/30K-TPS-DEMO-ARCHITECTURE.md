@@ -1,0 +1,309 @@
+# Aptos Polymarket 30K TPS Stress Test Demo
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              FRONTEND (Vercel)                               │
+│                        https://aptos-polymarket.vercel.app                   │
+│                                                                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│  │ /polymarket  │  │  /demo-day   │  │   /market/   │  │  TPS Chart   │    │
+│  │  Market List │  │  HFT Demo    │  │   Details    │  │  Trade Feed  │    │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
+│                            │                                                 │
+│                   WebSocket Connection                                       │
+│                            ▼                                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+                             │
+                             │ ws://178.128.177.88:3001
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         HFT SERVERS (3 Workers)                             │
+│                                                                              │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐             │
+│  │    Worker 1     │  │    Worker 2     │  │    Worker 3     │             │
+│  │ 178.128.177.88  │  │ 161.35.231.0    │  │  (Local Mac)    │             │
+│  │  Accounts 1-10  │  │  Accounts 11-20 │  │  Backup/Dev     │             │
+│  │   ~10K TPS      │  │   ~10K TPS      │  │   ~10K TPS      │             │
+│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘             │
+│           │                    │                    │                       │
+│           └────────────────────┴────────────────────┘                       │
+│                                │                                            │
+│                    Multi-RPC Load Balancing                                 │
+│                                ▼                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                 │
+       ┌─────────────────────────┼─────────────────────────┐
+       │                         │                         │
+       ▼                         ▼                         ▼
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│   QuickNode     │   │  Aptos Labs     │   │  Your Fullnode  │
+│   (50 RPS)      │   │  (20-30 RPS)    │   │  (Unlimited)    │
+│ polished-...    │   │ api.testnet...  │   │ 164.92.117.18   │
+└────────┬────────┘   └────────┬────────┘   └────────┬────────┘
+         │                     │                     │
+         └─────────────────────┴─────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        APTOS TESTNET BLOCKCHAIN                             │
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                    SMART CONTRACT (V3)                                │  │
+│  │   0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1 │  │
+│  │                                                                        │  │
+│  │   ┌────────────────────────────────────────────────────────────────┐  │  │
+│  │   │                  MULTI-OUTCOME MARKET                          │  │  │
+│  │   │  0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e... │  │  │
+│  │   │                                                                  │  │  │
+│  │   │  Question: "Republican Presidential Nominee 2028"               │  │  │
+│  │   │  Outcomes: [J.D. Vance, Marco Rubio, Donald Trump,             │  │  │
+│  │   │            Ron DeSantis, Tucker Carlson, Other]                 │  │  │
+│  │   │  TVL: ~7,000 APT                                                │  │  │
+│  │   │                                                                  │  │  │
+│  │   │  Features:                                                       │  │  │
+│  │   │  ✓ Aggregator V2 (AIP-47) - Parallel reserve updates           │  │  │
+│  │   │  ✓ Orderless Txns (AIP-123) - No sequence bottleneck           │  │  │
+│  │   │  ✓ CPMM Pricing - Constant product market maker                │  │  │
+│  │   └────────────────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Infrastructure
+
+### Digital Ocean Droplets
+
+| Droplet | IP | Specs | Purpose |
+|---------|-----|-------|---------|
+| `ubuntu-s-2vcpu-4gb-sfo2-01` | 178.128.177.88 | 4GB RAM, 80GB | **HFT Worker 1** |
+| `ubuntu-s-2vcpu-4gb-sfo3-01` | 161.35.231.0 | 4GB RAM, 80GB | **HFT Worker 2** |
+| `ubuntu-s-8vcpu-32gb-640gb-intel-sfo3-01` | 164.92.117.18 | 32GB RAM, 640GB | **Aptos Fullnode** |
+
+### RPC Endpoints
+
+| Endpoint | Rate Limit | Usage |
+|----------|------------|-------|
+| QuickNode | 50 RPS (Build plan) | Primary for frontend |
+| Aptos Labs API | 20-30 RPS | Fallback |
+| Your Fullnode (164.92.117.18:8080) | Unlimited | HFT transactions |
+
+```
+QuickNode URL: https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1
+```
+
+---
+
+## How It Works
+
+### 1. Frontend Connection
+
+The frontend connects via WebSocket to the HFT server:
+
+```typescript
+// .env.local
+VITE_HFT_WS_URL=ws://178.128.177.88:3001
+```
+
+The `useHFTConnection` hook:
+- Receives real-time trade updates
+- Batches trades every 100ms to prevent UI freeze
+- Shows TPS, success rate, latency stats
+- Displays live price changes
+
+### 2. HFT Server Transaction Pipeline
+
+**3-Stage Pipeline (Parallel Execution):**
+
+```
+Stage 1: BUILD (Parallel)          Stage 2: SIGN (Local)         Stage 3: SUBMIT (Parallel)
+┌─────────────────────┐           ┌─────────────────┐          ┌─────────────────┐
+│ Account 1 → RPC A   │           │ Sign with key 1 │          │ Account 1 → RPC A │
+│ Account 2 → RPC B   │  ────►    │ Sign with key 2 │  ────►   │ Account 2 → RPC B │
+│ Account 3 → RPC C   │           │ Sign with key 3 │          │ Account 3 → RPC C │
+│ ...                 │           │ ...             │          │ ...               │
+│ Account 20 → RPC A  │           │ Sign with key 20│          │ Account 20 → RPC A│
+└─────────────────────┘           └─────────────────┘          └─────────────────┘
+        │                                                               │
+        └────────── Round-robin RPC selection ──────────────────────────┘
+```
+
+### 3. Key Optimizations for 30K TPS
+
+| Optimization | How It Works | Impact |
+|--------------|--------------|--------|
+| **Orderless Transactions (AIP-123)** | Random nonces instead of sequence numbers | Eliminates sequence bottleneck |
+| **Aggregator V2 (AIP-47)** | Parallel-safe reserve updates in contract | Multiple accounts update same market |
+| **20 Trading Accounts** | Each submits independently | 20x parallelism |
+| **Multi-RPC Load Balancing** | Round-robin across 5+ endpoints | Bypass rate limits |
+| **Fire-and-Forget (95%)** | Don't wait for confirmation | Max submission speed |
+| **Dedicated Fullnode** | No rate limits | Unlimited RPS |
+
+### 4. Trade Size Distribution
+
+Creates dramatic price swings while conserving APT:
+
+| Probability | Size | Description |
+|-------------|------|-------------|
+| 0.1% | 0.5-1 APT | Whale spike |
+| 0.5% | 0.2-0.5 APT | Large jump |
+| 2% | 0.05-0.2 APT | Noticeable |
+| 5% | 0.02-0.05 APT | Medium |
+| 15% | 0.01-0.02 APT | Small |
+| 77.4% | 0.001-0.01 APT | Micro |
+
+---
+
+## Running the Demo
+
+### Quick Start (Dry Run - 5 seconds)
+
+```bash
+# Terminal 1: Start HFT server in dryrun mode
+npx tsx server/hft-ultra-server.ts dryrun
+
+# Terminal 2: Start frontend
+npm run dev
+
+# Browser: http://localhost:5173/demo-day
+# Click "ARM SYSTEM" → "LAUNCH DEMO"
+```
+
+### Full 30K TPS Demo
+
+```bash
+# Set environment variables
+export APTOS_API_KEY="AG-3JMDT54EN4DCLULDWAUXCYGQ56JJQCYHH"
+export QUICKNODE_RPC="https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1"
+export ULTRA_PRIVATE_KEYS="0xkey1,0xkey2,...,0xkey20"
+export MULTI_MARKET="0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96"
+
+# Option A: Orchestrator (recommended)
+./scripts/orchestrator.sh demo
+
+# Option B: Manual 3-worker launch
+./scripts/run-3-workers.sh normal 60  # 60 seconds
+```
+
+### Using the HFT Launch Control UI
+
+1. Navigate to `/demo-day`
+2. **Pre-flight checks** must all pass:
+   - ✓ HFT Server Connection
+   - ✓ Trading Accounts Ready (20 accounts)
+   - ✓ Market Contract Active
+   - ✓ Sufficient Gas Funds
+3. Click **"ARM SYSTEM"**
+4. Click **"LAUNCH DEMO"**
+5. Watch TPS climb to 30K+
+
+---
+
+## Monitoring
+
+### Key Metrics
+
+| Metric | Target | Location |
+|--------|--------|----------|
+| Current TPS | 30,000+ | Demo page header |
+| Peak TPS | 35,000+ | Stats grid |
+| Success Rate | >95% | Stats grid |
+| Avg Latency | <500ms | Stats grid |
+
+### Check Market Status
+
+```bash
+# Get current prices
+curl -s -X POST "https://fullnode.testnet.aptoslabs.com/v1/view" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "function": "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1::multi_outcome_market::get_all_prices",
+    "arguments": ["0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96"]
+  }' | jq .
+```
+
+### Log Viewing
+
+```bash
+# Single worker
+./scripts/dryrun-view.sh
+
+# 3 workers (3-pane tmux)
+./scripts/demo-view.sh
+```
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| "Rate limit exceeded" | Public API blocked | QuickNode or fullnode fixes this |
+| "Mempool is full" | Too many pending txns | Server auto-backoffs |
+| No trades showing | WebSocket not connected | Check VITE_HFT_WS_URL in .env.local |
+| TPS < 1000 | Single worker only | Use ./scripts/run-3-workers.sh |
+| "INSUFFICIENT_BALANCE" | Account out of APT | Run fund-accounts script |
+
+---
+
+## File Structure
+
+```
+aptos-polymarket/
+├── server/
+│   └── hft-ultra-server.ts     # HFT server (1,400+ lines)
+│
+├── src/
+│   ├── polymarket/
+│   │   ├── HFTDemoPage.tsx     # Main demo dashboard
+│   │   ├── HFTLaunchControl.tsx # Launch control UI
+│   │   ├── TradeFeed.tsx       # Trade stream
+│   │   └── TPSChart.tsx        # TPS visualization
+│   │
+│   └── hooks/
+│       ├── useHFTConnection.ts # WebSocket hook
+│       ├── useMultiMarkets.ts  # Market data (QuickNode)
+│       └── useMarkets.ts       # Binary markets
+│
+├── scripts/
+│   ├── orchestrator.sh         # Master control script
+│   ├── run-3-workers.sh        # 3-worker distributed setup
+│   └── run-demo.sh             # Single worker setup
+│
+└── contracts/sources/
+    └── multi_outcome_market.move # Smart contract (Aggregator V2)
+```
+
+---
+
+## Key Addresses
+
+| Component | Address |
+|-----------|---------|
+| **V3 Contract** | `0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1` |
+| **GOP 2028 Market** | `0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96` |
+
+---
+
+## TPS Formula
+
+```
+TPS = Num_Workers × Accounts_Per_Worker × Batch_Size × (1000 / Batch_Delay_Ms)
+
+Full Demo:
+  3 workers × 7 accounts × 150 batch × (1000 / 100ms) = ~31,500 TPS
+```
+
+---
+
+## Summary
+
+This demo showcases Aptos' true parallel execution capabilities:
+- **20 trading accounts** across 3 cloud workers
+- **Orderless transactions** eliminating sequence bottlenecks
+- **Aggregator V2** enabling parallel smart contract updates
+- **Multi-RPC load balancing** distributing requests
+- Real 30,000+ TPS on testnet blockchain
