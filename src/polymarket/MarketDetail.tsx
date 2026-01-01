@@ -18,7 +18,9 @@ import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useHFTConnection } from "../hooks/useHFTConnection";
 import { useLivePrices, TIMEFRAMES } from "../hooks/useLivePrices";
+import { useLiveTrades } from "../hooks/useLiveTrades";
 import type { Category, Outcome } from "./types";
+import type { Trade } from "../hooks/useHFTConnection";
 
 // Initialize Aptos client for TVL fetching
 const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
@@ -99,6 +101,31 @@ export function MarketDetail() {
     priceHistory: livePriceHistory,
     isConnected: _pricesConnected,
   } = useLivePrices(3000); // Poll every 3 seconds
+
+  // Live trades from blockchain polling (works without HFT server)
+  const { trades: blockchainTrades } = useLiveTrades(5000, 50);
+
+  // Combine HFT trades with blockchain trades, preferring HFT when available
+  const combinedTrades: Trade[] = useMemo(() => {
+    // If HFT is connected and has trades, use those
+    if (hftConnected && hftTrades.length > 0) {
+      return hftTrades;
+    }
+
+    // Otherwise, convert blockchain trades to Trade format
+    return blockchainTrades.map((bt) => ({
+      id: bt.id,
+      bot: bt.trader.slice(0, 8) + '...',
+      action: bt.type === 'buy' ? 'buy_outcome' : 'sell_outcome',
+      actionDisplay: bt.type === 'buy' ? 'Buy' : 'Sell',
+      amount: bt.amount,
+      latency: 0,
+      success: true,
+      txHash: bt.txHash,
+      timestamp: bt.timestamp,
+      outcome: bt.outcomeIndex,
+    }));
+  }, [hftConnected, hftTrades, blockchainTrades]);
 
   // Try to find market from on-chain data first, then fall back to mock data
   const market = useMemo(() => {
@@ -584,8 +611,8 @@ export function MarketDetail() {
             }
             yesReserve={hftReserves.yesReserve}
             noReserve={hftReserves.noReserve}
-            trades={hftTrades}
-            isConnected={hftConnected}
+            trades={combinedTrades}
+            isConnected={hftConnected || combinedTrades.length > 0}
             isMultiOutcome={!!market?.outcomes}
             tvl={tvl || 0}
             outcomes={market?.outcomes?.map(o => o.name) || []}
@@ -593,14 +620,14 @@ export function MarketDetail() {
         </div>
 
         {/* Trade Feed - Under orderbook */}
-        {hftTrades.length > 0 && (
+        {combinedTrades.length > 0 && (
           <div
             className={`px-4 pb-6 transition-all duration-300 ${
               isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
             <TradeFeed
-              trades={hftTrades}
+              trades={combinedTrades}
               maxItems={10}
               outcomes={market.outcomes?.map(o => o.name) || []}
               compact
