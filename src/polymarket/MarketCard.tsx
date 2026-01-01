@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Bookmark, Gift, RefreshCw, MoreHorizontal, X } from "lucide-react";
 import type { Market, Outcome } from "./types";
+import { LATEST_REAL_PRICES } from "./realPriceData";
 
 // Semi-circle gauge component for percentage display (Polymarket style)
 function PercentageGauge({
@@ -179,7 +180,9 @@ function OutcomeRow({
   onYesPress: () => void;
   onNoPress: () => void;
 }) {
-  const yesPrice = Math.round(outcome.price * 100);
+  // Use REAL Polymarket prices for display
+  const realPrice = (LATEST_REAL_PRICES as Record<string, number>)[outcome.name] || outcome.price;
+  const yesPrice = Math.round(realPrice * 100);
 
   return (
     <div className="flex items-center py-2.5">
@@ -228,7 +231,19 @@ interface MarketCardProps {
 export function MarketCard({ market, onPress }: MarketCardProps) {
   const [expandedTrade, setExpandedTrade] = useState<"yes" | "no" | null>(null);
   const isSingleOutcome = !market.isMultiOutcome || !market.outcomes;
-  const yesPercent = Math.round(market.yesPrice * 100);
+
+  // For multi-outcome markets (like Federal Reserve Chair), use the highest real price from outcomes
+  // For single outcome markets, use market.yesPrice
+  const yesPercent = (() => {
+    if (market.isMultiOutcome && market.outcomes) {
+      // Get highest price from outcomes using real Polymarket prices
+      const highestPrice = Math.max(...market.outcomes.map(o =>
+        (LATEST_REAL_PRICES as Record<string, number>)[o.name] || o.price
+      ));
+      return Math.round(highestPrice * 100);
+    }
+    return Math.round(market.yesPrice * 100);
+  })();
 
   const handleYesClick = (e: React.MouseEvent) => {
     e.stopPropagation();

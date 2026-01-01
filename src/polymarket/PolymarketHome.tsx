@@ -7,6 +7,7 @@ import { CategoryTabs } from "./CategoryTabs";
 import { MarketCard } from "./MarketCard";
 import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
+import { LATEST_REAL_PRICES } from "./realPriceData";
 import type { Category, Market } from "./types";
 
 const topicFilters = ["All", "Trump", "Venezuela", "New Years", "Ukraine", "Mideast"];
@@ -196,7 +197,16 @@ export function PolymarketHome() {
                     </p>
                   </div>
                   <span className="text-white text-base font-bold shrink-0">
-                    {Math.round(market.yesPrice * 100)}%
+                    {(() => {
+                      // Use real Polymarket prices for multi-outcome markets
+                      if (market.isMultiOutcome && market.outcomes) {
+                        const highestPrice = Math.max(...market.outcomes.map(o =>
+                          (LATEST_REAL_PRICES as Record<string, number>)[o.name] || o.price
+                        ));
+                        return Math.round(highestPrice * 100);
+                      }
+                      return Math.round(market.yesPrice * 100);
+                    })()}%
                   </span>
                 </motion.button>
               ))}

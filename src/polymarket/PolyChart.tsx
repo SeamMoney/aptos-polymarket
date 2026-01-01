@@ -18,6 +18,7 @@ interface PolyChartProps {
   highlightedOutcomeId?: string | null; // When set, only this outcome is fully colored
   timestamps?: number[]; // Optional real timestamps for hover labels
   autoScale?: boolean; // Auto-scale Y axis to data range (for short timeframes)
+  timeRange?: string; // Time range for X-axis labels: 1H, 6H, 1D, 1W, 1M, ALL
 }
 
 // Seeded random for consistent chart patterns
@@ -151,7 +152,7 @@ const generatePath = (
   return path;
 };
 
-export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highlightedOutcomeId, timestamps, autoScale = false }: PolyChartProps) {
+export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highlightedOutcomeId, timestamps, autoScale = false, timeRange = 'ALL' }: PolyChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [cursorX, setCursorX] = useState<number>(0);
@@ -411,6 +412,7 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
               activeIndex={activeIndex}
               chartWidth={width}
               timestamps={timestamps}
+              timeRange={timeRange}
             />
           )}
         </div>
@@ -423,10 +425,68 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
         </div>
       </div>
 
-      {/* X-axis */}
+      {/* X-axis - dynamic based on timeRange */}
       <div className="flex justify-between mt-1 select-none" style={{ width }}>
-        <span className="text-poly-textMuted text-xs">Sep</span>
-        <span className="text-poly-textMuted text-xs">Dec</span>
+        {(() => {
+          const now = new Date();
+          const formatTime = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+          const formatDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+          switch (timeRange) {
+            case '1H': {
+              const start = new Date(now.getTime() - 60 * 60 * 1000);
+              return (
+                <>
+                  <span className="text-poly-textMuted text-xs">{formatTime(start)}</span>
+                  <span className="text-poly-textMuted text-xs">{formatTime(now)}</span>
+                </>
+              );
+            }
+            case '6H': {
+              const start = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+              return (
+                <>
+                  <span className="text-poly-textMuted text-xs">{formatTime(start)}</span>
+                  <span className="text-poly-textMuted text-xs">{formatTime(now)}</span>
+                </>
+              );
+            }
+            case '1D': {
+              const start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+              return (
+                <>
+                  <span className="text-poly-textMuted text-xs">{formatDate(start)}</span>
+                  <span className="text-poly-textMuted text-xs">{formatDate(now)}</span>
+                </>
+              );
+            }
+            case '1W': {
+              const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+              return (
+                <>
+                  <span className="text-poly-textMuted text-xs">{formatDate(start)}</span>
+                  <span className="text-poly-textMuted text-xs">{formatDate(now)}</span>
+                </>
+              );
+            }
+            case '1M': {
+              const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+              return (
+                <>
+                  <span className="text-poly-textMuted text-xs">{formatDate(start)}</span>
+                  <span className="text-poly-textMuted text-xs">{formatDate(now)}</span>
+                </>
+              );
+            }
+            default: // ALL
+              return (
+                <>
+                  <span className="text-poly-textMuted text-xs">Sep</span>
+                  <span className="text-poly-textMuted text-xs">Dec</span>
+                </>
+              );
+          }
+        })()}
       </div>
     </div>
   );
@@ -438,25 +498,58 @@ interface HoverLabelsProps {
   activeIndex: number;
   chartWidth: number;
   timestamps?: number[];
+  timeRange?: string;
 }
 
-function HoverLabels({ outcomes, activeIndex, chartWidth, timestamps }: HoverLabelsProps) {
+function HoverLabels({ outcomes, activeIndex, chartWidth, timestamps, timeRange = 'ALL' }: HoverLabelsProps) {
   const numPoints = outcomes[0]?.prices.length || 100;
   const LABEL_HEIGHT = 24; // Height of each label including padding
   const MIN_GAP = 4; // Minimum gap between labels
 
-  // Use real timestamp if available
+  // Generate date label based on timeRange and position
+  const t = activeIndex / (numPoints - 1);
+  const now = new Date();
   let dateLabel: string;
+
+  // Use real timestamp if available
   if (timestamps && timestamps[activeIndex]) {
     const date = new Date(timestamps[activeIndex] * 1000);
     dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   } else {
-    // Fallback: Generate date label based on position (Sept to Dec range)
-    const t = activeIndex / (numPoints - 1);
-    const months = ["Sep", "Oct", "Nov", "Dec"];
-    const monthIndex = Math.floor(t * 3.99);
-    const day = Math.floor((t * 4 - monthIndex) * 28) + 1;
-    dateLabel = `${months[monthIndex]} ${day}`;
+    // Generate label based on timeRange
+    switch (timeRange) {
+      case '1H': {
+        const time = new Date(now.getTime() - (1 - t) * 60 * 60 * 1000);
+        dateLabel = time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        break;
+      }
+      case '6H': {
+        const time = new Date(now.getTime() - (1 - t) * 6 * 60 * 60 * 1000);
+        dateLabel = time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        break;
+      }
+      case '1D': {
+        const time = new Date(now.getTime() - (1 - t) * 24 * 60 * 60 * 1000);
+        dateLabel = time.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', hour12: true });
+        break;
+      }
+      case '1W': {
+        const time = new Date(now.getTime() - (1 - t) * 7 * 24 * 60 * 60 * 1000);
+        dateLabel = time.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        break;
+      }
+      case '1M': {
+        const time = new Date(now.getTime() - (1 - t) * 30 * 24 * 60 * 60 * 1000);
+        dateLabel = time.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        break;
+      }
+      default: { // ALL - fallback to Sept-Dec
+        const months = ["Sep", "Oct", "Nov", "Dec"];
+        const monthIndex = Math.floor(t * 3.99);
+        const day = Math.floor((t * 4 - monthIndex) * 28) + 1;
+        dateLabel = `${months[monthIndex]} ${day}`;
+      }
+    }
   }
 
   // Calculate label positions and resolve overlaps
@@ -497,7 +590,7 @@ function HoverLabels({ outcomes, activeIndex, chartWidth, timestamps }: HoverLab
     >
       {/* Date at top right */}
       <span className="absolute top-0 right-12 text-poly-textMuted text-xs">
-        {dateLabel}, 2025
+        {dateLabel}{timeRange === 'ALL' || timeRange === '1M' || timeRange === '1W' ? '' : ''}
       </span>
 
       {/* Price labels - positioned to avoid overlaps */}

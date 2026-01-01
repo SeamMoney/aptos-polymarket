@@ -12,6 +12,7 @@ import { TradingSheet } from "./TradingSheet";
 import { LiveOrderBook } from "./LiveOrderBook";
 import { mockMarkets } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
+import { LATEST_REAL_PRICES } from "./realPriceData";
 
 const CHART_HEIGHT = 220;
 const CHART_PADDING_RIGHT = 50;
@@ -164,10 +165,17 @@ export function OutcomeDetail() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // Use REAL Polymarket prices for this outcome - map "Other" to "Donald Trump Jr."
+  const realPrice = useMemo(() => {
+    if (!outcome) return 0;
+    const lookupName = outcome.name === "Other" ? "Donald Trump Jr." : outcome.name;
+    return LATEST_REAL_PRICES[lookupName] || LATEST_REAL_PRICES[outcome.name] || outcome.price;
+  }, [outcome]);
+
   const priceHistory = useMemo(() => {
     if (!outcome) return [];
-    return generatePriceHistory(outcome.id, outcome.price, numPoints);
-  }, [outcome, numPoints]);
+    return generatePriceHistory(outcome.id, realPrice, numPoints);
+  }, [outcome, realPrice, numPoints]);
 
   const innerWidth = chartWidth - CHART_PADDING_RIGHT;
 
@@ -329,8 +337,16 @@ export function OutcomeDetail() {
   }
 
   const timeRanges = ["1H", "6H", "1D", "1W", "1M", "ALL"];
-  const yesPrice = Math.round(outcome.price * 100);
+  // Use real Polymarket prices for display
+  const yesPrice = Math.round(realPrice * 100);
   const noPrice = 100 - yesPrice;
+  const yesPriceDisplay = yesPrice < 10 ? `${(realPrice * 100).toFixed(1)}` : yesPrice.toString();
+  const noPriceDisplay = noPrice < 10 ? `${(100 - realPrice * 100).toFixed(1)}` : noPrice.toString();
+
+  // Map "Other" to "Donald Trump Jr." for display
+  const displayName = outcome.name === "Other" ? "Donald Trump Jr." : outcome.name;
+  // Use outcome volume from contract (or show dash if not tracked)
+  const volumeDisplay = outcome.volume || "—";
 
   const firstPrice = priceHistory[0] || outcome.price;
   const currentPrice = priceHistory[priceHistory.length - 1] || outcome.price;
@@ -363,7 +379,7 @@ export function OutcomeDetail() {
         </button>
 
         <div className="flex items-center gap-3">
-          <span className="text-[#8297a3] text-sm">{outcome.volume} Vol.</span>
+          <span className="text-[#8297a3] text-sm">{volumeDisplay} Vol.</span>
           <button className="p-1.5 hover:opacity-70 transition-opacity">
             <Bookmark size={20} color="#8297a3" strokeWidth={2} />
           </button>
@@ -638,7 +654,7 @@ export function OutcomeDetail() {
             }}
             className="flex-1 bg-[#3dac67] rounded-lg py-3.5 text-white text-base font-semibold hover:bg-[#359b5c] transition-colors"
           >
-            Buy Yes {yesPrice}¢
+            Buy Yes {yesPriceDisplay}¢
           </button>
           <button
             onClick={() => {
@@ -647,7 +663,7 @@ export function OutcomeDetail() {
             }}
             className="flex-1 bg-[#e13836] rounded-lg py-3.5 text-white text-base font-semibold hover:bg-[#c9312f] transition-colors"
           >
-            Buy No {noPrice}¢
+            Buy No {noPriceDisplay}¢
           </button>
         </div>
       </div>

@@ -44,19 +44,27 @@ export function useLivePrices(pollInterval: number = 3000): UseLivePricesReturn 
 
       const now = Date.now();
 
+      // Check if prices actually changed (compare with last entry in history)
+      const lastPoint = historyRef.current[historyRef.current.length - 1];
+      const pricesChanged = !lastPoint || normalizedPrices.some(
+        (p, i) => Math.abs(p - (lastPoint.prices[i] || 0)) > 0.0001
+      );
+
       // Update current prices
       setCurrentPrices(normalizedPrices);
       setLastUpdate(now);
       setIsConnected(true);
 
-      // Add to history
-      const newPoint: PricePoint = {
-        timestamp: now,
-        prices: normalizedPrices,
-      };
+      // Only add to history if prices actually changed
+      if (pricesChanged) {
+        const newPoint: PricePoint = {
+          timestamp: now,
+          prices: normalizedPrices,
+        };
 
-      historyRef.current = [...historyRef.current, newPoint].slice(-MAX_HISTORY_POINTS);
-      setPriceHistory(historyRef.current);
+        historyRef.current = [...historyRef.current, newPoint].slice(-MAX_HISTORY_POINTS);
+        setPriceHistory(historyRef.current);
+      }
 
     } catch (error) {
       console.error('Error fetching prices:', error);

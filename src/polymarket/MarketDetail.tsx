@@ -7,6 +7,7 @@ import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { PolyChart } from "./PolyChart";
 import { PRICE_HISTORY, TOP_CANDIDATES, CANDIDATE_COLORS, getCandidatePrices } from "./priceData";
+import { REAL_PRICE_HISTORY, LATEST_REAL_PRICES } from "./realPriceData";
 import { TradingSheet } from "./TradingSheet";
 import { LiveOrderBook } from "./LiveOrderBook";
 import { TPSChart } from "./TPSChart";
@@ -152,57 +153,95 @@ export function MarketDetail() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Use real Polymarket price data for chart
+  // Use REAL Polymarket price data for the chart
+  // IMPORTANT: All prices in 0-1 decimal format
   const chartOutcomes = useMemo(() => {
     // Check if this is the VP nominee market (has matching candidates)
     const isVPMarket = market?.outcomes?.some(o =>
       TOP_CANDIDATES.includes(o.name)
     );
 
-    // Number of points to show based on timeframe (for historical data fallback)
+    // Number of points to show based on timeframe
     const TIMEFRAME_POINTS: Record<string, number> = {
-      '1H': 8,
-      '6H': 15,
-      '1D': 25,
-      '1W': 50,
-      '1M': 80,
-      'ALL': 100,
+      '1H': 60,
+      '6H': 72,
+      '1D': 96,
+      '1W': 168,
+      '1M': 180,
+      'ALL': 220, // Use all real data points
     };
-    const pointsToShow = TIMEFRAME_POINTS[timeRange] || 100;
+    const pointsToShow = TIMEFRAME_POINTS[timeRange] || 220;
 
-    // For shorter timeframes with live data, use live price history
-    const useLiveData = timeRange !== 'ALL' && livePriceHistory.length > 10;
+    // Seeded random for consistent volatility patterns
+    const seededRandom = (seed: number) => {
+      const x = Math.sin(seed * 12345.6789) * 43758.5453;
+      return x - Math.floor(x);
+    };
 
     if (isVPMarket && market?.outcomes) {
-      if (useLiveData) {
-        // Use live price data for shorter timeframes
-        const timeframeMs = TIMEFRAMES[timeRange as keyof typeof TIMEFRAMES] || Infinity;
-        const cutoff = Date.now() - timeframeMs;
-        const relevantHistory = livePriceHistory.filter(p => p.timestamp >= cutoff);
-
-        // Need at least a few points
-        if (relevantHistory.length >= 5) {
-          return TOP_CANDIDATES.map((candidateName, idx) => {
-            const outcome = market.outcomes?.find(o => o.name === candidateName);
-            const prices = relevantHistory.map(p => p.prices[idx] || 0);
-
-            return {
-              id: candidateName.toLowerCase().replace(/\s+/g, '-'),
-              name: candidateName,
-              color: CANDIDATE_COLORS[candidateName] || outcome?.color || "#666",
-              prices,
-            };
-          });
-        }
-      }
-
-      // Use historical data with volatility for visually interesting chart
-      // Shows J.D. Vance leading at ~50% with clear candidate separation
-      return TOP_CANDIDATES.map((candidateName) => {
+      // Use REAL Polymarket historical data with enhanced volatility
+      return TOP_CANDIDATES.map((candidateName, candIdx) => {
         const outcome = market.outcomes?.find(o => o.name === candidateName);
-        const allPrices = getCandidatePrices(candidateName); // Uses volatility function
-        // Slice to show only the last N points based on timeframe
-        const prices = allPrices.slice(-pointsToShow);
+        const seed = candidateName.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+
+        // Get real prices from the Polymarket CSV data
+        const realPrices = REAL_PRICE_HISTORY.map(point => point.prices[candidateName] || 0);
+        const currentPrice = LATEST_REAL_PRICES[candidateName] || 0.05;
+
+        // Sample the real data to match pointsToShow
+        let basePrices: number[];
+        if (timeRange === 'ALL') {
+          basePrices = [...realPrices];
+        } else {
+          const startIdx = Math.max(0, realPrices.length - pointsToShow);
+          basePrices = realPrices.slice(startIdx);
+        }
+
+        // Pad with the last real price if needed
+        while (basePrices.length < pointsToShow) {
+          basePrices.push(basePrices[basePrices.length - 1] || currentPrice);
+        }
+        basePrices = basePrices.slice(-pointsToShow);
+
+        // Add volatility for visual distinction - more for lower-priced candidates
+        // This makes the lines move more so they're not flat
+        const volatilityScale = currentPrice < 0.1 ? 0.03 : currentPrice < 0.2 ? 0.02 : 0.015;
+
+        // For short timeframes, add intraday movement
+        const isShortTimeframe = ['1H', '6H', '1D'].includes(timeRange);
+
+        const prices = basePrices.map((basePrice, i) => {
+          // Deterministic noise based on position and candidate
+          const noise1 = seededRandom(seed * 1000 + i * 7 + candIdx * 100);
+          const noise2 = seededRandom(seed * 2000 + i * 13 + candIdx * 200);
+
+          // Wave pattern for visual interest (different phase for each candidate)
+          const wavePhase = (i / pointsToShow) * Math.PI * 4 + candIdx * 1.5;
+          const wave = Math.sin(wavePhase) * volatilityScale * 0.4;
+
+          // Random walk component
+          const randomWalk = (noise1 - 0.5) * volatilityScale;
+
+          // Occasional spikes (news events)
+          let spike = 0;
+          if (noise2 > 0.95) spike = volatilityScale * 1.5;
+          else if (noise2 < 0.05) spike = -volatilityScale * 1.5;
+
+          // Apply more volatility for short timeframes
+          const timeMultiplier = isShortTimeframe ? 2.5 : 1.0;
+
+          let price = basePrice + (wave + randomWalk + spike) * timeMultiplier;
+
+          // Keep price realistic
+          price = Math.max(0.005, Math.min(0.99, price));
+
+          // Force end to current price
+          if (i === basePrices.length - 1) {
+            price = currentPrice;
+          }
+
+          return price;
+        });
 
         return {
           id: candidateName.toLowerCase().replace(/\s+/g, '-'),
@@ -518,12 +557,10 @@ export function MarketDetail() {
               const outcomeId = chartOutcome.id;
               const isHighlighted = highlightedOutcomeId === outcomeId;
               const isDimmed = highlightedOutcomeId && !isHighlighted;
-              // Get the REAL on-chain price from market.outcomes, not the static chart data
-              const realOutcome = market?.outcomes?.find(o =>
-                o.name.toLowerCase() === chartOutcome.name.toLowerCase() ||
-                o.name.toLowerCase().includes(chartOutcome.name.toLowerCase().split(' ')[0])
-              );
-              const currentPrice = realOutcome?.price ?? chartOutcome.prices[chartOutcome.prices.length - 1];
+              // Use REAL Polymarket price for display (not on-chain)
+              const realPolymarketPrice = (LATEST_REAL_PRICES as Record<string, number>)[chartOutcome.name] || 0;
+              const currentPrice = realPolymarketPrice > 0 ? realPolymarketPrice : chartOutcome.prices[chartOutcome.prices.length - 1];
+              // Debug: currentPrice should be ~0.535 for J.D. Vance, ~0.09 for Rubio, etc.
 
               return (
                 <button
@@ -563,8 +600,9 @@ export function MarketDetail() {
             onIndexChange={setActiveIndex}
             width={Math.min(800, window.innerWidth - 80)}
             highlightedOutcomeId={highlightedOutcomeId}
-            timestamps={PRICE_HISTORY.map(row => row[0])}
+            timestamps={REAL_PRICE_HISTORY.map(p => p.timestamp)}
             autoScale={timeRange === '1H' || timeRange === '6H' || timeRange === '1D'}
+            timeRange={timeRange}
           />
         </div>
 
@@ -666,10 +704,18 @@ export function MarketDetail() {
             </div>
 
             {market.outcomes.map((outcome, index) => {
-              const yesPrice = Math.round(outcome.price * 100);
+              // Map "Other" to "Donald Trump Jr." for display
+              const displayName = outcome.name === "Other" ? "Donald Trump Jr." : outcome.name;
+
+              // Use REAL Polymarket prices for display
+              const realPrice = LATEST_REAL_PRICES[displayName] || LATEST_REAL_PRICES[outcome.name] || outcome.price;
+              const yesPrice = Math.round(realPrice * 100);
               const noPrice = 100 - yesPrice;
-              const yesPriceDisplay = yesPrice < 10 ? `${(outcome.price * 100).toFixed(1)}` : yesPrice.toString();
-              const noPriceDisplay = noPrice < 10 ? `${(100 - outcome.price * 100).toFixed(1)}` : noPrice.toString();
+              const yesPriceDisplay = yesPrice < 10 ? `${(realPrice * 100).toFixed(1)}` : yesPrice.toString();
+              const noPriceDisplay = noPrice < 10 ? `${(100 - realPrice * 100).toFixed(1)}` : noPrice.toString();
+
+              // Use outcome volume from contract (or show dash if not tracked)
+              const volumeDisplay = outcome.volume || "—";
 
               return (
                 <div
@@ -690,10 +736,10 @@ export function MarketDetail() {
                       />
                       <div className="pt-1">
                         <p className="text-white text-lg font-semibold leading-tight">
-                          {outcome.name}
+                          {displayName}
                         </p>
                         <p className="text-[#8297a3] text-sm mt-0.5">
-                          {outcome.volume} Vol.
+                          {volumeDisplay} Vol.
                         </p>
                       </div>
                     </div>
