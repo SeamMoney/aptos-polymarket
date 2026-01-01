@@ -550,6 +550,7 @@ export function MarketDetail() {
             width={Math.min(800, window.innerWidth - 80)}
             highlightedOutcomeId={highlightedOutcomeId}
             timestamps={PRICE_HISTORY.map(row => row[0])}
+            autoScale={timeRange === '1H' || timeRange === '6H' || timeRange === '1D'}
           />
         </div>
 

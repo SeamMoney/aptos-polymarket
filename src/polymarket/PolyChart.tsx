@@ -17,6 +17,7 @@ interface PolyChartProps {
   width?: number;
   highlightedOutcomeId?: string | null; // When set, only this outcome is fully colored
   timestamps?: number[]; // Optional real timestamps for hover labels
+  autoScale?: boolean; // Auto-scale Y axis to data range (for short timeframes)
 }
 
 // Seeded random for consistent chart patterns
@@ -126,26 +127,31 @@ export const generateOutcomePrices = (
   return prices;
 };
 
-// Generate SVG path with padding
+// Generate SVG path with padding and optional scaling
 const generatePath = (
   prices: number[],
   width: number,
   height: number,
-  paddingRight: number = 0
+  paddingRight: number = 0,
+  minPrice: number = 0,
+  maxPrice: number = 1
 ): string => {
   if (prices.length < 2) return "";
 
   const innerWidth = width - paddingRight;
+  const priceRange = maxPrice - minPrice || 1;
   let path = "";
   for (let i = 0; i < prices.length; i++) {
     const x = (i / (prices.length - 1)) * innerWidth;
-    const y = height - prices[i] * height;
+    // Scale price to 0-1 range based on min/max, then to height
+    const normalizedPrice = (prices[i] - minPrice) / priceRange;
+    const y = height - normalizedPrice * height;
     path += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
   }
   return path;
 };
 
-export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highlightedOutcomeId, timestamps }: PolyChartProps) {
+export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highlightedOutcomeId, timestamps, autoScale = false }: PolyChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [cursorX, setCursorX] = useState<number>(0);
@@ -154,13 +160,56 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
   const numPoints = outcomes[0]?.prices.length || 100;
   const innerWidth = width - CHART_PADDING_RIGHT;
 
-  // Pre-calculate all paths
+  // Calculate min/max for auto-scaling
+  const { minPrice, maxPrice, yAxisLabels } = useMemo(() => {
+    if (!autoScale) {
+      return {
+        minPrice: 0,
+        maxPrice: 1,
+        yAxisLabels: ['100%', '75%', '50%', '25%', '0%']
+      };
+    }
+
+    // Find min/max across all outcomes
+    let min = 1, max = 0;
+    outcomes.forEach(outcome => {
+      outcome.prices.forEach(p => {
+        if (p < min) min = p;
+        if (p > max) max = p;
+      });
+    });
+
+    // Add 10% padding to the range
+    const range = max - min || 0.1;
+    const padding = range * 0.15;
+    min = Math.max(0, min - padding);
+    max = Math.min(1, max + padding);
+
+    // Round to nice values
+    min = Math.floor(min * 100) / 100;
+    max = Math.ceil(max * 100) / 100;
+
+    // Generate Y axis labels for the scaled range
+    const labels = [];
+    for (let i = 0; i <= 4; i++) {
+      const val = max - (i / 4) * (max - min);
+      labels.push(`${Math.round(val * 100)}%`);
+    }
+
+    return { minPrice: min, maxPrice: max, yAxisLabels: labels };
+  }, [outcomes, autoScale]);
+
+  // Pre-calculate all paths with scaling
   const chartPaths = useMemo(() => {
+    const priceRange = maxPrice - minPrice || 1;
+
     return outcomes.map((outcome) => {
-      const path = generatePath(outcome.prices, width, CHART_HEIGHT, CHART_PADDING_RIGHT);
+      const path = generatePath(outcome.prices, width, CHART_HEIGHT, CHART_PADDING_RIGHT, minPrice, maxPrice);
       const lastPrice = outcome.prices[outcome.prices.length - 1];
       const lastX = innerWidth;
-      const lastY = CHART_HEIGHT - lastPrice * CHART_HEIGHT;
+      // Scale lastY using the same min/max
+      const normalizedLastPrice = (lastPrice - minPrice) / priceRange;
+      const lastY = CHART_HEIGHT - normalizedLastPrice * CHART_HEIGHT;
 
       return {
         id: outcome.id,
@@ -172,7 +221,7 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
         prices: outcome.prices,
       };
     });
-  }, [outcomes, width, innerWidth]);
+  }, [outcomes, width, innerWidth, minPrice, maxPrice]);
 
   // Calculate position from x coordinate
   const updatePosition = useCallback(
@@ -368,11 +417,9 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
 
         {/* Y-axis */}
         <div className="ml-3 flex flex-col justify-between select-none" style={{ height: CHART_HEIGHT }}>
-          <span className="text-poly-textMuted text-xs">100%</span>
-          <span className="text-poly-textMuted text-xs">75%</span>
-          <span className="text-poly-textMuted text-xs">50%</span>
-          <span className="text-poly-textMuted text-xs">25%</span>
-          <span className="text-poly-textMuted text-xs">0%</span>
+          {yAxisLabels.map((label, i) => (
+            <span key={i} className="text-poly-textMuted text-xs">{label}</span>
+          ))}
         </div>
       </div>
 
