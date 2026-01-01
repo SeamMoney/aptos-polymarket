@@ -18,9 +18,10 @@ import {
   Ed25519PrivateKey,
 } from '@aptos-labs/ts-sdk';
 
-const CONTRACT_ADDRESS = '0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4';
-const MODULE = `${CONTRACT_ADDRESS}::market`;
-const KNOWN_MARKET = '0x9ec8c2987a5d0598969bb48f3acee94dd6bd5570420cbe5993d65e48500380c4';
+const CONTRACT_ADDRESS = '0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1';
+const MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
+const KNOWN_MARKET = '0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96';
+const NUM_OUTCOMES = 6; // Republican nominee market has 6 outcomes
 
 // Use Geomi API key if available (removes rate limits!)
 const API_KEY = process.env.APTOS_API_KEY || '';
@@ -61,15 +62,16 @@ async function executeTrade(
   seqNum: bigint
 ): Promise<{ success: boolean; latency: number; hash?: string }> {
   const start = Date.now();
-  const action = Math.random() > 0.5 ? 'buy_yes' : 'buy_no';
-  const amount = Math.floor((0.01 + Math.random() * 0.03) * 100_000_000);
+  const action = Math.random() > 0.5 ? 'buy_outcome' : 'sell_outcome';
+  const outcomeIndex = Math.floor(Math.random() * NUM_OUTCOMES); // Random outcome 0-5
+  const amount = Math.floor((0.01 + Math.random() * 0.05) * 100_000_000);
 
   try {
     const tx = await aptos.transaction.build.simple({
       sender: account.accountAddress,
       data: {
         function: `${MODULE}::${action}`,
-        functionArguments: [marketAddress, amount, 0],
+        functionArguments: [marketAddress, outcomeIndex, amount, 0],
       },
       options: {
         accountSequenceNumber: seqNum,
