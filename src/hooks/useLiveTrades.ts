@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 
 const CONTRACT_ADDRESS = "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1";
 const INDEXER_URL = "https://api.testnet.aptoslabs.com/v1/graphql";
+// Use QuickNode for transaction details to avoid rate limiting
+const QUICKNODE_RPC = "https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1";
 
 export interface LiveTrade {
   id: string;
@@ -97,9 +99,9 @@ export function useLiveTrades(
         return;
       }
 
-      // Batch fetch transaction details
+      // Batch fetch transaction details (use QuickNode to avoid rate limits)
       const detailPromises = txsToProcess.slice(0, 20).map(tx =>
-        fetch(`https://fullnode.testnet.aptoslabs.com/v1/transactions/by_version/${tx.version}`)
+        fetch(`${QUICKNODE_RPC}/transactions/by_version/${tx.version}`)
           .then(r => r.ok ? r.json() : null)
           .catch(() => null)
       );
