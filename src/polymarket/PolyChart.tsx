@@ -1,8 +1,26 @@
-import { useMemo, useRef, useState, useCallback, useEffect } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from "react";
 
 const CHART_WIDTH = 600;
 const CHART_HEIGHT = 220;
 const CHART_PADDING_RIGHT = 20;
+
+// RAF-based throttle for smooth 60fps updates
+const rafThrottle = <T extends (...args: unknown[]) => void>(fn: T): T => {
+  let rafId: number | null = null;
+  let lastArgs: Parameters<T> | null = null;
+
+  const throttled = (...args: Parameters<T>) => {
+    lastArgs = args;
+    if (rafId === null) {
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (lastArgs) fn(...lastArgs);
+      });
+    }
+  };
+
+  return throttled as T;
+};
 
 interface OutcomeData {
   id: string;
@@ -154,9 +172,14 @@ const generatePath = (
 
 export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highlightedOutcomeId, timestamps, autoScale = false, timeRange = 'ALL' }: PolyChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const cursorLineRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [cursorX, setCursorX] = useState<number>(0);
   const [isTouching, setIsTouching] = useState(false);
+
+  // Use refs for intermediate values to avoid re-renders during drag
+  const positionRef = useRef({ x: 0, index: 0 });
+  const isTouchingRef = useRef(false);
 
   const numPoints = outcomes[0]?.prices.length || 100;
   const innerWidth = width - CHART_PADDING_RIGHT;
@@ -224,62 +247,100 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
     });
   }, [outcomes, width, innerWidth, minPrice, maxPrice]);
 
-  // Calculate position from x coordinate
-  const updatePosition = useCallback(
+  // Calculate position from x coordinate - optimized for smooth dragging
+  const updatePositionImmediate = useCallback(
     (clientX: number) => {
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const x = Math.max(0, Math.min(width, clientX - rect.left));
-      setCursorX(x);
+      // More precise calculation with sub-pixel accuracy
+      const rawX = clientX - rect.left;
+      const x = Math.max(0, Math.min(width, rawX));
       const idx = Math.round((x / width) * (numPoints - 1));
+
+      // Store in ref for immediate visual updates
+      positionRef.current = { x, index: idx };
+
+      // Update cursor line position directly via ref for smoothness
+      if (cursorLineRef.current) {
+        cursorLineRef.current.style.transform = `translateX(${x}px)`;
+      }
+
+      // Batch state updates
+      setCursorX(x);
       setActiveIndex(idx);
       onIndexChange?.(idx);
     },
     [width, numPoints, onIndexChange]
   );
 
-  // Mouse events
+  // Throttled version for touch move events
+  const updatePosition = useMemo(
+    () => rafThrottle(updatePositionImmediate),
+    [updatePositionImmediate]
+  );
+
+  // Mouse events - use immediate update for responsiveness
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (isTouching) return; // Ignore mouse events during touch
-      updatePosition(e.clientX);
+      if (isTouchingRef.current) return; // Ignore mouse events during touch
+      updatePositionImmediate(e.clientX);
     },
-    [updatePosition, isTouching]
+    [updatePositionImmediate]
   );
 
   const handleMouseLeave = useCallback(() => {
-    if (isTouching) return;
-    setActiveIndex(null);
-    onIndexChange?.(null);
-  }, [onIndexChange, isTouching]);
-
-  // Touch events for mobile
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      e.preventDefault(); // Prevent text selection and scroll
-      setIsTouching(true);
-      if (e.touches.length > 0) {
-        updatePosition(e.touches[0].clientX);
-      }
-    },
-    [updatePosition]
-  );
-
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      e.preventDefault(); // Prevent scroll while dragging
-      if (e.touches.length > 0) {
-        updatePosition(e.touches[0].clientX);
-      }
-    },
-    [updatePosition]
-  );
-
-  const handleTouchEnd = useCallback(() => {
-    setIsTouching(false);
+    if (isTouchingRef.current) return;
     setActiveIndex(null);
     onIndexChange?.(null);
   }, [onIndexChange]);
+
+  // Touch events for mobile - use native event listeners for better iOS performance
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      // Prevent default to stop scrolling, but allow event to propagate
+      e.preventDefault();
+      isTouchingRef.current = true;
+      setIsTouching(true);
+
+      if (e.touches.length > 0) {
+        // Use immediate update for touch start to feel snappy
+        updatePositionImmediate(e.touches[0].clientX);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      // Must prevent default to stop iOS Safari rubber-banding
+      e.preventDefault();
+
+      if (e.touches.length > 0) {
+        // Use throttled update during drag for smoothness
+        updatePosition(e.touches[0].clientX);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      isTouchingRef.current = false;
+      setIsTouching(false);
+      setActiveIndex(null);
+      onIndexChange?.(null);
+    };
+
+    // Use passive: false to allow preventDefault on iOS Safari
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
+    container.addEventListener('touchcancel', handleTouchEnd, { passive: true });
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, [updatePosition, updatePositionImmediate, onIndexChange]);
 
   // Prevent context menu on long press
   useEffect(() => {
@@ -309,13 +370,14 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
             touchAction: 'none', // Disable browser touch actions
             WebkitUserSelect: 'none',
             WebkitTouchCallout: 'none',
+            // GPU acceleration hints for smoother animations
+            willChange: activeIndex !== null ? 'transform' : 'auto',
+            WebkitBackfaceVisibility: 'hidden',
+            backfaceVisibility: 'hidden',
           }}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          onTouchCancel={handleTouchEnd}
+          // Touch events handled via native listeners in useLayoutEffect
         >
           <svg
             width={width}
@@ -392,18 +454,20 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
             })}
           </svg>
 
-          {/* Cursor line */}
-          {activeIndex !== null && (
-            <div
-              className="absolute top-0 pointer-events-none"
-              style={{
-                left: cursorX,
-                height: CHART_HEIGHT,
-                width: 1,
-                backgroundColor: 'rgba(255, 255, 255, 0.6)',
-              }}
-            />
-          )}
+          {/* Cursor line - GPU accelerated with transform */}
+          <div
+            ref={cursorLineRef}
+            className="absolute top-0 left-0 pointer-events-none"
+            style={{
+              height: CHART_HEIGHT,
+              width: 1,
+              backgroundColor: 'rgba(255, 255, 255, 0.6)',
+              opacity: activeIndex !== null ? 1 : 0,
+              transform: `translateX(${cursorX}px)`,
+              willChange: 'transform, opacity',
+              transition: 'opacity 0.1s ease-out',
+            }}
+          />
 
           {/* Hover labels */}
           {activeIndex !== null && activeIndex >= 0 && (
@@ -583,29 +647,43 @@ function HoverLabels({ outcomes, activeIndex, chartWidth, timestamps, timeRange 
 
   const x = (activeIndex / (numPoints - 1)) * chartWidth;
 
+  // Calculate x position for labels, keeping them on screen
+  const labelX = Math.min(x + 12, chartWidth - 130);
+
   return (
     <div
       className="absolute top-0 left-0 right-0 pointer-events-none select-none"
-      style={{ height: CHART_HEIGHT }}
+      style={{
+        height: CHART_HEIGHT,
+        // GPU hints for smooth rendering
+        willChange: 'contents',
+      }}
     >
       {/* Date at top right */}
-      <span className="absolute top-0 right-12 text-poly-textMuted text-xs">
+      <span
+        className="absolute top-0 right-12 text-poly-textMuted text-xs"
+        style={{ willChange: 'contents' }}
+      >
         {dateLabel}{timeRange === 'ALL' || timeRange === '1M' || timeRange === '1W' ? '' : ''}
       </span>
 
-      {/* Price labels - positioned to avoid overlaps */}
+      {/* Price labels - GPU accelerated with transform */}
       {labels.map(({ outcome, y, percentage }) => {
         const textColor = outcome.color === "#f5a623" ? "#000" : "#fff";
+        const topY = Math.max(0, y);
 
         return (
           <div
             key={outcome.id}
-            className="absolute px-2 py-1 rounded text-xs font-semibold whitespace-nowrap"
+            className="absolute top-0 left-0 px-2 py-1 rounded text-xs font-semibold whitespace-nowrap"
             style={{
-              top: Math.max(0, y),
-              left: Math.min(x + 12, chartWidth - 130),
+              // Use transform for GPU-accelerated positioning
+              transform: `translate(${labelX}px, ${topY}px)`,
               backgroundColor: outcome.color,
               color: textColor,
+              willChange: 'transform',
+              // Prevent layout thrashing
+              contain: 'layout style',
             }}
           >
             {outcome.name} {percentage}%
