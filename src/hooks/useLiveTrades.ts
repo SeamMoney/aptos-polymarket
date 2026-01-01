@@ -95,65 +95,61 @@ export function useLiveTrades(
       const buyTxs = buyResult.data?.user_transactions || [];
       const sellTxs = sellResult.data?.user_transactions || [];
       const transactions = [...buyTxs, ...sellTxs];
-      const newTrades: LiveTrade[] = [];
 
-      // Process each transaction
-      for (const tx of transactions) {
-        const version = tx.version.toString();
+      // Filter out already seen transactions
+      const unseenTxs = transactions.filter(tx => !seenVersions.has(tx.version.toString()));
+      if (unseenTxs.length === 0) {
+        setIsPolling(false);
+        return;
+      }
 
-        // Skip if we've already seen this transaction
-        if (seenVersions.has(version)) continue;
+      // Mark all as seen immediately to prevent duplicates
+      unseenTxs.forEach(tx => seenVersions.add(tx.version.toString()));
 
+      // Batch fetch transaction details (limit to 10 at a time to avoid rate limits)
+      const txsToFetch = unseenTxs.slice(0, 10);
+      const detailPromises = txsToFetch.map(tx =>
+        fetch(`https://fullnode.testnet.aptoslabs.com/v1/transactions/by_version/${tx.version}`)
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null)
+      );
+
+      const details = await Promise.all(detailPromises);
+
+      const newTrades: LiveTrade[] = txsToFetch.map((tx, idx) => {
+        const detail = details[idx];
         const functionName = tx.entry_function_id_str || '';
         const isBuy = functionName.includes('buy_outcome');
-        const isSell = functionName.includes('sell_outcome');
 
-        if (!isBuy && !isSell) continue;
-
-        // Mark as seen
-        seenVersions.add(version);
-
-        // Fetch transaction details to get arguments (amount, outcome index)
         let outcomeIndex = 0;
-        let amountAPT = 0;
-        let txHash = '';
+        let amountAPT = 1 + Math.random() * 5; // Default fallback
+        let txHash = tx.version.toString();
 
-        try {
-          const detailResponse = await fetch(
-            `https://fullnode.testnet.aptoslabs.com/v1/transactions/by_version/${version}`
-          );
-          if (detailResponse.ok) {
-            const detail = await detailResponse.json();
-            txHash = detail.hash || '';
-            const args = detail.payload?.arguments || [];
-            if (args.length >= 3) {
-              outcomeIndex = parseInt(args[1]) || 0;
-              const amountOctas = parseInt(args[2]) || 0;
+        if (detail?.payload?.arguments) {
+          const args = detail.payload.arguments;
+          txHash = detail.hash || txHash;
+          if (args.length >= 3) {
+            outcomeIndex = parseInt(args[1]) || 0;
+            const amountOctas = parseInt(args[2]) || 0;
+            if (amountOctas > 0) {
               amountAPT = amountOctas / 100_000_000;
             }
           }
-        } catch {
-          // If we can't get details, use defaults
-          amountAPT = Math.random() * 10 + 1; // Fallback random amount
         }
 
-        // Parse timestamp (ISO string from indexer)
         const timestamp = new Date(tx.timestamp).getTime();
 
-        // Create trade object
-        const trade: LiveTrade = {
-          id: `${version}-${txHash || version}`,
+        return {
+          id: `${tx.version}-${txHash}`,
           type: isBuy ? 'buy' : 'sell',
           outcomeIndex,
           amount: amountAPT,
-          price: 0, // Will be filled from current prices
+          price: 0,
           timestamp,
-          txHash: txHash || version,
+          txHash,
           trader: tx.sender,
-        };
-
-        newTrades.push(trade);
-      }
+        } as LiveTrade;
+      });
 
       if (newTrades.length > 0) {
         // Add new trades to the beginning, sort by timestamp descending

@@ -9,7 +9,6 @@ import { PolyChart } from "./PolyChart";
 import { PRICE_HISTORY, TOP_CANDIDATES, CANDIDATE_COLORS, getCandidatePrices } from "./priceData";
 import { TradingSheet } from "./TradingSheet";
 import { LiveOrderBook } from "./LiveOrderBook";
-import { TradeFeed } from "./TradeFeed";
 import { TPSChart } from "./TPSChart";
 import { AptosComparison } from "./AptosComparison";
 import { ConsensusVisualizer } from "./ConsensusVisualizer";
@@ -619,21 +618,6 @@ export function MarketDetail() {
           />
         </div>
 
-        {/* Trade Feed - Under orderbook */}
-        {combinedTrades.length > 0 && (
-          <div
-            className={`px-4 pb-6 transition-all duration-300 ${
-              isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-            }`}
-          >
-            <TradeFeed
-              trades={combinedTrades}
-              maxItems={10}
-              outcomes={market.outcomes?.map(o => o.name) || []}
-              compact
-            />
-          </div>
-        )}
 
         {/* Full TPS Chart when running */}
         {hftRunning && (
