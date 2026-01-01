@@ -1179,7 +1179,7 @@ export function PortfolioPage() {
                     <div>
                       <p className="text-[#8297a3] text-sm">Total Position Value</p>
                       <p className="text-white text-2xl font-bold">
-                        ${positions.reduce((sum, p) => sum + p.currentValue, 0).toFixed(2)}
+                        {positions.reduce((sum, p) => sum + p.currentValue, 0).toFixed(2)} APT
                       </p>
                     </div>
                     <div className="text-right">
@@ -1222,7 +1222,7 @@ export function PortfolioPage() {
                         <PositionSparkline data={position.priceHistory} isPositive={position.pnl >= 0} />
                         <div className="text-right">
                           <p className="text-white font-semibold">
-                            ${position.currentValue.toFixed(2)}
+                            {position.currentValue.toFixed(2)} APT
                           </p>
                           <p className={`text-sm font-medium ${position.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {position.pnl >= 0 ? '+' : ''}{position.pnl.toFixed(2)} APT
