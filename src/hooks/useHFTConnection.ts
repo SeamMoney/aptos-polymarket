@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-const HFT_SERVER_URL = 'http://localhost:3001';
-const HFT_WS_URL = 'ws://localhost:3001';
+// Configurable URLs - use environment variables for production (VM connection)
+const HFT_WS_URL = import.meta.env.VITE_HFT_WS_URL || 'ws://localhost:3001';
+const HFT_SERVER_URL = HFT_WS_URL.replace('ws://', 'http://').replace('wss://', 'https://');
+
+// Trade batching config - batch updates every 100ms to handle high TPS
+const TRADE_BATCH_INTERVAL_MS = 100;
 
 export interface Trade {
   id: string;
@@ -100,6 +104,10 @@ export function useHFTConnection() {
   const lastTpsRef = useRef(0);
   const tpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Trade batching for high TPS - buffer trades and flush every 100ms
+  const tradeBufferRef = useRef<Trade[]>([]);
+  const batchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Connect to WebSocket with exponential backoff
   const connectWebSocket = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN ||
@@ -123,7 +131,9 @@ export function useHFTConnection() {
 
           if (message.type === 'trade') {
             const trade = message.data as Trade;
-            setTrades(prev => [trade, ...prev].slice(0, 100));
+            // Buffer trades instead of immediate state update (high TPS optimization)
+            tradeBufferRef.current.push(trade);
+            // Still update other state immediately (stats, market info, etc.)
             setStats(message.stats);
             if (message.market) setMarketInfo(message.market);
             if (message.position) setPosition(message.position);
@@ -195,6 +205,24 @@ export function useHFTConnection() {
       }
     };
   }, [connectWebSocket]);
+
+  // Trade batching - flush buffer every 100ms (10 updates/sec max for smooth UI at high TPS)
+  useEffect(() => {
+    batchIntervalRef.current = setInterval(() => {
+      if (tradeBufferRef.current.length > 0) {
+        const bufferedTrades = tradeBufferRef.current;
+        tradeBufferRef.current = [];
+        setTrades(prev => [...bufferedTrades, ...prev].slice(0, 100));
+      }
+    }, TRADE_BATCH_INTERVAL_MS);
+
+    return () => {
+      if (batchIntervalRef.current) {
+        clearInterval(batchIntervalRef.current);
+        batchIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   // Track TPS history
   useEffect(() => {

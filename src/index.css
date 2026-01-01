@@ -645,6 +645,18 @@ body {
   }
 }
 
+/* High-performance trade stream animation (GPU accelerated) */
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 /* Disable animations when user prefers reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .trade-row {
