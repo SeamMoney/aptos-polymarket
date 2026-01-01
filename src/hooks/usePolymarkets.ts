@@ -197,7 +197,8 @@ export function usePolymarkets(): PolymarketsHook {
         name: outcome.label,
         image: getCandidateImage(outcome.label), // Add candidate face image
         price: outcome.price / 100, // Normalize to 0-1
-        volume: formatVolume(market.totalCollateral / market.outcomeCount),
+        // Per-outcome volume not tracked on-chain, show dash
+        volume: "—",
         color: OUTCOME_COLORS[i % OUTCOME_COLORS.length],
       }));
 
