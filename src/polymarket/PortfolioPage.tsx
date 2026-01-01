@@ -4,9 +4,6 @@ import { ArrowUp, Search, Eye, EyeOff, RefreshCw, ExternalLink, TrendingUp, Tren
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import { PolyHeader } from "./PolyHeader";
-import { CategoryTabs } from "./CategoryTabs";
-import { categories } from "./mockData";
-import type { Category } from "./types";
 
 // Initialize Aptos client
 const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
@@ -570,7 +567,6 @@ function ProfitChart({
 // Main Portfolio Page Component
 export function PortfolioPage() {
   const { account, connected } = useWallet();
-  const [selectedCategory, setSelectedCategory] = useState<Category>("All");
   const [activeTab, setActiveTab] = useState<"positions" | "orders" | "history">("positions");
   const [timeRange, setTimeRange] = useState("1M");
   const [showBalance, setShowBalance] = useState(true);
@@ -931,12 +927,6 @@ export function PortfolioPage() {
       className="min-h-screen bg-poly-bg pb-24"
     >
       <PolyHeader />
-
-      <CategoryTabs
-        categories={categories}
-        selectedCategory={selectedCategory}
-        onSelectCategory={setSelectedCategory}
-      />
 
       <div className="px-4 py-4">
         {/* Portfolio Card */}
