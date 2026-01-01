@@ -1,85 +1,110 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, HelpCircle, RefreshCw, Trash2 } from 'lucide-react';
+import { ChevronDown, HelpCircle, ArrowUp, ArrowDown, ExternalLink } from 'lucide-react';
 import type { Trade } from '../hooks/useHFTConnection';
 
 interface LiveOrderBookProps {
-  yesPrice: number;
+  yesPrice: number; // Price in percent (e.g., 55 for 55%)
   noPrice: number;
   yesReserve: number;
   noReserve: number;
   trades?: Trade[];
   isConnected?: boolean;
   isMultiOutcome?: boolean;
-  tvl?: number; // Total value locked in market
+  tvl?: number;
+  outcomes?: string[];
 }
 
-interface LiquidityLevel {
-  amount: number;
-  tokensOut: number;
-  avgPrice: number;
-  slippage: number;
-  side: 'buy' | 'sell';
+interface OrderLevel {
+  price: number;      // Price in cents
+  size: number;       // Size in APT
+  total: number;      // Cumulative size
+  slippage: number;   // Slippage percentage
 }
 
-// CPMM formula: tokens_out = reserve_out * amount_in / (reserve_in + amount_in)
-function calculateBuyOutput(baseReserve: number, outcomeReserve: number, amountIn: number): number {
-  if (baseReserve <= 0 || outcomeReserve <= 0) return 0;
-  return (outcomeReserve * amountIn) / (baseReserve + amountIn);
-}
+const OUTCOME_COLORS = [
+  '#2E5CFF', // Blue - JD Vance
+  '#00C389', // Green - Marco Rubio
+  '#FF6B35', // Orange - Donald Trump
+  '#9747FF', // Purple - Ron DeSantis
+  '#F5A623', // Yellow - Tucker Carlson
+  '#E5534B', // Red - Other
+];
 
 export function LiveOrderBook({
   yesPrice,
-  noPrice,
+  noPrice: _noPrice,
   yesReserve,
   noReserve,
   trades = [],
   isConnected = false,
   isMultiOutcome: _isMultiOutcome = false,
   tvl = 0,
+  outcomes = [],
 }: LiveOrderBookProps) {
   const [expanded, setExpanded] = useState(true);
-  const [tradeTab, setTradeTab] = useState<'yes' | 'no'>('yes');
+  const [activeTab, setActiveTab] = useState<'book' | 'trades'>('book');
   const [animatedTrades, setAnimatedTrades] = useState<Set<string>>(new Set());
 
-  // Calculate liquidity depth from AMM reserves or price
-  const { buyLevels, sellLevels, maxAmount } = useMemo(() => {
-    // For multi-outcome markets, use the actual price to calculate depth
-    // spotPrice is in cents (e.g., 20 for 20%)
-    const spotPrice = yesPrice;
+  // Calculate order book levels - FIXED CALCULATIONS
+  const { asks, bids, midPrice, spread } = useMemo(() => {
+    // The yesPrice is the probability in percent (e.g., 49 for 49%)
+    // In a prediction market, price = probability
+    const spotPriceCents = yesPrice; // 49 means 49¢
 
-    // Estimate reserves from TVL and price if not provided
-    // In a CPMM: price = baseReserve / (baseReserve + outcomeReserve)
-    // If TVL = 6000 APT and we have 6 outcomes, each outcome has ~1000 APT base
-    const estimatedBaseReserve = tvl > 0 ? tvl / 6 : 1000;
+    // Estimate reserves for slippage calculations
+    const estimatedTvl = tvl > 0 ? tvl : 5000;
+    const baseReserve = yesReserve > 0 ? yesReserve : estimatedTvl / 2;
+    const outcomeReserve = noReserve > 0 ? noReserve : estimatedTvl / 2;
 
-    // From price = base / (base + outcome): outcome = base * (1 - price/100) / (price/100)
-    const priceRatio = Math.max(0.01, spotPrice / 100); // Avoid division by zero
-    const estimatedOutcomeReserve = estimatedBaseReserve * (1 - priceRatio) / priceRatio;
+    // Trade sizes for the book
+    const sizes = [0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100];
 
-    const baseReserve = yesReserve > 0 ? yesReserve : estimatedBaseReserve;
-    const outcomeReserve = noReserve > 0 ? noReserve : estimatedOutcomeReserve;
+    // Calculate slippage for each size
+    // Slippage = how much worse the price gets for larger orders
+    const calculateSlippage = (size: number, _isBuy: boolean) => {
+      // Simple model: slippage increases with order size relative to liquidity
+      const impactRatio = size / (baseReserve + outcomeReserve);
+      const baseSlippage = impactRatio * 100 * 2; // 2x multiplier for visibility
+      return Math.min(baseSlippage, 50); // Cap at 50%
+    };
 
-    const tradeSizes = [0.1, 0.5, 1, 2, 5, 10, 25, 50];
+    // BIDS (buy orders) - slightly below spot, green side
+    let cumBidSize = 0;
+    const bids: OrderLevel[] = sizes.map(size => {
+      const slippage = calculateSlippage(size, true);
+      // Price worsens (goes up) for buyers as size increases
+      const price = spotPriceCents * (1 + slippage / 100);
+      cumBidSize += size;
+      return {
+        price: Math.min(99, price),
+        size,
+        total: cumBidSize,
+        slippage,
+      };
+    });
 
-    const buyLevels: LiquidityLevel[] = tradeSizes.map(amount => {
-      const tokensOut = calculateBuyOutput(baseReserve, outcomeReserve, amount);
-      // Price per token in cents
-      const avgPrice = tokensOut > 0 ? (amount / tokensOut) * 100 : spotPrice;
-      const slippage = spotPrice > 0 ? ((avgPrice - spotPrice) / spotPrice) * 100 : 0;
-      return { amount, tokensOut, avgPrice, slippage: Math.abs(slippage), side: 'buy' as const };
-    }).filter(l => l.tokensOut > 0);
+    // ASKS (sell orders) - slightly above spot, red side
+    let cumAskSize = 0;
+    const asks: OrderLevel[] = sizes.map(size => {
+      const slippage = calculateSlippage(size, false);
+      // Price worsens (goes down) for sellers as size increases
+      const price = spotPriceCents * (1 - slippage / 100);
+      cumAskSize += size;
+      return {
+        price: Math.max(1, price),
+        size,
+        total: cumAskSize,
+        slippage,
+      };
+    });
 
-    const sellLevels: LiquidityLevel[] = tradeSizes.map(amount => {
-      const tokensOut = calculateBuyOutput(outcomeReserve, baseReserve, amount);
-      // When selling tokens, you get APT out
-      const avgPrice = tokensOut > 0 ? (tokensOut / amount) * 100 : spotPrice;
-      const slippage = spotPrice > 0 ? ((spotPrice - avgPrice) / spotPrice) * 100 : 0;
-      return { amount, tokensOut, avgPrice, slippage: Math.abs(slippage), side: 'sell' as const };
-    }).filter(l => l.tokensOut > 0);
+    // Calculate spread
+    const bestBid = bids[0]?.price || spotPriceCents;
+    const bestAsk = asks[0]?.price || spotPriceCents;
+    const spread = Math.abs(bestBid - bestAsk);
 
-    const maxAmount = Math.max(...buyLevels.map(l => l.amount), ...sellLevels.map(l => l.amount));
-    return { buyLevels, sellLevels, maxAmount };
+    return { asks: asks.reverse(), bids, midPrice: spotPriceCents, spread };
   }, [yesPrice, yesReserve, noReserve, tvl]);
 
   // Animate recent trades
@@ -99,12 +124,48 @@ export function LiveOrderBook({
     }
   }, [trades]);
 
-  const formatAmount = (amount: number) => amount >= 10 ? amount.toFixed(0) : amount >= 1 ? amount.toFixed(1) : amount.toFixed(2);
-  const formatTokens = (tokens: number) => tokens >= 100 ? tokens.toFixed(0) : tokens >= 10 ? tokens.toFixed(1) : tokens.toFixed(2);
+  const formatPrice = (price: number) => price.toFixed(1);
+  const formatSize = (size: number) => size >= 10 ? size.toFixed(0) : size >= 1 ? size.toFixed(1) : size.toFixed(2);
   const displayTvl = tvl > 0 ? tvl : yesReserve + noReserve;
 
+  // Max total for depth visualization
+  const maxTotal = Math.max(
+    ...asks.map(a => a.total),
+    ...bids.map(b => b.total),
+    1
+  );
+
+  // Format trade amount
+  const formatTradeAmount = (amount: number) => {
+    if (amount >= 1) return amount.toFixed(2);
+    return amount.toFixed(4);
+  };
+
+  // Format trade time
+  const formatTime = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  // Get outcome color
+  const getOutcomeColor = (outcomeIndex: number | undefined) => {
+    if (outcomeIndex === undefined) return '#8297a3';
+    return OUTCOME_COLORS[outcomeIndex % OUTCOME_COLORS.length];
+  };
+
+  // Get outcome name
+  const getOutcomeName = (outcomeIndex: number | undefined) => {
+    if (outcomeIndex === undefined) return 'Unknown';
+    return outcomes[outcomeIndex] || `Outcome ${outcomeIndex + 1}`;
+  };
+
   return (
-    <div className="rounded-2xl border-2 border-[#2c3f4f] overflow-hidden">
+    <div className="rounded-2xl border-2 border-[#2c3f4f] overflow-hidden bg-[#1c2b3a]">
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
@@ -130,164 +191,226 @@ export function LiveOrderBook({
 
       {expanded && (
         <>
-          {/* Trade tabs */}
+          {/* Tabs */}
           <div className="flex items-center px-4 pb-3 border-b-2 border-[#2c3f4f]">
             <div className="flex gap-6 flex-1">
               <button
-                onClick={() => setTradeTab('yes')}
-                className={`relative pb-2 transition-colors ${tradeTab === 'yes' ? 'text-white' : 'text-[#6b7a8a]'}`}
+                onClick={() => setActiveTab('book')}
+                className={`relative pb-2 transition-colors ${activeTab === 'book' ? 'text-white' : 'text-[#6b7a8a]'}`}
               >
-                <span className={`text-base ${tradeTab === 'yes' ? 'font-bold' : 'font-medium'}`}>Trade Yes</span>
-                {tradeTab === 'yes' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full" />}
+                <span className={`text-base ${activeTab === 'book' ? 'font-bold' : 'font-medium'}`}>Order Book</span>
+                {activeTab === 'book' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full" />}
               </button>
               <button
-                onClick={() => setTradeTab('no')}
-                className={`relative pb-2 transition-colors ${tradeTab === 'no' ? 'text-white' : 'text-[#6b7a8a]'}`}
+                onClick={() => setActiveTab('trades')}
+                className={`relative pb-2 transition-colors ${activeTab === 'trades' ? 'text-white' : 'text-[#6b7a8a]'}`}
               >
-                <span className={`text-base ${tradeTab === 'no' ? 'font-bold' : 'font-medium'}`}>Trade No</span>
-                {tradeTab === 'no' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full" />}
-              </button>
-            </div>
-            <div className="flex items-center gap-3">
-              <button className="p-1.5 hover:bg-[#2a3d4e] rounded-lg transition-colors">
-                <Trash2 size={20} color="#6b7a8a" strokeWidth={2.5} />
-              </button>
-              <button className="p-1.5 hover:bg-[#2a3d4e] rounded-lg transition-colors">
-                <RefreshCw size={20} color="#6b7a8a" strokeWidth={2.5} />
+                <span className={`text-base ${activeTab === 'trades' ? 'font-bold' : 'font-medium'}`}>Trade Stream</span>
+                {activeTab === 'trades' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full" />}
+                {trades.length > 0 && (
+                  <span className="absolute -top-1 -right-2 w-2 h-2 bg-[#22c55e] rounded-full animate-pulse" />
+                )}
               </button>
             </div>
           </div>
 
-          {/* Column headers */}
-          <div className="grid grid-cols-4 text-xs text-[#6b7a8a] px-4 py-3 border-b-2 border-[#2c3f4f]">
-            <span className="font-semibold uppercase tracking-wider">Size (APT)</span>
-            <span className="text-right font-semibold uppercase tracking-wider">Tokens</span>
-            <span className="text-right font-semibold uppercase tracking-wider">Price</span>
-            <span className="text-right font-semibold uppercase tracking-wider">Slippage</span>
-          </div>
+          {activeTab === 'book' ? (
+            <>
+              {/* Column headers */}
+              <div className="grid grid-cols-4 text-xs text-[#6b7a8a] px-4 py-2 border-b border-[#2c3f4f]/50 bg-[#1c2b3a]">
+                <span className="font-semibold uppercase tracking-wider">Price</span>
+                <span className="text-right font-semibold uppercase tracking-wider">Size</span>
+                <span className="text-right font-semibold uppercase tracking-wider">Total</span>
+                <span className="text-right font-semibold uppercase tracking-wider">Slip</span>
+              </div>
 
-          {/* Asks (Sells) */}
-          <div className="max-h-[200px] overflow-y-auto">
-            <div className="px-2 py-1">
-              <span className="text-[10px] text-red-400/70 font-medium px-2">SELL {tradeTab.toUpperCase()}</span>
-            </div>
-            <AnimatePresence mode="popLayout">
-              {sellLevels.slice().reverse().map((level) => {
-                const depthPercent = (level.amount / maxAmount) * 100;
-                const slippageColor = level.slippage < 1 ? 'text-[#8b98a5]' : level.slippage < 5 ? 'text-yellow-400' : 'text-red-400';
-                return (
-                  <motion.div
-                    key={`sell-${level.amount}`}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="relative grid grid-cols-4 text-sm py-2 px-4 hover:bg-red-500/10 transition-colors cursor-pointer"
-                  >
+              {/* Single scrollable order book */}
+              <div className="max-h-[400px] overflow-y-auto">
+                {/* Asks (Sell side) - red, sorted high to low */}
+                <div className="bg-[#1c2b3a]/80 px-2 py-1">
+                  <span className="text-[10px] text-red-400/80 font-semibold px-2 uppercase tracking-wider">Asks (Sell)</span>
+                </div>
+                {asks.map((level, idx) => {
+                  const depthPercent = (level.total / maxTotal) * 100;
+                  const slippageColor = level.slippage < 1 ? 'text-[#6b7a8a]' : level.slippage < 5 ? 'text-yellow-400' : 'text-red-400';
+                  return (
                     <div
-                      className="absolute right-0 top-0 bottom-0 bg-red-500/15 pointer-events-none"
-                      style={{ width: `${Math.min(depthPercent, 100)}%` }}
-                    />
-                    <span className="relative z-10 text-[#ef4444] font-medium tabular-nums">{formatAmount(level.amount)}</span>
-                    <span className="relative z-10 text-right text-[#8b98a5] tabular-nums">{formatTokens(level.tokensOut)}</span>
-                    <span className="relative z-10 text-right text-[#8b98a5] tabular-nums">{level.avgPrice.toFixed(1)}¢</span>
-                    <span className={`relative z-10 text-right font-mono ${slippageColor} tabular-nums`}>
-                      {level.slippage < 0.1 ? '<0.1%' : `${level.slippage.toFixed(1)}%`}
-                    </span>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-          </div>
-
-          {/* Spread / Mid Price */}
-          <div className="flex items-center justify-between px-4 py-3 border-y-2 border-[#2c3f4f] bg-[#2a3d4e]/30">
-            <div className="flex flex-col">
-              <span className="text-xl font-bold text-[#22c55e] tabular-nums">{yesPrice.toFixed(1)}¢</span>
-              <span className="text-[10px] text-[#6b7a8a]">YES</span>
-            </div>
-            <div className="text-center">
-              <span className="text-xs text-[#6b7a8a]">Spread: 1¢</span>
-              <div className="text-[10px] text-[#6b7a8a]">TVL: {displayTvl.toLocaleString('en-US', { maximumFractionDigits: 2 })} APT</div>
-            </div>
-            <div className="flex flex-col items-end">
-              <span className="text-xl font-bold text-[#ef4444] tabular-nums">{noPrice.toFixed(1)}¢</span>
-              <span className="text-[10px] text-[#6b7a8a]">NO</span>
-            </div>
-          </div>
-
-          {/* Bids (Buys) */}
-          <div className="max-h-[200px] overflow-y-auto">
-            <div className="px-2 py-1">
-              <span className="text-[10px] text-[#22c55e]/70 font-medium px-2">BUY {tradeTab.toUpperCase()}</span>
-            </div>
-            <AnimatePresence mode="popLayout">
-              {buyLevels.map((level) => {
-                const depthPercent = (level.amount / maxAmount) * 100;
-                const slippageColor = level.slippage < 1 ? 'text-[#8b98a5]' : level.slippage < 5 ? 'text-yellow-400' : 'text-red-400';
-                return (
-                  <motion.div
-                    key={`buy-${level.amount}`}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="relative grid grid-cols-4 text-sm py-2 px-4 hover:bg-green-500/10 transition-colors cursor-pointer"
-                  >
-                    <div
-                      className="absolute left-0 top-0 bottom-0 bg-[#22c55e]/15 pointer-events-none"
-                      style={{ width: `${Math.min(depthPercent, 100)}%` }}
-                    />
-                    <span className="relative z-10 text-[#22c55e] font-medium tabular-nums">{formatAmount(level.amount)}</span>
-                    <span className="relative z-10 text-right text-[#8b98a5] tabular-nums">{formatTokens(level.tokensOut)}</span>
-                    <span className="relative z-10 text-right text-[#8b98a5] tabular-nums">{level.avgPrice.toFixed(1)}¢</span>
-                    <span className={`relative z-10 text-right font-mono ${slippageColor} tabular-nums`}>
-                      {level.slippage < 0.1 ? '<0.1%' : `${level.slippage.toFixed(1)}%`}
-                    </span>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-          </div>
-
-          {/* Recent Trades */}
-          {trades.length > 0 && (
-            <div className="border-t-2 border-[#2c3f4f] px-4 py-3">
-              <div className="text-xs text-[#6b7a8a] mb-2">Recent Trades</div>
-              <div className="space-y-1">
-                <AnimatePresence mode="popLayout">
-                  {trades.slice(0, 5).map((trade) => (
-                    <motion.div
-                      key={trade.id}
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{
-                        opacity: 1,
-                        y: 0,
-                        backgroundColor: animatedTrades.has(trade.id)
-                          ? trade.actionDisplay.includes('BUY') ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'
-                          : 'transparent'
-                      }}
-                      exit={{ opacity: 0 }}
-                      className="flex items-center justify-between text-xs py-1.5 px-2 rounded"
+                      key={`ask-${idx}`}
+                      className="relative grid grid-cols-4 text-sm py-1.5 px-4 hover:bg-red-500/10 transition-colors cursor-pointer"
                     >
-                      <div className="flex items-center gap-2">
-                        <span className={trade.actionDisplay.includes('BUY') ? 'text-[#22c55e]' : 'text-[#ef4444]'}>
-                          {trade.actionDisplay.includes('BUY') ? '↑' : '↓'}
-                        </span>
-                        <span className="text-[#8297a3] font-medium">{trade.bot}</span>
-                        <span className={trade.actionDisplay.includes('BUY') ? 'text-[#22c55e]' : 'text-[#ef4444]'}>
-                          {trade.actionDisplay}
-                        </span>
-                      </div>
-                      <span className="text-white font-mono tabular-nums">{trade.amount.toFixed(4)} APT</span>
-                    </motion.div>
-                  ))}
+                      <div
+                        className="absolute right-0 top-0 bottom-0 bg-red-500/15 pointer-events-none transition-all duration-300"
+                        style={{ width: `${Math.min(depthPercent, 100)}%` }}
+                      />
+                      <span className="relative z-10 text-red-400 font-medium tabular-nums">{formatPrice(level.price)}¢</span>
+                      <span className="relative z-10 text-right text-[#8b98a5] tabular-nums">{formatSize(level.size)}</span>
+                      <span className="relative z-10 text-right text-[#8b98a5] tabular-nums">{formatSize(level.total)}</span>
+                      <span className={`relative z-10 text-right font-mono text-xs ${slippageColor} tabular-nums`}>
+                        {level.slippage < 0.1 ? '—' : `${level.slippage.toFixed(1)}%`}
+                      </span>
+                    </div>
+                  );
+                })}
+
+                {/* Spread / Mid Price - sticky in middle */}
+                <div className="flex items-center justify-between px-4 py-3 border-y-2 border-[#2c3f4f] bg-[#2a3d4e]/60">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl font-bold text-white tabular-nums">{midPrice.toFixed(1)}¢</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs text-[#22c55e]">Best Bid</span>
+                      <span className="text-xs text-red-400">Best Ask</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-[#6b7a8a]">Spread: {spread.toFixed(1)}¢</div>
+                    <div className="text-sm font-medium text-white">{displayTvl.toLocaleString('en-US', { maximumFractionDigits: 0 })} APT</div>
+                  </div>
+                </div>
+
+                {/* Bids (Buy side) - green */}
+                <div className="bg-[#1c2b3a]/80 px-2 py-1">
+                  <span className="text-[10px] text-[#22c55e]/80 font-semibold px-2 uppercase tracking-wider">Bids (Buy)</span>
+                </div>
+                {bids.map((level, idx) => {
+                  const depthPercent = (level.total / maxTotal) * 100;
+                  const slippageColor = level.slippage < 1 ? 'text-[#6b7a8a]' : level.slippage < 5 ? 'text-yellow-400' : 'text-red-400';
+                  return (
+                    <div
+                      key={`bid-${idx}`}
+                      className="relative grid grid-cols-4 text-sm py-1.5 px-4 hover:bg-green-500/10 transition-colors cursor-pointer"
+                    >
+                      <div
+                        className="absolute left-0 top-0 bottom-0 bg-[#22c55e]/15 pointer-events-none transition-all duration-300"
+                        style={{ width: `${Math.min(depthPercent, 100)}%` }}
+                      />
+                      <span className="relative z-10 text-[#22c55e] font-medium tabular-nums">{formatPrice(level.price)}¢</span>
+                      <span className="relative z-10 text-right text-[#8b98a5] tabular-nums">{formatSize(level.size)}</span>
+                      <span className="relative z-10 text-right text-[#8b98a5] tabular-nums">{formatSize(level.total)}</span>
+                      <span className={`relative z-10 text-right font-mono text-xs ${slippageColor} tabular-nums`}>
+                        {level.slippage < 0.1 ? '—' : `${level.slippage.toFixed(1)}%`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Footer */}
+              <div className="px-4 py-2 border-t-2 border-[#2c3f4f] flex items-center justify-between text-xs text-[#6b7a8a]">
+                <span>CPMM: x × y = k</span>
+                <span>Fee: 0.3%</span>
+              </div>
+            </>
+          ) : (
+            /* Trade Stream Tab */
+            <>
+              {/* Trade stream header */}
+              <div className="grid grid-cols-5 text-xs text-[#6b7a8a] px-4 py-2 border-b border-[#2c3f4f]/50 bg-[#1c2b3a]">
+                <span className="font-semibold uppercase tracking-wider">Time</span>
+                <span className="font-semibold uppercase tracking-wider">Side</span>
+                <span className="font-semibold uppercase tracking-wider">Outcome</span>
+                <span className="text-right font-semibold uppercase tracking-wider">Amount</span>
+                <span className="text-right font-semibold uppercase tracking-wider">Tx</span>
+              </div>
+
+              {/* Trade stream list */}
+              <div className="max-h-[400px] overflow-y-auto">
+                <AnimatePresence mode="popLayout">
+                  {trades.length === 0 ? (
+                    <div className="px-4 py-12 text-center text-[#6b7a8a]">
+                      <div className="text-lg mb-2">No trades yet</div>
+                      <div className="text-xs">Trades will appear here in real-time</div>
+                    </div>
+                  ) : (
+                    trades.slice(0, 50).map((trade, index) => {
+                      const isBuy = trade.action?.includes('buy') || trade.actionDisplay?.includes('BUY');
+                      const isAnimated = animatedTrades.has(trade.id);
+
+                      return (
+                        <motion.div
+                          key={trade.id}
+                          initial={{ opacity: 0, x: -20, height: 0 }}
+                          animate={{
+                            opacity: 1,
+                            x: 0,
+                            height: 'auto',
+                            backgroundColor: isAnimated
+                              ? (isBuy ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)')
+                              : 'transparent'
+                          }}
+                          exit={{ opacity: 0, x: 20, height: 0 }}
+                          transition={{
+                            duration: 0.2,
+                            delay: index * 0.02
+                          }}
+                          className={`grid grid-cols-5 text-sm py-2 px-4 border-b border-[#2c3f4f]/30 hover:bg-[#2a3d4e]/30 transition-colors`}
+                        >
+                          {/* Time */}
+                          <span className="text-[#8b98a5] tabular-nums text-xs">
+                            {formatTime(trade.timestamp)}
+                          </span>
+
+                          {/* Side indicator */}
+                          <div className="flex items-center gap-1">
+                            <div className={`w-5 h-5 rounded flex items-center justify-center ${
+                              isBuy ? 'bg-[#22c55e]/20' : 'bg-red-500/20'
+                            }`}>
+                              {isBuy ? (
+                                <ArrowUp size={12} className="text-[#22c55e]" />
+                              ) : (
+                                <ArrowDown size={12} className="text-red-400" />
+                              )}
+                            </div>
+                            <span className={`text-xs font-medium ${isBuy ? 'text-[#22c55e]' : 'text-red-400'}`}>
+                              {isBuy ? 'BUY' : 'SELL'}
+                            </span>
+                          </div>
+
+                          {/* Outcome */}
+                          <span
+                            className="font-medium text-xs truncate"
+                            style={{ color: getOutcomeColor(trade.outcome) }}
+                          >
+                            {getOutcomeName(trade.outcome)}
+                          </span>
+
+                          {/* Amount */}
+                          <span className="text-right text-white font-medium tabular-nums">
+                            {formatTradeAmount(trade.amount)} APT
+                          </span>
+
+                          {/* Tx link */}
+                          <div className="text-right">
+                            {trade.txHash ? (
+                              <a
+                                href={`https://explorer.aptoslabs.com/txn/${trade.txHash}?network=testnet`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[#5BA3D9] hover:underline text-xs inline-flex items-center gap-1"
+                              >
+                                {trade.txHash.slice(0, 6)}...
+                                <ExternalLink size={10} />
+                              </a>
+                            ) : (
+                              <span className="text-[#6b7a8a] text-xs">—</span>
+                            )}
+                          </div>
+                        </motion.div>
+                      );
+                    })
+                  )}
                 </AnimatePresence>
               </div>
-            </div>
-          )}
 
-          {/* AMM Info Footer */}
-          <div className="px-4 py-2 border-t-2 border-[#2c3f4f] flex items-center justify-between text-xs text-[#6b7a8a]">
-            <span>CPMM: x × y = k</span>
-            <span>Fee: 0.3%</span>
-          </div>
+              {/* Trade stream footer */}
+              <div className="px-4 py-2 border-t-2 border-[#2c3f4f] flex items-center justify-between text-xs text-[#6b7a8a]">
+                <span>{trades.length} total trades</span>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 bg-[#22c55e] rounded-full animate-pulse" />
+                  <span>Live</span>
+                </div>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

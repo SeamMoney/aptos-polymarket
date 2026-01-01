@@ -160,12 +160,109 @@ export const PRICE_HISTORY: number[][] = [
   [1767186007, 0.535, 0.091, 0.048, 0.0425, 0.0285, 0.0245],
 ];
 
-// Get price history for a specific candidate
+// Seeded random for consistent noise
+const seededRandom = (seed: number) => {
+  const x = Math.sin(seed * 12345.6789) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+// Add realistic volatility to smooth price data - creates dynamic trading chart appearance
+function addVolatility(prices: number[], candidateSeed: number): number[] {
+  const result: number[] = [];
+  let currentPrice = prices[0];
+
+  // Pre-generate "news event" indices where we'll have larger moves (more frequent)
+  const newsEvents: Set<number> = new Set();
+  for (let e = 0; e < 20; e++) {
+    const eventIdx = Math.floor(seededRandom(candidateSeed * 500 + e) * prices.length);
+    newsEvents.add(eventIdx);
+  }
+
+  // Also add some "momentum periods" where price trends in one direction
+  const momentumPeriods: Map<number, number> = new Map(); // index -> direction (-1 or 1)
+  for (let m = 0; m < 12; m++) {
+    const startIdx = Math.floor(seededRandom(candidateSeed * 777 + m) * prices.length);
+    const dir = seededRandom(candidateSeed * 888 + m) > 0.5 ? 1 : -1;
+    for (let j = 0; j < 5; j++) {
+      if (startIdx + j < prices.length) {
+        momentumPeriods.set(startIdx + j, dir);
+      }
+    }
+  }
+
+  for (let i = 0; i < prices.length; i++) {
+    const targetPrice = prices[i];
+    const seed = candidateSeed * 1000 + i;
+
+    // Calculate how far we need to move toward target
+    const distanceToTarget = targetPrice - currentPrice;
+
+    // MUCH more aggressive volatility - 8-15% swings relative to price
+    const baseVolatility = Math.min(0.12, Math.max(0.04, Math.abs(targetPrice) * 0.25));
+
+    // Add extra volatility for smaller candidates (more dramatic percentage swings)
+    const volatilityBoost = targetPrice < 0.1 ? 2.5 : targetPrice < 0.3 ? 1.5 : 1.0;
+    const volatility = baseVolatility * volatilityBoost;
+
+    // Random walk component - more dramatic
+    const randomJump = (seededRandom(seed) - 0.5) * volatility * 1.5;
+
+    // Weaker drift toward target - let price wander more
+    const drift = distanceToTarget * 0.05;
+
+    // Momentum component - prices trend in runs
+    let momentum = 0;
+    if (momentumPeriods.has(i)) {
+      momentum = momentumPeriods.get(i)! * volatility * 0.6;
+    }
+
+    // News events create BIG moves
+    let spike = 0;
+    if (newsEvents.has(i)) {
+      const spikeDir = seededRandom(seed * 17) > 0.5 ? 1 : -1;
+      spike = spikeDir * volatility * (2.0 + seededRandom(seed * 19) * 2.0);
+    } else {
+      // More frequent smaller spikes (30% of time)
+      const spikeRoll = seededRandom(seed * 7);
+      if (spikeRoll > 0.85) {
+        spike = volatility * (0.8 + seededRandom(seed * 11) * 1.2);
+      } else if (spikeRoll < 0.15) {
+        spike = -volatility * (0.8 + seededRandom(seed * 13) * 1.2);
+      }
+    }
+
+    // Higher chance to step (80%)
+    const shouldStep = seededRandom(seed * 23) > 0.2;
+    if (shouldStep) {
+      currentPrice = currentPrice + randomJump + drift + spike + momentum;
+    }
+
+    // Allow wider deviation from target for visual interest
+    const minBound = Math.max(0.005, targetPrice * 0.4);
+    const maxBound = Math.min(0.98, targetPrice * 2.0);
+    currentPrice = Math.max(minBound, Math.min(maxBound, currentPrice));
+
+    // Gently pull back to target at end
+    if (i >= prices.length - 5) {
+      const blend = (i - (prices.length - 5)) / 4;
+      currentPrice = currentPrice * (1 - blend * 0.5) + targetPrice * (blend * 0.5);
+    }
+
+    result.push(currentPrice);
+  }
+
+  return result;
+}
+
+// Get price history for a specific candidate with added volatility
 export function getCandidatePrices(candidateName: string): number[] {
   const candidateIndex = TOP_CANDIDATES.indexOf(candidateName);
   if (candidateIndex === -1) return [];
 
-  return PRICE_HISTORY.map(row => row[candidateIndex + 1]); // +1 to skip timestamp
+  const rawPrices = PRICE_HISTORY.map(row => row[candidateIndex + 1]); // +1 to skip timestamp
+
+  // Add realistic volatility to make the chart look like real trading
+  return addVolatility(rawPrices, candidateIndex + 1);
 }
 
 // Get all candidate prices at a specific index

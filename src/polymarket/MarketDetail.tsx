@@ -6,7 +6,7 @@ import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp, Wallet
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { PolyChart } from "./PolyChart";
-import { PRICE_HISTORY, TOP_CANDIDATES, CANDIDATE_COLORS } from "./priceData";
+import { PRICE_HISTORY, TOP_CANDIDATES, CANDIDATE_COLORS, getCandidatePrices } from "./priceData";
 import { TradingSheet } from "./TradingSheet";
 import { LiveOrderBook } from "./LiveOrderBook";
 import { TradeFeed } from "./TradeFeed";
@@ -17,6 +17,7 @@ import { SpeedComparison } from "./SpeedComparison";
 import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useHFTConnection } from "../hooks/useHFTConnection";
+import { useLivePrices, TIMEFRAMES } from "../hooks/useLivePrices";
 import type { Category, Outcome } from "./types";
 
 // Initialize Aptos client for TVL fetching
@@ -92,6 +93,13 @@ export function MarketDetail() {
     tpsHistory,
   } = useHFTConnection();
 
+  // Live price tracking for real-time chart updates
+  const {
+    currentPrices: _livePrices,
+    priceHistory: livePriceHistory,
+    isConnected: _pricesConnected,
+  } = useLivePrices(3000); // Poll every 3 seconds
+
   // Try to find market from on-chain data first, then fall back to mock data
   const market = useMemo(() => {
     const onChainMarket = getMarket(id || "");
@@ -125,11 +133,36 @@ export function MarketDetail() {
       TOP_CANDIDATES.includes(o.name)
     );
 
+    // For shorter timeframes with live data, use live price history
+    const useLiveData = timeRange !== 'ALL' && livePriceHistory.length > 10;
+
     if (isVPMarket && market?.outcomes) {
-      // Use real historical data
-      return TOP_CANDIDATES.map((candidateName, idx) => {
+      if (useLiveData) {
+        // Use live price data for shorter timeframes
+        const timeframeMs = TIMEFRAMES[timeRange as keyof typeof TIMEFRAMES] || Infinity;
+        const cutoff = Date.now() - timeframeMs;
+        const relevantHistory = livePriceHistory.filter(p => p.timestamp >= cutoff);
+
+        // Need at least a few points
+        if (relevantHistory.length >= 5) {
+          return TOP_CANDIDATES.map((candidateName, idx) => {
+            const outcome = market.outcomes?.find(o => o.name === candidateName);
+            const prices = relevantHistory.map(p => p.prices[idx] || 0);
+
+            return {
+              id: candidateName.toLowerCase().replace(/\s+/g, '-'),
+              name: candidateName,
+              color: CANDIDATE_COLORS[candidateName] || outcome?.color || "#666",
+              prices,
+            };
+          });
+        }
+      }
+
+      // Use historical data with volatility for ALL timeframe
+      return TOP_CANDIDATES.map((candidateName) => {
         const outcome = market.outcomes?.find(o => o.name === candidateName);
-        const prices = PRICE_HISTORY.map(row => row[idx + 1]); // +1 to skip timestamp
+        const prices = getCandidatePrices(candidateName); // Uses volatility function
 
         return {
           id: candidateName.toLowerCase().replace(/\s+/g, '-'),
@@ -140,19 +173,69 @@ export function MarketDetail() {
       });
     }
 
-    // Fallback for other markets - use simple synthetic data
+    // Fallback for other markets - use synthetic data with aggressive volatility
     if (market?.outcomes && market.outcomes.length > 0) {
-      return market.outcomes.map((outcome) => {
-        // Create simple price array that trends to current price
+      // Seeded random for consistent charts
+      const seededRandom = (seed: number) => {
+        const x = Math.sin(seed * 12345.6789) * 43758.5453;
+        return x - Math.floor(x);
+      };
+
+      return market.outcomes.map((outcome, outcomeIdx) => {
         const numPoints = 100;
         const prices: number[] = [];
         const endPrice = outcome.price;
-        const startPrice = endPrice + (Math.random() - 0.5) * 0.1;
+        const seed = outcome.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) + outcomeIdx;
+
+        // Start with variance from end price
+        let currentPrice = endPrice + (seededRandom(seed) - 0.5) * 0.2;
+
+        // More aggressive volatility - bigger swings for smaller prices
+        const baseVolatility = Math.min(0.12, Math.max(0.04, endPrice * 0.25));
+        const volatilityBoost = endPrice < 0.1 ? 2.5 : endPrice < 0.3 ? 1.5 : 1.0;
+        const volatility = baseVolatility * volatilityBoost;
+
+        // Pre-generate news events for this outcome
+        const newsIndices = new Set<number>();
+        for (let n = 0; n < 15; n++) {
+          newsIndices.add(Math.floor(seededRandom(seed * 500 + n) * numPoints));
+        }
 
         for (let i = 0; i < numPoints; i++) {
-          const t = i / (numPoints - 1);
-          const price = startPrice + (endPrice - startPrice) * t + (Math.random() - 0.5) * 0.02;
-          prices.push(Math.max(0.01, Math.min(0.99, price)));
+          const targetAtT = currentPrice + (endPrice - currentPrice) * 0.05;
+
+          // More dramatic random jumps
+          const jump = (seededRandom(seed * 1000 + i) - 0.5) * volatility * 1.5;
+
+          // More frequent spikes with bigger magnitude
+          let spike = 0;
+          if (newsIndices.has(i)) {
+            // Big news event spike
+            const spikeDir = seededRandom(seed * 17 + i) > 0.5 ? 1 : -1;
+            spike = spikeDir * volatility * (2.0 + seededRandom(seed * 19 + i) * 2.0);
+          } else {
+            const spikeRoll = seededRandom(seed * 2000 + i);
+            if (spikeRoll > 0.85) spike = volatility * 1.2;
+            else if (spikeRoll < 0.15) spike = -volatility * 1.2;
+          }
+
+          // Higher step probability (80%)
+          if (seededRandom(seed * 3000 + i) > 0.2) {
+            currentPrice = currentPrice + jump + (targetAtT - currentPrice) * 0.05 + spike;
+          }
+
+          // Allow wider price range
+          const minBound = Math.max(0.01, endPrice * 0.4);
+          const maxBound = Math.min(0.99, endPrice * 2.0);
+          currentPrice = Math.max(minBound, Math.min(maxBound, currentPrice));
+
+          // Gently blend to end price
+          if (i >= numPoints - 5) {
+            const blend = (i - (numPoints - 5)) / 4;
+            currentPrice = currentPrice * (1 - blend * 0.5) + endPrice * (blend * 0.5);
+          }
+
+          prices.push(currentPrice);
         }
         prices[numPoints - 1] = endPrice;
 
@@ -165,27 +248,78 @@ export function MarketDetail() {
       });
     }
 
-    // Handle binary markets
+    // Handle binary markets with aggressive volatility
     if (market?.yesPrice !== undefined) {
-      const numPoints = 100;
+      const seededRandom = (seed: number) => {
+        const x = Math.sin(seed * 12345.6789) * 43758.5453;
+        return x - Math.floor(x);
+      };
+
+      const generateVolatilePrices = (endPrice: number, seed: number) => {
+        const numPoints = 100;
+        const prices: number[] = [];
+        let currentPrice = endPrice + (seededRandom(seed) - 0.5) * 0.2;
+
+        // Aggressive volatility
+        const baseVolatility = Math.min(0.12, Math.max(0.04, endPrice * 0.25));
+        const volatilityBoost = endPrice < 0.1 ? 2.5 : endPrice < 0.3 ? 1.5 : 1.0;
+        const volatility = baseVolatility * volatilityBoost;
+
+        // News events
+        const newsIndices = new Set<number>();
+        for (let n = 0; n < 15; n++) {
+          newsIndices.add(Math.floor(seededRandom(seed * 500 + n) * numPoints));
+        }
+
+        for (let i = 0; i < numPoints; i++) {
+          const jump = (seededRandom(seed * 1000 + i) - 0.5) * volatility * 1.5;
+          let spike = 0;
+
+          if (newsIndices.has(i)) {
+            const spikeDir = seededRandom(seed * 17 + i) > 0.5 ? 1 : -1;
+            spike = spikeDir * volatility * (2.0 + seededRandom(seed * 19 + i) * 2.0);
+          } else {
+            const spikeRoll = seededRandom(seed * 2000 + i);
+            if (spikeRoll > 0.85) spike = volatility * 1.2;
+            else if (spikeRoll < 0.15) spike = -volatility * 1.2;
+          }
+
+          if (seededRandom(seed * 3000 + i) > 0.2) {
+            currentPrice = currentPrice + jump + (endPrice - currentPrice) * 0.05 + spike;
+          }
+
+          const minBound = Math.max(0.01, endPrice * 0.4);
+          const maxBound = Math.min(0.99, endPrice * 2.0);
+          currentPrice = Math.max(minBound, Math.min(maxBound, currentPrice));
+
+          if (i >= numPoints - 5) {
+            const blend = (i - (numPoints - 5)) / 4;
+            currentPrice = currentPrice * (1 - blend * 0.5) + endPrice * (blend * 0.5);
+          }
+          prices.push(currentPrice);
+        }
+        prices[numPoints - 1] = endPrice;
+        return prices;
+      };
+
       return [
         {
           id: "yes",
           name: "Yes",
           color: "#4abe7a",
-          prices: Array(numPoints).fill(market.yesPrice),
+          prices: generateVolatilePrices(market.yesPrice, 12345),
         },
         {
           id: "no",
           name: "No",
           color: "#e5534b",
-          prices: Array(numPoints).fill(market.noPrice || (1 - market.yesPrice)),
+          prices: generateVolatilePrices(market.noPrice || (1 - market.yesPrice), 67890),
         },
       ];
     }
 
     return [];
-  }, [market?.outcomes, market?.yesPrice, market?.noPrice]);
+  }, [market?.outcomes, market?.yesPrice, market?.noPrice, timeRange, livePriceHistory]);
 
   const handleBuyYes = (outcome: Outcome) => {
     setSelectedOutcome(outcome);
@@ -454,6 +588,7 @@ export function MarketDetail() {
             isConnected={hftConnected}
             isMultiOutcome={!!market?.outcomes}
             tvl={tvl || 0}
+            outcomes={market?.outcomes?.map(o => o.name) || []}
           />
         </div>
 
