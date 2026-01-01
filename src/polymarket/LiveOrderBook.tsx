@@ -318,8 +318,11 @@ export function LiveOrderBook({
           ) : (
             /* Trade Stream Tab */
             <>
-              {/* Trade stream header */}
-              <div className="grid grid-cols-5 text-xs text-[#6b7a8a] px-4 py-2 border-b border-[#2c3f4f]/50 bg-[#1c2b3a]">
+              {/* Trade stream header - use custom grid for better mobile fit */}
+              <div
+                className="grid text-xs text-[#6b7a8a] px-3 py-2 border-b border-[#2c3f4f]/50 bg-[#1c2b3a]"
+                style={{ gridTemplateColumns: 'minmax(70px, 1fr) 65px minmax(80px, 1.2fr) minmax(75px, 1fr) 70px' }}
+              >
                 <span className="font-semibold uppercase tracking-wider">Time</span>
                 <span className="font-semibold uppercase tracking-wider">Side</span>
                 <span className="font-semibold uppercase tracking-wider">Outcome</span>
@@ -346,22 +349,23 @@ export function LiveOrderBook({
                     return (
                       <div
                         key={trade.id}
-                        className={`grid grid-cols-5 text-sm py-2 px-4 border-b border-[#2c3f4f]/30
+                        className={`grid text-sm py-2 px-3 border-b border-[#2c3f4f]/30
                           hover:bg-[#2a3d4e]/30 transition-all duration-200
                           ${isAnimated ? (isBuy ? 'bg-[#22c55e]/20' : 'bg-red-500/20') : 'bg-transparent'}
-                          animate-fade-in`}
+                          animate-fade-in items-center`}
                         style={{
                           animation: 'fadeSlideIn 0.2s ease-out',
+                          gridTemplateColumns: 'minmax(70px, 1fr) 65px minmax(80px, 1.2fr) minmax(75px, 1fr) 70px',
                         }}
                       >
                         {/* Time */}
-                        <span className="text-[#8b98a5] tabular-nums text-xs">
+                        <span className="text-[#8b98a5] tabular-nums text-xs whitespace-nowrap">
                           {formatTime(trade.timestamp)}
                         </span>
 
                         {/* Side indicator */}
                         <div className="flex items-center gap-1">
-                          <div className={`w-5 h-5 rounded flex items-center justify-center ${
+                          <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${
                             isBuy ? 'bg-[#22c55e]/20' : 'bg-red-500/20'
                           }`}>
                             {isBuy ? (
@@ -370,7 +374,7 @@ export function LiveOrderBook({
                               <ArrowDown size={12} className="text-red-400" />
                             )}
                           </div>
-                          <span className={`text-xs font-medium ${isBuy ? 'text-[#22c55e]' : 'text-red-400'}`}>
+                          <span className={`text-xs font-medium whitespace-nowrap ${isBuy ? 'text-[#22c55e]' : 'text-red-400'}`}>
                             {isBuy ? 'BUY' : 'SELL'}
                           </span>
                         </div>
@@ -383,19 +387,19 @@ export function LiveOrderBook({
                           {getOutcomeName(trade.outcome)}
                         </span>
 
-                        {/* Amount */}
-                        <span className="text-right text-white font-medium tabular-nums">
+                        {/* Amount - prevent wrapping */}
+                        <span className="text-right text-white font-medium tabular-nums whitespace-nowrap text-xs">
                           {formatTradeAmount(trade.amount)} APT
                         </span>
 
                         {/* Tx link */}
-                        <div className="text-right">
+                        <div className="text-right whitespace-nowrap">
                           {trade.txHash ? (
                             <a
                               href={`https://explorer.aptoslabs.com/txn/${trade.txHash}?network=testnet`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-[#5BA3D9] hover:underline text-xs inline-flex items-center gap-1"
+                              className="text-[#5BA3D9] hover:underline text-xs inline-flex items-center gap-0.5"
                             >
                               {trade.txHash.slice(0, 6)}...
                               <ExternalLink size={10} />
