@@ -23,7 +23,11 @@ interface UseLiveTradesReturn {
 // Track seen transaction versions to avoid duplicates
 const seenVersions = new Set<string>();
 
-export function useLiveTrades(pollInterval: number = 5000, maxTrades: number = 50): UseLiveTradesReturn {
+export function useLiveTrades(
+  pollInterval: number = 5000,
+  maxTrades: number = 50,
+  enabled: boolean = true // Skip polling when HFT WebSocket is connected
+): UseLiveTradesReturn {
   const [trades, setTrades] = useState<LiveTrade[]>([]);
   const [isPolling, setIsPolling] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
@@ -108,8 +112,10 @@ export function useLiveTrades(pollInterval: number = 5000, maxTrades: number = 5
     }
   }, [maxTrades]);
 
-  // Poll for trades
+  // Poll for trades (skip when HFT WebSocket is connected to save resources)
   useEffect(() => {
+    if (!enabled) return;
+
     // Initial fetch
     fetchRecentTrades();
 
@@ -117,7 +123,7 @@ export function useLiveTrades(pollInterval: number = 5000, maxTrades: number = 5
     const interval = setInterval(fetchRecentTrades, pollInterval);
 
     return () => clearInterval(interval);
-  }, [fetchRecentTrades, pollInterval]);
+  }, [fetchRecentTrades, pollInterval, enabled]);
 
   return {
     trades,

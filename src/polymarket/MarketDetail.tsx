@@ -102,8 +102,8 @@ export function MarketDetail() {
     isConnected: _pricesConnected,
   } = useLivePrices(3000); // Poll every 3 seconds
 
-  // Live trades from blockchain polling (works without HFT server)
-  const { trades: blockchainTrades } = useLiveTrades(5000, 50);
+  // Live trades from blockchain polling (disabled when HFT WebSocket is connected)
+  const { trades: blockchainTrades } = useLiveTrades(5000, 50, !hftConnected);
 
   // Combine HFT trades with blockchain trades, preferring HFT when available
   const combinedTrades: Trade[] = useMemo(() => {
