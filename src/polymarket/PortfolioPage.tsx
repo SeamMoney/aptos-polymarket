@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
-import { ArrowUp, Search, Eye, EyeOff, RefreshCw, ExternalLink, TrendingUp, TrendingDown, Loader2 } from "lucide-react";
+import { ArrowUp, Search, Eye, EyeOff, RefreshCw, ExternalLink, TrendingUp, TrendingDown, Loader2, X } from "lucide-react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import { PolyHeader } from "./PolyHeader";
+import { usePolymarkets } from "../hooks/usePolymarkets";
 
 // Initialize Aptos client
 const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
@@ -567,6 +568,7 @@ function ProfitChart({
 // Main Portfolio Page Component
 export function PortfolioPage() {
   const { account, connected } = useWallet();
+  const { sellOutcome } = usePolymarkets();
   const [activeTab, setActiveTab] = useState<"positions" | "orders" | "history">("positions");
   const [timeRange, setTimeRange] = useState("1M");
   const [showBalance, setShowBalance] = useState(true);
@@ -578,6 +580,7 @@ export function PortfolioPage() {
   const [hoverValue, setHoverValue] = useState<{ balance: number; pnl: number; timestamp: number } | null>(null);
   const [positions, setPositions] = useState<PositionItem[]>([]);
   const [isLoadingPositions, setIsLoadingPositions] = useState(false);
+  const [closingPositionIndex, setClosingPositionIndex] = useState<number | null>(null);
 
   const timeRanges = ["1D", "1W", "1M", "ALL"];
 
@@ -593,6 +596,33 @@ export function PortfolioPage() {
       saveBalanceToHistory(totalPortfolioValue);
     }
   }, [totalPortfolioValue]);
+
+  // Close position - sell all tokens for an outcome
+  const handleClosePosition = useCallback(async (position: PositionItem) => {
+    if (!connected) return;
+
+    try {
+      setClosingPositionIndex(position.outcomeIndex);
+
+      // Sell all tokens - use the multi-market ID format
+      const marketId = `multi-${MARKET_ADDRESS}`;
+      const tokensToSell = position.tokens.toString();
+
+      await sellOutcome(marketId, position.outcomeIndex, tokensToSell);
+
+      // Refresh positions and balance after successful close
+      setTimeout(() => {
+        fetchBalance();
+        fetchPositions();
+      }, 2000);
+
+    } catch (error) {
+      console.error('Error closing position:', error);
+      alert('Failed to close position. Please try again.');
+    } finally {
+      setClosingPositionIndex(null);
+    }
+  }, [connected, sellOutcome]);
 
   // Fetch wallet balance (supports both legacy CoinStore and new Fungible Assets)
   const fetchBalance = useCallback(async () => {
@@ -1260,6 +1290,29 @@ export function PortfolioPage() {
                         </p>
                       </div>
                     </div>
+
+                    {/* Close Position Button */}
+                    <button
+                      onClick={() => handleClosePosition(position)}
+                      disabled={closingPositionIndex === position.outcomeIndex}
+                      className={`w-full mt-3 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors ${
+                        closingPositionIndex === position.outcomeIndex
+                          ? 'bg-[#3d5060] text-[#6b7a8a] cursor-not-allowed'
+                          : 'bg-[#e13836] hover:bg-[#c9312f] text-white'
+                      }`}
+                    >
+                      {closingPositionIndex === position.outcomeIndex ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" />
+                          Closing...
+                        </>
+                      ) : (
+                        <>
+                          <X size={16} />
+                          Close Position ({position.currentValue.toFixed(2)} APT)
+                        </>
+                      )}
+                    </button>
                   </div>
                 ))}
               </>
