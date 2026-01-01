@@ -136,7 +136,8 @@ export function useLiveTrades(
           outcomeIndex,
           amount: amountAPT,
           price: 0,
-          timestamp: new Date(tx.timestamp).getTime(),
+          // Indexer returns UTC timestamps without 'Z' suffix - add it for proper parsing
+          timestamp: new Date(tx.timestamp.endsWith('Z') ? tx.timestamp : tx.timestamp + 'Z').getTime(),
           txHash,
           trader: tx.sender,
         } as LiveTrade;
