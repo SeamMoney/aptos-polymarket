@@ -39,7 +39,7 @@ export function BreakingPage() {
         className="mx-4 mt-2 mb-4"
       >
         <Link
-          to={featuredMarket ? `/market/multi-${featuredMarket.address}` : "/demo-day"}
+          to="/demo-day"
           className="block rounded-xl overflow-hidden"
           style={{
             background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",

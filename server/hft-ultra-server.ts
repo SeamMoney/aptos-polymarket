@@ -37,21 +37,26 @@ const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xa2e5e47aab07fed78a3b
 const MODULE = `${CONTRACT_ADDRESS}::market`;
 const MULTI_MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
 
+// Check if dryrun mode
+const IS_DRYRUN = process.argv[2] === 'dryrun' || process.env.HFT_DRYRUN === 'true';
+
 // Configuration - ULTRA TPS MODE (Target: 10k+ TPS with Orderless Transactions)
+// In dryrun mode: small batches, tiny trades, high sample rate for visibility
 const CONFIG = {
   PORT: parseInt(process.env.HFT_PORT || '3001'),
-  BATCH_SIZE: 150,          // Up from 100 - orderless allows bigger batches
-  BATCH_DELAY_MS: 0,        // NO DELAY - max speed
-  SEQUENCE_PIPELINE: 100,   // Unused but keep consistent
-  MAX_PENDING: 2000,        // Up from 1000 - more headroom for bigger batches
-  MEMPOOL_BACKOFF_MS: 30,   // Down from 50 for faster initial backoff
-  MAX_DELAY_MS: 200,        // Down from 300 - faster recovery
-  TRADE_SAMPLE_RATE: 0.003, // 0.3% sampling - reduce overhead at very high TPS
-  STATS_CACHE_TTL_MS: 2000, // 2 second cache - reduce computation at high TPS
-  FIRE_AND_FORGET_RATIO: 0.98, // 98% fire-and-forget - orderless doesn't need sequence sync
-  USE_ORDERLESS: true,      // PHASE 10: Use orderless transactions (no sequence numbers)
-  USE_MULTI_RPC: true,      // PHASE 17: Load balance across multiple RPC endpoints
-  USE_BATCH_SUBMIT: false,  // PHASE 18: Batch mode (true = cleaner error handling, false = legacy parallel)
+  BATCH_SIZE: IS_DRYRUN ? 10 : 150,           // Dryrun: small batches
+  BATCH_DELAY_MS: IS_DRYRUN ? 100 : 0,        // Dryrun: throttle to ~100 TPS
+  SEQUENCE_PIPELINE: 100,
+  MAX_PENDING: IS_DRYRUN ? 50 : 2000,
+  MEMPOOL_BACKOFF_MS: 30,
+  MAX_DELAY_MS: 200,
+  TRADE_SAMPLE_RATE: IS_DRYRUN ? 0.5 : 0.003, // Dryrun: 50% sampling for visibility
+  STATS_CACHE_TTL_MS: IS_DRYRUN ? 500 : 2000,
+  FIRE_AND_FORGET_RATIO: IS_DRYRUN ? 0.5 : 0.98, // Dryrun: more confirmations
+  USE_ORDERLESS: true,
+  USE_MULTI_RPC: !IS_DRYRUN,  // Dryrun: single RPC for simplicity
+  USE_BATCH_SUBMIT: false,
+  IS_DRYRUN,
 };
 
 // Adaptive state
@@ -191,17 +196,48 @@ function broadcast(data: object) {
   });
 }
 
-// Get random amount - micro-trades for 2k TPS sustainability
+// Get random amount - micro-trades with occasional whales for visual impact
 function getRandomAmount(): number {
-  // Optimized for 2k TPS: avg ~0.015 APT = 30 APT/sec
-  // 2000 APT per account lasts ~67 seconds
-  if (Math.random() < 0.05) {
-    return Math.random() * 0.1 + 0.05; // 0.05-0.15 APT (5% of trades)
+  // DRYRUN MODE: Tiny trades to minimize APT spent
+  if (CONFIG.IS_DRYRUN) {
+    return Math.random() * 0.004 + 0.001; // 0.001-0.005 APT only
   }
-  if (Math.random() < 0.20) {
-    return Math.random() * 0.03 + 0.02; // 0.02-0.05 APT (20% of trades)
+
+  // Normal mode: Mostly micro-trades with occasional whales for chart/orderbook animation
+  // Distribution designed for visual impact while preserving funds:
+  //   - Average ~0.02 APT/trade
+  //   - At 30K TPS with 0.3% sampling → ~90 visible trades/sec
+  //   - Whale trades create visible spikes in UI
+
+  const rand = Math.random();
+
+  // 0.1% chance: MEGA WHALE (8-15 APT) - massive spike!
+  if (rand < 0.001) {
+    return Math.random() * 7 + 8; // 8-15 APT
   }
-  return Math.random() * 0.01 + 0.005; // 0.005-0.015 APT (75% micro trades)
+
+  // 0.5% chance: WHALE trade (2-6 APT) - big chart jumps!
+  if (rand < 0.006) {
+    return Math.random() * 4 + 2; // 2-6 APT
+  }
+
+  // 2% chance: Large trade (0.3-1 APT) - noticeable movement
+  if (rand < 0.025) {
+    return Math.random() * 0.7 + 0.3; // 0.3-1 APT
+  }
+
+  // 5% chance: Medium-large trade (0.1-0.3 APT)
+  if (rand < 0.075) {
+    return Math.random() * 0.2 + 0.1; // 0.1-0.3 APT
+  }
+
+  // 15% chance: Medium trade (0.03-0.1 APT)
+  if (rand < 0.225) {
+    return Math.random() * 0.07 + 0.03; // 0.03-0.1 APT
+  }
+
+  // 77.5% chance: Micro trade (0.005-0.03 APT) - bulk of trades
+  return Math.random() * 0.025 + 0.005; // 0.005-0.03 APT
 }
 
 // Calculate current TPS
@@ -222,6 +258,68 @@ function calculateTps(): number {
   if (tps > state.peakTps) state.peakTps = tps;
 
   return tps;
+}
+
+// ANSI color codes for beautiful logging
+const COLORS = {
+  RESET: '\x1b[0m',
+  BOLD: '\x1b[1m',
+  DIM: '\x1b[2m',
+  RED: '\x1b[31m',
+  GREEN: '\x1b[32m',
+  YELLOW: '\x1b[33m',
+  BLUE: '\x1b[34m',
+  MAGENTA: '\x1b[35m',
+  CYAN: '\x1b[36m',
+  WHITE: '\x1b[37m',
+  BG_BLUE: '\x1b[44m',
+  BG_GREEN: '\x1b[42m',
+};
+
+// Outcome labels for trade logging
+const OUTCOME_LABELS = ['Vance', 'Rubio', 'Trump', 'DeSantis', 'Carlson', 'Other'];
+
+// Print beautiful stats banner
+function printStatsBanner() {
+  const { RESET, BOLD, DIM, GREEN, YELLOW, CYAN, MAGENTA, BG_BLUE } = COLORS;
+  const elapsed = Math.round((Date.now() - state.startTime) / 1000);
+  const tps = calculateTps();
+  const avgTps = state.recentTps.length > 0
+    ? Math.round(state.recentTps.reduce((a, b) => a + b, 0) / state.recentTps.length)
+    : 0;
+  const successRate = state.totalTrades > 0
+    ? ((state.successfulTrades / state.totalTrades) * 100).toFixed(1)
+    : '100.0';
+  const avgLatency = state.recentLatencies.length > 0
+    ? Math.round(state.recentLatencies.reduce((a, b) => a + b, 0) / state.recentLatencies.length)
+    : 0;
+
+  console.log('');
+  console.log(`${BG_BLUE}${BOLD}                    ⚡ HFT STATS ⚡                    ${RESET}`);
+  console.log(`${DIM}────────────────────────────────────────────────────────${RESET}`);
+  console.log(
+    `  ${CYAN}TPS:${RESET} ${BOLD}${Math.round(tps).toLocaleString()}${RESET}  ` +
+    `${CYAN}Peak:${RESET} ${GREEN}${Math.round(state.peakTps).toLocaleString()}${RESET}  ` +
+    `${CYAN}Avg:${RESET} ${avgTps.toLocaleString()}`
+  );
+  console.log(
+    `  ${CYAN}Trades:${RESET} ${BOLD}${state.totalTrades.toLocaleString()}${RESET}  ` +
+    `${CYAN}Success:${RESET} ${GREEN}${successRate}%${RESET}  ` +
+    `${CYAN}Latency:${RESET} ${YELLOW}${avgLatency}ms${RESET}`
+  );
+  console.log(
+    `  ${CYAN}Elapsed:${RESET} ${elapsed}s  ` +
+    `${CYAN}Accounts:${RESET} ${state.accounts.filter(a => a.isActive).length}/${state.accounts.length}  ` +
+    `${CYAN}Clients:${RESET} ${clients.size}`
+  );
+  if (state.outcomePrices.length > 0) {
+    const priceStr = state.outcomePrices.map((p, i) =>
+      `${OUTCOME_LABELS[i] || i}: ${MAGENTA}${p.toFixed(0)}%${RESET}`
+    ).join('  ');
+    console.log(`  ${CYAN}Prices:${RESET} ${priceStr}`);
+  }
+  console.log(`${DIM}────────────────────────────────────────────────────────${RESET}`);
+  console.log('');
 }
 
 // Get stats - includes all fields UI expects (with caching for performance)
@@ -442,15 +540,9 @@ async function refreshSequenceNumber(accState: AccountState): Promise<void> {
 }
 
 // Simulate realistic election market probabilities
-// Strategy: Mint complete sets, then sell underdogs to push their prices DOWN
-// and keep/buy frontrunner tokens to push their prices UP
-const ELECTION_WEIGHTS = {
-  0: { targetProb: 0.45, name: 'Trump' },      // Frontrunner ~45%
-  1: { targetProb: 0.25, name: 'Biden' },      // Second ~25%
-  2: { targetProb: 0.12, name: 'DeSantis' },   // Underdog ~12%
-  3: { targetProb: 0.10, name: 'RFK Jr' },     // Underdog ~10%
-  4: { targetProb: 0.08, name: 'Other' },      // Longshot ~8%
-};
+// Market: 0=Vance, 1=Rubio, 2=Trump, 3=DeSantis, 4=Carlson, 5=Other
+// Strategy: Buy Trump (index 2), sell everyone else → Trump emerges as frontrunner
+const TRUMP_INDEX = 2;  // Donald Trump is at index 2
 
 // Build transaction payload - simulate realistic election trading
 function buildPayload(marketAddress: string): { payload: InputGenerateTransactionPayloadData; isBuy: boolean } {
@@ -458,31 +550,32 @@ function buildPayload(marketAddress: string): { payload: InputGenerateTransactio
     const amount = BigInt(Math.floor(getRandomAmount() * 100_000_000));
     const rand = Math.random();
 
-    // 20% chance: Mint complete set (needed to get tokens for selling)
+    // 20% chance: Mint complete set (adds liquidity, gets tokens for selling)
     if (rand < 0.20) {
       return {
         payload: {
           function: `${MULTI_MODULE}::mint_complete_set`,
           functionArguments: [marketAddress, amount],
         },
-        isBuy: true, // Counts as buy for stats
+        isBuy: true,
       };
     }
 
-    // 45% chance: Sell non-Trump tokens (Biden and underdogs)
-    // This creates differentiation - Trump stays high, others go lower
+    // 45% chance: Sell non-Trump tokens → pushes their prices DOWN
     if (rand < 0.65) {
-      // Weight: Biden 20%, DeSantis 30%, RFK Jr 25%, Other 25%
+      // Sell: Vance(0), Rubio(1), DeSantis(3), Carlson(4), Other(5)
       const sellRand = Math.random();
       let sellIndex: number;
-      if (sellRand < 0.20) {
-        sellIndex = 1; // Biden (sell some to separate from Trump)
-      } else if (sellRand < 0.50) {
-        sellIndex = 2; // DeSantis
-      } else if (sellRand < 0.75) {
-        sellIndex = 3; // RFK Jr
+      if (sellRand < 0.25) {
+        sellIndex = 0; // Vance (second place)
+      } else if (sellRand < 0.45) {
+        sellIndex = 1; // Rubio
+      } else if (sellRand < 0.65) {
+        sellIndex = 3; // DeSantis
+      } else if (sellRand < 0.85) {
+        sellIndex = 4; // Carlson
       } else {
-        sellIndex = 4; // Other
+        sellIndex = 5; // Other
       }
       return {
         payload: {
@@ -493,11 +586,11 @@ function buildPayload(marketAddress: string): { payload: InputGenerateTransactio
       };
     }
 
-    // 35% chance: Buy Trump only (keep price highest)
+    // 35% chance: Buy Trump → pushes his price UP
     return {
       payload: {
         function: `${MULTI_MODULE}::buy_outcome`,
-        functionArguments: [marketAddress, 0, amount, 0n], // Only Trump
+        functionArguments: [marketAddress, TRUMP_INDEX, amount, 0n],
       },
       isBuy: true,
     };
@@ -787,9 +880,30 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
     }
   }
 
+  // Beautiful detailed logging
   const tps = (batchSize / (batchTime / 1000)).toFixed(0);
   const accAddr = accState.account.accountAddress.toString().slice(0, 8);
-  console.log(`[${accAddr}] Batch: ${successCount}/${batchSize} | ${batchTime}ms | ~${tps} TPS${currentDelay > 0 ? ` | delay:${currentDelay}ms` : ''}`);
+  const successRate = ((successCount / batchSize) * 100).toFixed(0);
+  const avgLatency = Math.round(batchTime / batchSize);
+
+  // Color codes
+  const GREEN = '\x1b[32m';
+  const YELLOW = '\x1b[33m';
+  const CYAN = '\x1b[36m';
+  const DIM = '\x1b[2m';
+  const RESET = '\x1b[0m';
+  const BOLD = '\x1b[1m';
+
+  // Compact but detailed log line
+  console.log(
+    `${DIM}${new Date().toISOString().slice(11, 23)}${RESET} ` +
+    `${CYAN}${accAddr}${RESET} ` +
+    `${GREEN}✓${successCount}${RESET}/${batchSize} ` +
+    `${BOLD}${tps} TPS${RESET} ` +
+    `${YELLOW}${avgLatency}ms${RESET} ` +
+    `${successRate}%` +
+    (currentDelay > 0 ? ` ${DIM}delay:${currentDelay}${RESET}` : '')
+  );
 }
 
 // Check balance and pause if too low
@@ -879,7 +993,22 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
 
   const elapsed = Date.now() - startTime;
   const accAddr = accState.account.accountAddress.toString().slice(0, 8);
-  console.log(`[${accAddr}] Fired: ${batchSize} txns in ${elapsed}ms`);
+  const estTps = Math.round(batchSize / (elapsed / 1000));
+
+  // Color codes
+  const MAGENTA = '\x1b[35m';
+  const CYAN = '\x1b[36m';
+  const DIM = '\x1b[2m';
+  const RESET = '\x1b[0m';
+  const BOLD = '\x1b[1m';
+
+  console.log(
+    `${DIM}${new Date().toISOString().slice(11, 23)}${RESET} ` +
+    `${CYAN}${accAddr}${RESET} ` +
+    `${MAGENTA}🚀${batchSize}${RESET} ` +
+    `${BOLD}~${estTps} TPS${RESET} ` +
+    `${DIM}${elapsed}ms${RESET}`
+  );
 }
 
 // Main trading loop for single account
@@ -1105,6 +1234,15 @@ async function startTrading(): Promise<void> {
     broadcast({ type: 'state', data: { isRunning: state.isRunning, ...getFullUIData() } });
   }, 15000);
 
+  // Beautiful stats banner every 5 seconds
+  const statsBannerInterval = setInterval(() => {
+    if (!state.isRunning) {
+      clearInterval(statsBannerInterval);
+      return;
+    }
+    printStatsBanner();
+  }, 5000);
+
   // Start all trading loops in parallel
   for (let i = 0; i < state.accounts.length; i++) {
     if (state.accounts[i].isActive) {
@@ -1127,9 +1265,8 @@ wss.on('connection', (ws) => {
   console.log('Client connected');
   clients.add(ws);
 
-  if (clients.size === 1 && !state.isRunning) {
-    startTrading();
-  }
+  // DON'T auto-start - let the frontend's LAUNCH button control when to start
+  // The user wants: ARM → pre-flight checks → LAUNCH → countdown → start
 
   // Send full UI data on connection
   ws.send(JSON.stringify({
@@ -1209,8 +1346,12 @@ server.listen(CONFIG.PORT, async () => {
   // Auto-start if mode is passed as command line arg
   const mode = process.argv[2];
   const duration = parseInt(process.argv[3]) || 60;
-  if (mode === 'normal' || mode === 'turbo' || mode === 'ultra') {
-    console.log(`Auto-starting in ${mode} mode for ${duration}s...`);
+  if (mode === 'normal' || mode === 'turbo' || mode === 'ultra' || mode === 'dryrun') {
+    if (mode === 'dryrun') {
+      console.log(`\n🧪 DRYRUN MODE: ~100 TPS, tiny trades, ${duration}s duration`);
+    } else {
+      console.log(`Auto-starting in ${mode} mode for ${duration}s...`);
+    }
     await startTrading();
     if (duration > 0) {
       setTimeout(() => {
