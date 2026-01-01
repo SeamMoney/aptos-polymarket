@@ -6,7 +6,7 @@ import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp, Wallet
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { PolyChart } from "./PolyChart";
-import { PRICE_HISTORY, TOP_CANDIDATES, CANDIDATE_COLORS } from "./priceData";
+import { PRICE_HISTORY, TOP_CANDIDATES, CANDIDATE_COLORS, getCandidatePrices } from "./priceData";
 import { TradingSheet } from "./TradingSheet";
 import { LiveOrderBook } from "./LiveOrderBook";
 import { TPSChart } from "./TPSChart";
@@ -196,68 +196,13 @@ export function MarketDetail() {
         }
       }
 
-      // Generate synthetic historical data that ENDS at current on-chain prices
-      // This ensures chart matches the outcome list prices
-      const seededRandom = (seed: number) => {
-        const x = Math.sin(seed * 12345.6789) * 43758.5453;
-        return x - Math.floor(x);
-      };
-
-      return TOP_CANDIDATES.map((candidateName, outcomeIdx) => {
+      // Use historical data with volatility for visually interesting chart
+      // Shows J.D. Vance leading at ~50% with clear candidate separation
+      return TOP_CANDIDATES.map((candidateName) => {
         const outcome = market.outcomes?.find(o => o.name === candidateName);
-        // Use REAL on-chain price as end point, not static mock data
-        const endPrice = outcome?.price ?? 0.15;
-        const numPoints = pointsToShow;
-        const prices: number[] = [];
-        const seed = candidateName.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) + outcomeIdx;
-
-        // Start with variance from end price
-        let currentPrice = endPrice + (seededRandom(seed) - 0.5) * 0.15;
-
-        // Volatility based on price level
-        const baseVolatility = Math.min(0.08, Math.max(0.03, endPrice * 0.2));
-        const volatilityBoost = endPrice < 0.1 ? 2.0 : endPrice < 0.3 ? 1.3 : 1.0;
-        const volatility = baseVolatility * volatilityBoost;
-
-        // News events
-        const newsIndices = new Set<number>();
-        for (let n = 0; n < 12; n++) {
-          newsIndices.add(Math.floor(seededRandom(seed * 500 + n) * numPoints));
-        }
-
-        for (let i = 0; i < numPoints; i++) {
-          const targetAtT = currentPrice + (endPrice - currentPrice) * 0.08;
-          const jump = (seededRandom(seed * 1000 + i) - 0.5) * volatility * 1.2;
-
-          let spike = 0;
-          if (newsIndices.has(i)) {
-            const spikeDir = seededRandom(seed * 17 + i) > 0.5 ? 1 : -1;
-            spike = spikeDir * volatility * (1.5 + seededRandom(seed * 19 + i) * 1.5);
-          } else {
-            const spikeRoll = seededRandom(seed * 2000 + i);
-            if (spikeRoll > 0.88) spike = volatility * 0.8;
-            else if (spikeRoll < 0.12) spike = -volatility * 0.8;
-          }
-
-          if (seededRandom(seed * 3000 + i) > 0.25) {
-            currentPrice = currentPrice + jump + (targetAtT - currentPrice) * 0.08 + spike;
-          }
-
-          // Keep prices in reasonable bounds
-          const minBound = Math.max(0.02, endPrice * 0.5);
-          const maxBound = Math.min(0.95, endPrice * 1.8);
-          currentPrice = Math.max(minBound, Math.min(maxBound, currentPrice));
-
-          // Blend toward end price in final points
-          if (i >= numPoints - 5) {
-            const blend = (i - (numPoints - 5)) / 4;
-            currentPrice = currentPrice * (1 - blend * 0.6) + endPrice * (blend * 0.6);
-          }
-
-          prices.push(currentPrice);
-        }
-        // Ensure last point is exactly the on-chain price
-        prices[numPoints - 1] = endPrice;
+        const allPrices = getCandidatePrices(candidateName); // Uses volatility function
+        // Slice to show only the last N points based on timeframe
+        const prices = allPrices.slice(-pointsToShow);
 
         return {
           id: candidateName.toLowerCase().replace(/\s+/g, '-'),
