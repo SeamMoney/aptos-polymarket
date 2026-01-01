@@ -2,8 +2,6 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { ChevronDown, HelpCircle, ArrowUp, ArrowDown, ExternalLink } from 'lucide-react';
 import type { Trade } from '../hooks/useHFTConnection';
 
-// Max trades to render - reduced for high TPS performance
-const MAX_VISIBLE_TRADES = 20;
 
 interface LiveOrderBookProps {
   yesPrice: number; // Price in percent (e.g., 55 for 55%)
