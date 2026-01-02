@@ -178,8 +178,10 @@ export function MarketDetail() {
       return x - Math.floor(x);
     };
 
-    // Check if we have LIVE price data from the blockchain
-    const hasLivePrices = livePriceHistory.length > 5;
+    // DEMO MODE: Don't use live on-chain prices for chart display
+    // The HFT trading equalizes all prices which looks unrealistic
+    // Instead, use static Polymarket data which shows Vance leading at ~50%
+    const hasLivePrices = false; // Disabled - livePriceHistory.length > 5;
     const isShortTimeframe = ['1H', '6H', '1D'].includes(timeRange);
 
     if (isVPMarket && market?.outcomes) {
@@ -592,10 +594,10 @@ export function MarketDetail() {
               const outcomeId = chartOutcome.id;
               const isHighlighted = highlightedOutcomeId === outcomeId;
               const isDimmed = highlightedOutcomeId && !isHighlighted;
-              // Use REAL Polymarket price for display (not on-chain)
+              // Use REAL Polymarket price for display (static, realistic data)
               const realPolymarketPrice = (LATEST_REAL_PRICES as Record<string, number>)[chartOutcome.name] || 0;
+              // Fall back to chart end price if no Polymarket data
               const currentPrice = realPolymarketPrice > 0 ? realPolymarketPrice : chartOutcome.prices[chartOutcome.prices.length - 1];
-              // Debug: currentPrice should be ~0.535 for J.D. Vance, ~0.09 for Rubio, etc.
 
               return (
                 <button
