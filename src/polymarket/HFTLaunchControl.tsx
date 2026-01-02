@@ -35,12 +35,22 @@ interface HFTLaunchControlProps {
   serverUrl?: string;
 }
 
+interface StatusResponse {
+  status: string;
+  isRunning: boolean;
+  mode?: string;
+  accounts?: { active: number; total: number };
+  marketAddress?: string | null;
+  market?: { question?: string };
+  botBalance?: number;
+}
+
 export function HFTLaunchControl({
   isConnected,
   isRunning,
   onStart,
   onStop,
-  serverUrl = 'localhost:3001',
+  serverUrl = 'http://localhost:3001',
 }: HFTLaunchControlProps) {
   const [isArmed, setIsArmed] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -65,45 +75,81 @@ export function HFTLaunchControl({
     }));
   }, [isConnected]);
 
+  const fetchStatus = async (): Promise<StatusResponse | null> => {
+    try {
+      const response = await fetch(`${serverUrl}/status`);
+      if (!response.ok) return null;
+      return await response.json();
+    } catch {
+      return null;
+    }
+  };
+
   // Run pre-flight checks when arming
-  const runPreflightChecks = async () => {
+  const runPreflightChecks = async (): Promise<boolean> => {
     // Reset all checks to checking
     setChecks(prev => prev.map(c => ({ ...c, status: 'checking' as const })));
 
-    // Simulate checking each item (in real implementation, these would be actual API calls)
-    for (let i = 0; i < checks.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 400));
+    const status = await fetchStatus();
+    const active = status?.accounts?.active ?? 0;
+    const total = status?.accounts?.total ?? 0;
+    const hasMarket = Boolean(status?.marketAddress);
+    const hasWs = isConnected;
+    const allowArm = Boolean(status) && hasWs && active > 0 && hasMarket;
 
-      setChecks(prev => prev.map((check, idx) => {
-        if (idx === i) {
-          // Server check uses actual connection status
-          if (check.id === 'server') {
-            return { ...check, status: isConnected ? 'pass' : 'fail', message: isConnected ? 'Connected' : 'Connection failed' };
-          }
-          // Other checks pass if server is connected (simplified for demo)
-          if (check.id === 'accounts') {
-            return { ...check, status: isConnected ? 'pass' : 'fail', message: isConnected ? '20 accounts loaded' : 'No accounts' };
-          }
-          if (check.id === 'market') {
-            return { ...check, status: isConnected ? 'pass' : 'fail', message: isConnected ? 'Contract verified' : 'Contract not found' };
-          }
-          if (check.id === 'funds') {
-            return { ...check, status: isConnected ? 'pass' : 'warning', message: isConnected ? 'Gas available' : 'Low balance' };
-          }
+    setChecks(prev => prev.map((check) => {
+      if (check.id === 'server') {
+        if (!status) {
+          return { ...check, status: 'fail', message: 'Server unreachable' };
         }
-        return check;
-      }));
-    }
+        if (!isConnected) {
+          return { ...check, status: 'warning', message: 'HTTP OK, WS disconnected' };
+        }
+        return { ...check, status: 'pass', message: 'HTTP + WS OK' };
+      }
+
+      if (!status) {
+        return { ...check, status: 'fail', message: 'No status' };
+      }
+
+      if (check.id === 'accounts') {
+        return {
+          ...check,
+          status: active > 0 ? 'pass' : 'fail',
+          message: `${active}/${total} active`,
+        };
+      }
+
+      if (check.id === 'market') {
+        const address = status.marketAddress;
+        const label = status.market?.question ? `Market: ${status.market.question}` : 'Market set';
+        return {
+          ...check,
+          status: address ? 'pass' : 'fail',
+          message: address ? label : 'Market not set',
+        };
+      }
+
+      if (check.id === 'funds') {
+        const balance = status.botBalance ?? 0;
+        const minNeeded = Math.max(1, active * 0.5);
+        return {
+          ...check,
+          status: balance >= minNeeded ? 'pass' : 'warning',
+          message: `${balance.toFixed(2)} APT available`,
+        };
+      }
+
+      return check;
+    }));
+
+    return allowArm;
   };
 
   // Handle ARM button
   const handleArm = async () => {
-    await runPreflightChecks();
-
-    // Only arm if connected (checks will show status)
-    if (isConnected) {
-      setIsArmed(true);
-    }
+    const canArm = await runPreflightChecks();
+    if (canArm) setIsArmed(true);
   };
 
   // Handle LAUNCH button

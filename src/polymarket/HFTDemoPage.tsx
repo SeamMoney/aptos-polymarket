@@ -17,6 +17,9 @@ import { useHFTConnection } from '../hooks/useHFTConnection';
 const OUTCOMES = ["Trump Jr", "Vance", "DeSantis", "Haley", "Ramaswamy", "Other"];
 
 export function HFTDemoPage() {
+  const serverUrl = (import.meta.env.VITE_HFT_WS_URL || 'ws://localhost:3001')
+    .replace('ws://', 'http://')
+    .replace('wss://', 'https://');
   const {
     isConnected,
     isRunning,
@@ -113,6 +116,7 @@ export function HFTDemoPage() {
             isRunning={isRunning}
             onStart={startTrading}
             onStop={stopTrading}
+            serverUrl={serverUrl}
           />
         </div>
 

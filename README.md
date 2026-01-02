@@ -12,8 +12,10 @@ A fully functional prediction market platform demonstrating Polymarket-style tra
 
 | Mode | Command | TPS | Duration | Cost | Use Case |
 |------|---------|-----|----------|------|----------|
-| **Dry Run** | `./scripts/orchestrator.sh dryrun` | ~100 | 5 sec | < 0.5 APT | Quick test, verify UI |
-| **Full Demo** | `./scripts/orchestrator.sh demo` | ~30K | 60 sec | ~20K APT | Production demo |
+| **Dry Run** | `./scripts/orchestrator.sh dryrun` | ~10 | 5 sec | < 0.5 APT | Quick test, verify UI |
+| **Full Demo** | `./scripts/orchestrator.sh demo` | ~30K | 60 sec | ~5K APT | Production demo (QUANTUM mode) |
+
+**Pre-flight check:** Run `./scripts/pre-demo-checklist.sh` before the demo!
 
 ---
 
@@ -36,8 +38,8 @@ Then in your browser:
 1. Go to http://localhost:5173/polymarket
 2. Click **"Start Demo"** → TPS Dashboard
 3. Click **ARM SYSTEM** → Pre-flight checks
-4. Click **LAUNCH DEMO** → 3... 2... 1... 🚀
-5. Watch ~100 TPS for 5 seconds
+4. Click **LAUNCH DEMO** → 3... 2... 1...
+5. Watch ~10 TPS for 5 seconds (minimal APT usage)
 
 ---
 
@@ -101,18 +103,47 @@ The demo viewers show beautiful real-time logs:
 
 ### Cloud Workers (3 VMs)
 
-| Worker | IP | Accounts | Est. TPS |
-|--------|-----|----------|----------|
-| Worker 1 | 178.128.177.88 | 9 | ~13K |
-| Worker 2 | 147.182.237.239 | 8 | ~12K |
-| Worker 3 | 161.35.231.0 | 8 | ~12K |
-| **Total** | | **25** | **~37K** |
+| Worker | IP | Accounts | APT Balance | Est. TPS |
+|--------|-----|----------|-------------|----------|
+| Worker 1 | 178.128.177.88 | 9 | ~12,660 APT | ~13K |
+| Worker 2 | 147.182.237.239 | 8 | ~18,800 APT | ~12K |
+| Worker 3 | 161.35.231.0 | 8 | ~89,600 APT | ~12K |
+| **Total** | | **25** | **~121,000 APT** | **~37K** |
 
-### Fullnode
+### Account Audit Summary
 
-| Component | IP | Purpose |
-|-----------|-----|---------|
-| Aptos Fullnode | 164.92.117.18:8080 | Low-latency RPC |
+Run `npx tsx scripts/audit-accounts.ts` for full breakdown.
+
+| Category | Count | Balance |
+|----------|-------|---------|
+| Trading Accounts (in orchestrator) | 25 | 121,068 APT |
+| Contract Account | 1 | 749 APT |
+| Other Accounts | 13 | ~0 APT |
+| **Total Available** | | **~122,000 APT** |
+
+### Fullnode & RPC
+
+| Component | IP/URL | Purpose |
+|-----------|--------|---------|
+| Aptos Fullnode | 164.92.117.18:8080 | Low-latency RPC (unlimited) |
+| QuickNode | polished-evocative-borough... | Primary RPC (50 RPS) |
+| Aptos Labs | fullnode.testnet.aptoslabs.com | Fallback RPC |
+
+---
+
+## TPS Modes
+
+The HFT server supports 5 modes with escalating TPS targets:
+
+| Mode | Command | Target TPS | Batch | Delay | Use Case |
+|------|---------|-----------|-------|-------|----------|
+| `dryrun` | `npx tsx server/hft-ultra-server.ts dryrun 30` | ~10 | 1 | 100ms | UI testing |
+| `normal` | `npx tsx server/hft-ultra-server.ts normal 60` | ~1,000 | 10 | 50ms | Light demo |
+| `turbo` | `npx tsx server/hft-ultra-server.ts turbo 60` | ~3,000 | 30 | 40ms | Medium |
+| `ultra` | `npx tsx server/hft-ultra-server.ts ultra 60` | ~10,000 | 80 | 30ms | High intensity |
+| `quantum` | `npx tsx server/hft-ultra-server.ts quantum 60` | ~30,000+ | 150 | 20ms | **DEMO DAY** |
+
+The orchestrator uses **quantum mode** for `./scripts/orchestrator.sh demo`.
 
 ---
 

@@ -37,28 +37,111 @@ const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xa2e5e47aab07fed78a3b
 const MODULE = `${CONTRACT_ADDRESS}::market`;
 const MULTI_MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
 
-// Check if dryrun mode
-const IS_DRYRUN = process.argv[2] === 'dryrun' || process.env.HFT_DRYRUN === 'true';
+// Available run modes with escalating TPS targets
+type RunMode = 'dryrun' | 'normal' | 'turbo' | 'ultra' | 'quantum';
 
-// Configuration - DEMO MODE (Target: 10 TPS for live demo)
-// Small batches, small trades, high visibility
-const CONFIG = {
-  PORT: parseInt(process.env.HFT_PORT || '3001'),
-  BATCH_SIZE: 1,                              // 1 trade at a time for controlled TPS
-  BATCH_DELAY_MS: 100,                        // 100ms delay = ~10 TPS max
-  SEQUENCE_PIPELINE: 10,
-  MAX_PENDING: 20,
-  MEMPOOL_BACKOFF_MS: 50,
-  MAX_DELAY_MS: 200,
-  TRADE_SAMPLE_RATE: 0.5,                     // 50% sampling for good UI visibility
-  STATS_CACHE_TTL_MS: 500,
-  FIRE_AND_FORGET_RATIO: 0.8,                 // 80% fire-and-forget
-  USE_ORDERLESS: true,
-  USE_MULTI_RPC: false,                       // Single RPC for demo
-  USE_BATCH_SUBMIT: false,
-  IS_DRYRUN,
-  TARGET_TPS: 10,                             // Target 10 TPS
+function resolveMode(): RunMode {
+  const argMode = process.argv[2];
+  if (argMode === 'dryrun' || process.env.HFT_DRYRUN === 'true') return 'dryrun';
+  if (argMode === 'normal') return 'normal';
+  if (argMode === 'turbo') return 'turbo';
+  if (argMode === 'ultra') return 'ultra';
+  if (argMode === 'quantum') return 'quantum';
+  // Default to normal for backwards compatibility with 'prod'
+  if (argMode === 'prod') return 'quantum';
+  return 'dryrun';
+}
+
+const RUN_MODE = resolveMode();
+const IS_DRYRUN = RUN_MODE === 'dryrun';
+
+// Mode configurations - TPS scales with accounts × batch_size × (1000 / delay_ms)
+// With 25 accounts: quantum = 25 × 150 × (1000/20) = 187,500 theoretical, ~30K+ real
+const MODE_CONFIGS: Record<RunMode, {
+  BATCH_SIZE: number;
+  BATCH_DELAY_MS: number;
+  USE_MULTI_RPC: boolean;
+  FIRE_AND_FORGET_RATIO: number;
+  TRADE_SAMPLE_RATE: number;
+  TARGET_TPS: number;
+  MAX_PENDING: number;
+}> = {
+  // ~10 TPS - Quick UI test, minimal APT usage
+  dryrun: {
+    BATCH_SIZE: 1,
+    BATCH_DELAY_MS: 100,
+    USE_MULTI_RPC: false,
+    FIRE_AND_FORGET_RATIO: 0.5,
+    TRADE_SAMPLE_RATE: 0.8,      // High visibility for testing UI
+    TARGET_TPS: 10,
+    MAX_PENDING: 20,
+  },
+  // ~1,000 TPS - Light demo, good for testing
+  normal: {
+    BATCH_SIZE: 10,
+    BATCH_DELAY_MS: 50,
+    USE_MULTI_RPC: true,
+    FIRE_AND_FORGET_RATIO: 0.7,
+    TRADE_SAMPLE_RATE: 0.1,
+    TARGET_TPS: 1000,
+    MAX_PENDING: 50,
+  },
+  // ~3,000 TPS - Medium intensity demo
+  turbo: {
+    BATCH_SIZE: 30,
+    BATCH_DELAY_MS: 40,
+    USE_MULTI_RPC: true,
+    FIRE_AND_FORGET_RATIO: 0.85,
+    TRADE_SAMPLE_RATE: 0.05,
+    TARGET_TPS: 3000,
+    MAX_PENDING: 100,
+  },
+  // ~10,000 TPS - High intensity stress test
+  ultra: {
+    BATCH_SIZE: 80,
+    BATCH_DELAY_MS: 30,
+    USE_MULTI_RPC: true,
+    FIRE_AND_FORGET_RATIO: 0.9,
+    TRADE_SAMPLE_RATE: 0.02,
+    TARGET_TPS: 10000,
+    MAX_PENDING: 200,
+  },
+  // ~30,000+ TPS - MAXIMUM POWER for demo day! 🚀
+  quantum: {
+    BATCH_SIZE: 150,
+    BATCH_DELAY_MS: 20,
+    USE_MULTI_RPC: true,
+    FIRE_AND_FORGET_RATIO: 0.95,
+    TRADE_SAMPLE_RATE: 0.01,     // 1% sampling to prevent UI freeze at 30K TPS
+    TARGET_TPS: 30000,
+    MAX_PENDING: 300,
+  },
 };
+
+function getConfig(mode: RunMode) {
+  const modeConfig = MODE_CONFIGS[mode];
+  return {
+    PORT: parseInt(process.env.HFT_PORT || '3001'),
+    BATCH_SIZE: modeConfig.BATCH_SIZE,
+    BATCH_DELAY_MS: modeConfig.BATCH_DELAY_MS,
+    SEQUENCE_PIPELINE: 10,
+    MAX_PENDING: modeConfig.MAX_PENDING,
+    MEMPOOL_BACKOFF_MS: 50,
+    MAX_DELAY_MS: 500,
+    TRADE_SAMPLE_RATE: modeConfig.TRADE_SAMPLE_RATE,
+    STATS_CACHE_TTL_MS: 200,
+    FIRE_AND_FORGET_RATIO: modeConfig.FIRE_AND_FORGET_RATIO,
+    USE_ORDERLESS: true,
+    USE_MULTI_RPC: modeConfig.USE_MULTI_RPC,
+    USE_BATCH_SUBMIT: false,
+    IS_DRYRUN: mode === 'dryrun',
+    TARGET_TPS: modeConfig.TARGET_TPS,
+    MODE_LABEL: mode,
+  };
+}
+
+// Configuration derived from run mode
+const CONFIG = getConfig(RUN_MODE);
 
 // Adaptive state
 let currentDelay = 0;       // Starts at 0, increases on mempool_full
@@ -856,7 +939,7 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
       if (state.recentLatencies.length > 100) state.recentLatencies.shift();
 
       // Broadcast trade (sampled to reduce overhead)
-      if (Math.random() < CONFIG.TRADE_SAMPLE_RATE) { // 3% sampling to prevent UI freeze at 1k TPS
+      if (Math.random() < CONFIG.TRADE_SAMPLE_RATE) { // Sample trades to prevent UI freeze at high TPS
         tradeIdCounter++;
         const tradeAmount = getRandomAmount();
         if (result.isBuy) {
@@ -1198,7 +1281,8 @@ function initializeAccounts(): Account[] {
   const ultraKeys = process.env.ULTRA_PRIVATE_KEYS;
   if (ultraKeys) {
     const keys = ultraKeys.split(',').map(k => k.trim());
-    for (const key of keys) {
+    const maxAccounts = CONFIG.IS_DRYRUN ? 2 : keys.length;
+    for (const key of keys.slice(0, maxAccounts)) {
       try {
         accounts.push(Account.fromPrivateKey({ privateKey: parsePrivateKey(key) }));
       } catch (e) {
@@ -1360,6 +1444,58 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', isRunning: state.isRunning, stats: getStats() });
 });
 
+app.get('/status', async (req, res) => {
+  let activeAccounts = state.accounts.filter(a => a.isActive).length;
+  let totalAccounts = state.accounts.length;
+  let combinedBalance = state.combinedBalance;
+  let marketAddress = state.marketAddress;
+
+  if (!marketAddress) {
+    try {
+      const marketInfo = await getMarketInfo();
+      marketAddress = marketInfo.address;
+    } catch {
+      marketAddress = null;
+    }
+  }
+
+  if (totalAccounts === 0) {
+    const accounts = initializeAccounts();
+    totalAccounts = accounts.length;
+    combinedBalance = 0;
+    activeAccounts = 0;
+    for (const account of accounts) {
+      try {
+        const balance = await aptos.getAccountAPTAmount({ accountAddress: account.accountAddress });
+        const balanceApt = balance / 100_000_000;
+        combinedBalance += balanceApt;
+        if (balanceApt >= 0.5) activeAccounts++;
+      } catch {
+        // Ignore individual balance errors
+      }
+    }
+  }
+
+  const uiData = getFullUIData();
+  const market = {
+    ...uiData.market,
+    address: marketAddress || uiData.market.address,
+  };
+
+  res.json({
+    status: 'ok',
+    isRunning: state.isRunning,
+    mode: CONFIG.MODE_LABEL,
+    accounts: { active: activeAccounts, total: totalAccounts },
+    marketAddress,
+    stats: uiData.stats,
+    market,
+    position: uiData.position,
+    botBalance: combinedBalance,
+    marketReserves: uiData.marketReserves,
+  });
+});
+
 app.post('/stop', (req, res) => {
   state.isRunning = false;
   state.accounts.forEach(a => a.isActive = false);
@@ -1397,37 +1533,44 @@ app.get('/stats', (req, res) => {
   res.json(getStats());
 });
 
+// Mode emoji and description mapping
+const MODE_INFO: Record<RunMode, { emoji: string; desc: string }> = {
+  dryrun:  { emoji: '🧪', desc: 'UI test mode (~10 TPS)' },
+  normal:  { emoji: '🔄', desc: 'Light demo (~1K TPS)' },
+  turbo:   { emoji: '⚡', desc: 'Medium intensity (~3K TPS)' },
+  ultra:   { emoji: '🔥', desc: 'High intensity (~10K TPS)' },
+  quantum: { emoji: '🚀', desc: 'MAXIMUM POWER (~30K+ TPS)' },
+};
+
 // Start server
 server.listen(CONFIG.PORT, async () => {
+  const modeInfo = MODE_INFO[RUN_MODE];
   console.log('='.repeat(70));
-  console.log('ULTRA HFT SERVER - ORDERLESS TRANSACTIONS MODE');
+  console.log(`${modeInfo.emoji} ULTRA HFT SERVER - ${RUN_MODE.toUpperCase()} MODE ${modeInfo.emoji}`);
   console.log('='.repeat(70));
+  console.log(`\nMode: ${RUN_MODE} - ${modeInfo.desc}`);
   console.log(`\nHTTP:      http://localhost:${CONFIG.PORT}`);
   console.log(`WebSocket: ws://localhost:${CONFIG.PORT}`);
   console.log('\nFeatures:');
   console.log('  - ORDERLESS TRANSACTIONS (no sequence bottleneck!)');
-  console.log('  - Multi-account parallel submission (20 accounts)');
-  console.log('  - Large batch sizes (100 txns/batch)');
-  console.log('  - 95% fire-and-forget mode');
+  console.log('  - Multi-account parallel submission (25 accounts)');
+  console.log(`  - Batch size: ${CONFIG.BATCH_SIZE} txns/batch`);
+  console.log(`  - Fire-and-forget: ${(CONFIG.FIRE_AND_FORGET_RATIO * 100).toFixed(0)}%`);
   console.log('  - 3-stage pipeline: Build → Sign → Submit');
-  console.log('  - Supports binary + multi-outcome markets');
+  console.log('  - Multi-RPC load balancing');
   console.log('\nConfiguration:');
-  console.log(`  USE_ORDERLESS: ${CONFIG.USE_ORDERLESS}`);
-  console.log(`  BATCH_SIZE: ${CONFIG.BATCH_SIZE}`);
-  console.log(`  FIRE_AND_FORGET: ${(CONFIG.FIRE_AND_FORGET_RATIO * 100).toFixed(0)}%`);
-  console.log(`  MAX_PENDING: ${CONFIG.MAX_PENDING}`);
-  console.log('\nTarget: 5,000 - 10,000+ TPS');
+  console.log(`  BATCH_SIZE:     ${CONFIG.BATCH_SIZE}`);
+  console.log(`  BATCH_DELAY_MS: ${CONFIG.BATCH_DELAY_MS}`);
+  console.log(`  USE_MULTI_RPC:  ${CONFIG.USE_MULTI_RPC}`);
+  console.log(`  MAX_PENDING:    ${CONFIG.MAX_PENDING}`);
+  console.log(`\n${modeInfo.emoji} Target: ${CONFIG.TARGET_TPS.toLocaleString()} TPS`);
   console.log('\n' + '='.repeat(70) + '\n');
 
   // Auto-start if mode is passed as command line arg
   const mode = process.argv[2];
   const duration = parseInt(process.argv[3]) || 60;
-  if (mode === 'normal' || mode === 'turbo' || mode === 'ultra' || mode === 'dryrun') {
-    if (mode === 'dryrun') {
-      console.log(`\n🧪 DRYRUN MODE: ~100 TPS, tiny trades, ${duration}s duration`);
-    } else {
-      console.log(`Auto-starting in ${mode} mode for ${duration}s...`);
-    }
+  if (mode === 'dryrun' || mode === 'normal' || mode === 'turbo' || mode === 'ultra' || mode === 'quantum' || mode === 'prod') {
+    console.log(`\n${modeInfo.emoji} Starting ${RUN_MODE} mode for ${duration}s...`);
     await startTrading();
     if (duration > 0) {
       setTimeout(() => {

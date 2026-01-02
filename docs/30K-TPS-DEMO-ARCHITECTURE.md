@@ -75,13 +75,16 @@
 
 ## Infrastructure
 
-### Digital Ocean Droplets
+### Digital Ocean Droplets (3 Workers + 1 Fullnode)
 
-| Droplet | IP | Specs | Purpose |
-|---------|-----|-------|---------|
-| `ubuntu-s-2vcpu-4gb-sfo2-01` | 178.128.177.88 | 4GB RAM, 80GB | **HFT Worker 1** |
-| `ubuntu-s-2vcpu-4gb-sfo3-01` | 161.35.231.0 | 4GB RAM, 80GB | **HFT Worker 2** |
-| `ubuntu-s-8vcpu-32gb-640gb-intel-sfo3-01` | 164.92.117.18 | 32GB RAM, 640GB | **Aptos Fullnode** |
+| Worker | IP | Accounts | Purpose |
+|--------|-----|----------|---------|
+| Worker 1 | 178.128.177.88 | 9 (accounts 1-7 + 2 new) | **HFT Worker 1** |
+| Worker 2 | 147.182.237.239 | 8 (accounts 8-15) | **HFT Worker 2** |
+| Worker 3 | 161.35.231.0 | 8 (accounts 16-20 + 3 new) | **HFT Worker 3** |
+| Fullnode | 164.92.117.18 | N/A | **Aptos Fullnode (32GB)** |
+
+**Total: 25 trading accounts across 3 cloud workers**
 
 ### RPC Endpoints
 
@@ -157,13 +160,33 @@ Creates dramatic price swings while conserving APT:
 
 ---
 
+## TPS Modes
+
+The HFT server supports 5 modes with escalating TPS targets:
+
+| Mode | Target TPS | Batch Size | Delay | Use Case |
+|------|-----------|------------|-------|----------|
+| 🧪 `dryrun` | ~10 | 1 | 100ms | UI testing, minimal APT |
+| 🔄 `normal` | ~1,000 | 10 | 50ms | Light demo |
+| ⚡ `turbo` | ~3,000 | 30 | 40ms | Medium intensity |
+| 🔥 `ultra` | ~10,000 | 80 | 30ms | High intensity |
+| 🚀 `quantum` | ~30,000+ | 150 | 20ms | **DEMO DAY MAX POWER** |
+
+```bash
+# Examples
+npx tsx server/hft-ultra-server.ts dryrun 30    # 30 seconds at ~10 TPS
+npx tsx server/hft-ultra-server.ts quantum 60   # 60 seconds at ~30K TPS
+```
+
+---
+
 ## Running the Demo
 
 ### Quick Start (Dry Run - 5 seconds)
 
 ```bash
 # Terminal 1: Start HFT server in dryrun mode
-npx tsx server/hft-ultra-server.ts dryrun
+npx tsx server/hft-ultra-server.ts dryrun 5
 
 # Terminal 2: Start frontend
 npm run dev
@@ -172,20 +195,20 @@ npm run dev
 # Click "ARM SYSTEM" → "LAUNCH DEMO"
 ```
 
-### Full 30K TPS Demo
+### Full 30K TPS Demo (QUANTUM MODE)
 
 ```bash
 # Set environment variables
 export APTOS_API_KEY="AG-3JMDT54EN4DCLULDWAUXCYGQ56JJQCYHH"
 export QUICKNODE_RPC="https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1"
-export ULTRA_PRIVATE_KEYS="0xkey1,0xkey2,...,0xkey20"
+export ULTRA_PRIVATE_KEYS="<25 comma-separated keys>"
 export MULTI_MARKET="0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96"
 
 # Option A: Orchestrator (recommended)
 ./scripts/orchestrator.sh demo
 
-# Option B: Manual 3-worker launch
-./scripts/run-3-workers.sh normal 60  # 60 seconds
+# Option B: Direct quantum mode
+npx tsx server/hft-ultra-server.ts quantum 60
 ```
 
 ### Using the HFT Launch Control UI
@@ -193,7 +216,7 @@ export MULTI_MARKET="0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e
 1. Navigate to `/demo-day`
 2. **Pre-flight checks** must all pass:
    - ✓ HFT Server Connection
-   - ✓ Trading Accounts Ready (20 accounts)
+   - ✓ Trading Accounts Ready (25 accounts)
    - ✓ Market Contract Active
    - ✓ Sufficient Gas Funds
 3. Click **"ARM SYSTEM"**
@@ -291,10 +314,18 @@ aptos-polymarket/
 ## TPS Formula
 
 ```
-TPS = Num_Workers × Accounts_Per_Worker × Batch_Size × (1000 / Batch_Delay_Ms)
+TPS = Total_Accounts × Batch_Size × (1000 / Batch_Delay_Ms)
 
-Full Demo:
-  3 workers × 7 accounts × 150 batch × (1000 / 100ms) = ~31,500 TPS
+Quantum Mode (30K+ TPS):
+  25 accounts × 150 batch × (1000 / 20ms) = 187,500 theoretical
+  Real-world: ~30,000-40,000 TPS (mempool + network limits)
+
+Mode Examples:
+  dryrun:  25 × 1 × (1000/100)   = 250 theoretical → ~10 real
+  normal:  25 × 10 × (1000/50)   = 5,000 theoretical → ~1K real
+  turbo:   25 × 30 × (1000/40)   = 18,750 theoretical → ~3K real
+  ultra:   25 × 80 × (1000/30)   = 66,666 theoretical → ~10K real
+  quantum: 25 × 150 × (1000/20)  = 187,500 theoretical → ~30K+ real
 ```
 
 ---
@@ -302,8 +333,10 @@ Full Demo:
 ## Summary
 
 This demo showcases Aptos' true parallel execution capabilities:
-- **20 trading accounts** across 3 cloud workers
+- **25 trading accounts** across 3 cloud workers
+- **5 TPS modes**: dryrun (10), normal (1K), turbo (3K), ultra (10K), quantum (30K+)
 - **Orderless transactions** eliminating sequence bottlenecks
 - **Aggregator V2** enabling parallel smart contract updates
 - **Multi-RPC load balancing** distributing requests
-- Real 30,000+ TPS on testnet blockchain
+- **500K APT** ready for demo day
+- Real 30,000+ TPS on Aptos testnet

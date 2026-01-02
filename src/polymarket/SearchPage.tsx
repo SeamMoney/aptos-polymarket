@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Search as SearchIcon, X } from "lucide-react";
 import { PolyHeader } from "./PolyHeader";
 import { mockMarkets } from "./mockData";
+import { isMarketClosed } from "./marketStatus";
 
 export function SearchPage() {
   const navigate = useNavigate();
@@ -86,9 +87,14 @@ export function SearchPage() {
                   <p className="text-white text-sm font-medium leading-5 mb-0.5 line-clamp-2">
                     {market.question}
                   </p>
-                  <p className="text-poly-textMuted text-xs">
-                    {market.volume} Vol.
-                  </p>
+                  <div className="flex items-center gap-2 text-poly-textMuted text-xs">
+                    <span>{market.volume} Vol.</span>
+                    {isMarketClosed(market) && (
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-[#1b2a36] text-[#f59e0b] border border-[#f59e0b]/40">
+                        Ended
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <span className="text-white text-base font-bold shrink-0">
                   {Math.round(market.yesPrice * 100)}%

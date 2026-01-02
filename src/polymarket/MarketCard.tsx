@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Bookmark, Gift, RefreshCw, MoreHorizontal, X } from "lucide-react";
 import type { Market, Outcome } from "./types";
 import { LATEST_REAL_PRICES } from "./realPriceData";
+import { isMarketClosed } from "./marketStatus";
 
 // Semi-circle gauge component for percentage display (Polymarket style)
 function PercentageGauge({
@@ -231,6 +232,7 @@ interface MarketCardProps {
 export function MarketCard({ market, onPress }: MarketCardProps) {
   const [expandedTrade, setExpandedTrade] = useState<"yes" | "no" | null>(null);
   const isSingleOutcome = !market.isMultiOutcome || !market.outcomes;
+  const isClosed = isMarketClosed(market);
 
   // For multi-outcome markets (like Federal Reserve Chair), use the highest real price from outcomes
   // For single outcome markets, use market.yesPrice
@@ -286,6 +288,11 @@ export function MarketCard({ market, onPress }: MarketCardProps) {
               <h3 className="text-white text-sm font-bold leading-snug pr-2 line-clamp-2">
                 {market.question}
               </h3>
+              {isClosed && (
+                <span className="inline-flex mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-[#1b2a36] text-[#f59e0b] border border-[#f59e0b]/40">
+                  Ended
+                </span>
+              )}
             </div>
             {/* Show gauge for single outcome markets */}
             {isSingleOutcome && (

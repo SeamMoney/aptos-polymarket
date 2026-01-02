@@ -295,16 +295,16 @@ cmd_demo() {
     fi
 
     echo ""
-    echo "[1/3] Starting Worker 1 (${WORKER_VM1_IP})..."
-    ssh -t ${WORKER_VM_USER}@${WORKER_VM1_IP} "screen -dmS hft bash -c 'cd /opt/aptos-hft && ./run-worker.sh normal ${DURATION} > /tmp/hft-worker.log 2>&1'" 2>/dev/null || true
+    echo "[1/3] Starting Worker 1 (${WORKER_VM1_IP}) in QUANTUM mode..."
+    ssh -t ${WORKER_VM_USER}@${WORKER_VM1_IP} "screen -dmS hft bash -c 'cd /opt/aptos-hft && ./run-worker.sh quantum ${DURATION} > /tmp/hft-worker.log 2>&1'" 2>/dev/null || true
     echo "  ✓ Started"
 
-    echo "[2/3] Starting Worker 2 (${WORKER_VM2_IP})..."
-    ssh -t ${WORKER_VM_USER}@${WORKER_VM2_IP} "screen -dmS hft bash -c 'cd /opt/aptos-hft && ./run-worker.sh normal ${DURATION} > /tmp/hft-worker.log 2>&1'" 2>/dev/null || true
+    echo "[2/3] Starting Worker 2 (${WORKER_VM2_IP}) in QUANTUM mode..."
+    ssh -t ${WORKER_VM_USER}@${WORKER_VM2_IP} "screen -dmS hft bash -c 'cd /opt/aptos-hft && ./run-worker.sh quantum ${DURATION} > /tmp/hft-worker.log 2>&1'" 2>/dev/null || true
     echo "  ✓ Started"
 
-    echo "[3/3] Starting Worker 3 (${WORKER_VM3_IP})..."
-    ssh -t ${WORKER_VM_USER}@${WORKER_VM3_IP} "screen -dmS hft bash -c 'cd /opt/aptos-hft && ./run-worker.sh normal ${DURATION} > /tmp/hft-worker.log 2>&1'" 2>/dev/null || true
+    echo "[3/3] Starting Worker 3 (${WORKER_VM3_IP}) in QUANTUM mode..."
+    ssh -t ${WORKER_VM_USER}@${WORKER_VM3_IP} "screen -dmS hft bash -c 'cd /opt/aptos-hft && ./run-worker.sh quantum ${DURATION} > /tmp/hft-worker.log 2>&1'" 2>/dev/null || true
     echo "  ✓ Started"
 
     echo ""

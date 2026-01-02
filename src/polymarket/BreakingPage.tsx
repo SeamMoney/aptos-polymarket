@@ -4,6 +4,7 @@ import { TrendingUp, Zap, Activity, Play, Users } from "lucide-react";
 import { PolyHeader } from "./PolyHeader";
 import { useMultiMarkets } from "../hooks/useMultiMarkets";
 import { useHFTConnection } from "../hooks/useHFTConnection";
+import { isClosedFromTimestamp } from "./marketStatus";
 
 export function BreakingPage() {
   const navigate = useNavigate();
@@ -184,6 +185,11 @@ export function BreakingPage() {
                 <p className="text-white text-sm font-medium leading-5 mb-1">
                   {market.question}
                 </p>
+                {isClosedFromTimestamp(market.endTime, market.resolved) && (
+                  <span className="inline-flex mb-2 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-[#1b2a36] text-[#f59e0b] border border-[#f59e0b]/40">
+                    Ended
+                  </span>
+                )}
 
                 {/* Top outcomes */}
                 <div className="flex flex-wrap gap-2 mb-2">

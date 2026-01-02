@@ -8,6 +8,8 @@ export interface Market {
   liquidity: string;
   category: Category;
   endDate: string;
+  endTime?: number;
+  resolved?: boolean;
   isNew?: boolean;
   isTrending?: boolean;
   isMultiOutcome?: boolean;

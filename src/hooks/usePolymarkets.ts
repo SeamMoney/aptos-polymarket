@@ -160,6 +160,8 @@ export function usePolymarkets(): PolymarketsHook {
       liquidity: formatVolume((market.yesReserve + market.noReserve) / 100_000_000 / 2),
       category: mapCategory(market.description),
       endDate: formatEndDate(market.endTime),
+      endTime: market.endTime,
+      resolved: market.resolved,
       createdAt: new Date().toLocaleDateString(),
       resolver: market.creator || market.address.slice(0, 12) + '...',
       isNew: index < 2, // First 2 are "new"
@@ -215,6 +217,8 @@ export function usePolymarkets(): PolymarketsHook {
         liquidity: formatVolume(market.totalCollateral / 2),
         category: mapCategory(market.category),
         endDate: formatEndDate(market.endTime),
+        endTime: market.endTime,
+        resolved: market.resolved,
         createdAt: new Date().toLocaleDateString(),
         resolver: market.address.slice(0, 12) + '...',
         isNew: index < 2,
