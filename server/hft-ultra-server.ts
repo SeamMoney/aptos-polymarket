@@ -1516,26 +1516,73 @@ app.post('/start', async (req, res) => {
   if (state.isRunning) {
     return res.json({ success: true, message: 'Already running' });
   }
+
+  // If accounts not initialized yet, initialize them now
+  if (state.accounts.length === 0) {
+    console.log('📋 No accounts initialized, running initialization...');
+    await initializeServerState();
+  }
+
   if (!state.marketAddress) {
     return res.status(400).json({ success: false, error: 'No market address set' });
   }
-  // Reset adaptive delay on restart
+
+  const activeAccounts = state.accounts.filter(a => a.isActive);
+  if (activeAccounts.length === 0) {
+    return res.status(400).json({ success: false, error: 'No active accounts with sufficient balance' });
+  }
+
+  // Reset adaptive delay and stats
   currentDelay = 0;
   consecutiveSuccess = 0;
+  state.totalTrades = 0;
+  state.successfulTrades = 0;
+  state.failedTrades = 0;
+  state.startTime = Date.now();
+  state.peakTps = 0;
+  state.recentTps = [];
+  state.recentLatencies = [];
+  state.totalInvested = 0;
+  lastTpsCalcTime = Date.now();
+  lastTpsCalcTrades = 0;
 
-  // Restart trading - reactivate accounts and restart loops
+  // Refresh UI data
+  await refreshUIData();
+
+  // Start trading
   state.isRunning = true;
-  state.accounts.forEach(a => a.isActive = true);
 
-  // Restart trading loops for all accounts
+  console.log(`\n🚀 LAUNCH! Starting ${activeAccounts.length} parallel trading loops...`);
+  console.log(`Mode: ${CONFIG.MODE_LABEL} | Batch: ${CONFIG.BATCH_SIZE} | Target: ${CONFIG.TARGET_TPS} TPS\n`);
+
+  // Start periodic UI data refresh (every 15 seconds, non-blocking)
+  const uiRefreshInterval = setInterval(() => {
+    if (!state.isRunning) {
+      clearInterval(uiRefreshInterval);
+      return;
+    }
+    refreshUIData().catch(() => {});
+    broadcast({ type: 'state', data: { isRunning: state.isRunning, ...getFullUIData() } });
+  }, 15000);
+
+  // Stats banner every 5 seconds
+  const statsBannerInterval = setInterval(() => {
+    if (!state.isRunning) {
+      clearInterval(statsBannerInterval);
+      return;
+    }
+    printStatsBanner();
+  }, 5000);
+
+  // Start all trading loops in parallel
   for (let i = 0; i < state.accounts.length; i++) {
     if (state.accounts[i].isActive) {
       accountTradingLoop(state.accounts[i], i);
     }
   }
 
-  broadcast({ type: 'started', accounts: state.accounts.length });
-  res.json({ success: true, message: 'Trading restarted' });
+  broadcast({ type: 'started', ...getFullUIData() });
+  res.json({ success: true, message: `Trading started with ${activeAccounts.length} accounts` });
 });
 
 app.get('/stats', (req, res) => {
@@ -1551,6 +1598,65 @@ const MODE_INFO: Record<RunMode, { emoji: string; desc: string }> = {
   ultra:   { emoji: '🔥', desc: 'High intensity (~10K TPS)' },
   quantum: { emoji: '🚀', desc: 'MAXIMUM POWER (~30K+ TPS)' },
 };
+
+// Initialize server state (accounts + market) without starting trading
+async function initializeServerState(): Promise<void> {
+  console.log('\n📋 Initializing server state...');
+
+  const accounts = initializeAccounts();
+  if (accounts.length === 0) {
+    console.warn('⚠️  No accounts configured. Set ULTRA_PRIVATE_KEYS or APTOS_PRIVATE_KEY');
+    return;
+  }
+
+  console.log(`Found ${accounts.length} account(s)`);
+
+  // Get market info
+  try {
+    const marketInfo = await getMarketInfo();
+    state.marketAddress = marketInfo.address;
+    state.isMultiOutcome = marketInfo.isMultiOutcome;
+    state.outcomeCount = marketInfo.outcomeCount;
+    console.log(`✓ Market: ${state.marketAddress.slice(0, 20)}...`);
+    console.log(`✓ Type: ${state.isMultiOutcome ? `Multi-Outcome (${state.outcomeCount})` : 'Binary'}`);
+  } catch (e: any) {
+    console.error(`✗ Failed to fetch market: ${e.message}`);
+  }
+
+  // Initialize account states
+  state.accounts = [];
+  let totalBalance = 0;
+  for (const account of accounts) {
+    const accState: AccountState = {
+      account,
+      sequenceNumber: 0n,
+      pendingTxns: 0,
+      successCount: 0,
+      failCount: 0,
+      isActive: false, // Start inactive, will be activated on /start
+    };
+
+    try {
+      await refreshSequenceNumber(accState);
+      const balance = await aptos.getAccountAPTAmount({ accountAddress: account.accountAddress });
+      const balanceAPT = balance / 100_000_000;
+      totalBalance += balanceAPT;
+      console.log(`  ${account.accountAddress.toString().slice(0, 12)}... | ${balanceAPT.toFixed(2)} APT`);
+
+      if (balanceAPT >= 0.5) {
+        accState.isActive = true; // Mark as ready (but not trading yet)
+      }
+    } catch (e) {
+      console.error(`  Failed to check ${account.accountAddress.toString().slice(0, 12)}...`);
+    }
+
+    state.accounts.push(accState);
+  }
+
+  state.combinedBalance = totalBalance;
+  console.log(`\n✓ Total balance: ${totalBalance.toFixed(2)} APT across ${accounts.length} accounts`);
+  console.log('✓ Server ready. Use UI to ARM and LAUNCH, or auto-start with mode arg.\n');
+}
 
 // Start server
 server.listen(CONFIG.PORT, async () => {
@@ -1574,13 +1680,16 @@ server.listen(CONFIG.PORT, async () => {
   console.log(`  USE_MULTI_RPC:  ${CONFIG.USE_MULTI_RPC}`);
   console.log(`  MAX_PENDING:    ${CONFIG.MAX_PENDING}`);
   console.log(`\n${modeInfo.emoji} Target: ${CONFIG.TARGET_TPS.toLocaleString()} TPS`);
-  console.log('\n' + '='.repeat(70) + '\n');
+  console.log('\n' + '='.repeat(70));
 
-  // Auto-start if mode is passed as command line arg
+  // ALWAYS initialize accounts and market on startup (for pre-flight checks)
+  await initializeServerState();
+
+  // Auto-start trading ONLY if mode is passed as command line arg
   const mode = process.argv[2];
   const duration = parseInt(process.argv[3]) || 60;
   if (mode === 'dryrun' || mode === 'light' || mode === 'normal' || mode === 'turbo' || mode === 'ultra' || mode === 'quantum' || mode === 'prod') {
-    console.log(`\n${modeInfo.emoji} Starting ${RUN_MODE} mode for ${duration}s...`);
+    console.log(`\n${modeInfo.emoji} AUTO-START: ${RUN_MODE} mode for ${duration}s...`);
     await startTrading();
     if (duration > 0) {
       setTimeout(() => {
@@ -1589,5 +1698,8 @@ server.listen(CONFIG.PORT, async () => {
         process.exit(0);
       }, duration * 1000);
     }
+  } else {
+    console.log('\n⏸️  STANDBY MODE: Waiting for UI to ARM and LAUNCH');
+    console.log('   Or restart with a mode: npx tsx server/hft-ultra-server.ts turbo 60\n');
   }
 });

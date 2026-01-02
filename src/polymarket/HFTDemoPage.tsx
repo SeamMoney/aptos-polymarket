@@ -199,14 +199,34 @@ export function HFTDemoPage() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="max-w-xl mx-auto p-6 bg-poly-card rounded-xl border border-poly-border"
+            className="max-w-2xl mx-auto p-6 bg-poly-card rounded-xl border border-poly-border"
           >
             <h3 className="text-white font-semibold mb-3">Start the HFT Server</h3>
-            <code className="block bg-poly-bg p-4 rounded-lg text-poly-green font-mono text-sm mb-3">
-              ./scripts/run-3-workers.sh normal 60
-            </code>
-            <p className="text-pm-text-muted text-sm">
-              Starts 3 workers with 20 accounts for ~30k TPS using your synced fullnode.
+            <p className="text-pm-text-muted text-sm mb-3">
+              Run one of these commands, then return here to ARM and LAUNCH:
+            </p>
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs text-[#60a5fa] mb-1">Standby Mode (UI Control)</div>
+                <code className="block bg-poly-bg p-3 rounded-lg text-poly-green font-mono text-xs overflow-x-auto">
+                  ULTRA_PRIVATE_KEYS="..." npx tsx server/hft-ultra-server.ts
+                </code>
+              </div>
+              <div>
+                <div className="text-xs text-[#fbbf24] mb-1">Auto-Start Turbo (3K TPS)</div>
+                <code className="block bg-poly-bg p-3 rounded-lg text-poly-green font-mono text-xs overflow-x-auto">
+                  ULTRA_PRIVATE_KEYS="..." npx tsx server/hft-ultra-server.ts turbo 60
+                </code>
+              </div>
+              <div>
+                <div className="text-xs text-[#22c55e] mb-1">Auto-Start Quantum (30K TPS)</div>
+                <code className="block bg-poly-bg p-3 rounded-lg text-poly-green font-mono text-xs overflow-x-auto">
+                  ULTRA_PRIVATE_KEYS="..." npx tsx server/hft-ultra-server.ts quantum 60
+                </code>
+              </div>
+            </div>
+            <p className="text-pm-text-muted text-xs mt-3">
+              See DEMO_GUIDE.md for full private keys and instructions.
             </p>
           </motion.div>
         )}
