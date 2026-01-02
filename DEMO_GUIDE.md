@@ -1,45 +1,64 @@
 # 30K TPS DEMO GUIDE
 
+## Infrastructure
+
+| VM | IP | Role | Accounts |
+|----|-----|------|----------|
+| Worker 1 | 178.128.177.88 | **MASTER** (UI connects here) | 7 |
+| Worker 2 | 147.182.237.239 | Secondary | 7 |
+| Worker 3 | 161.35.231.0 | Secondary | 6 |
+| Fullnode | 164.92.117.18 | Aptos Fullnode | - |
+
+**RPC Endpoints:**
+- Your Fullnode: http://164.92.117.18:8080/v1
+- QuickNode: https://polished-evocative-borough.aptos-testnet.quiknode.pro/...
+
+---
+
 ## Quick Start (MORNING CHECKLIST)
 
-### ONE COMMAND TO START EVERYTHING:
+### Step 1: Deploy Latest Code (if needed)
 ```bash
 cd ~/aptos-polymarket
-./scripts/demo-morning.sh
+./scripts/demo-deploy-all.sh
 ```
 
-This script:
-1. SSHs into your VM (164.92.117.18)
-2. Deploys latest server code
-3. Starts HFT server in **STANDBY MODE** (waiting for you to ARM + LAUNCH from UI)
-4. Shows you what to do next
+### Step 2: Start All Workers
+```bash
+./scripts/demo-start-all.sh
+```
+
+This starts:
+- Worker 1 in **STANDBY MODE** (waits for UI)
+- Workers 2 & 3 in **AUTO-START MODE** (quantum 30K TPS)
 
 ### Two-Key Security System:
 | Key | Action | Location |
 |-----|--------|----------|
-| **KEY 1** | Run `./scripts/demo-morning.sh` | Terminal |
+| **KEY 1** | Run `./scripts/demo-start-all.sh` | Terminal |
 | **KEY 2** | Click **ARM SYSTEM** in UI | Browser |
 | **→ LAUNCH** | Click **LAUNCH DEMO** | Browser |
 
-### After Running the Script:
+### Step 3: ARM + LAUNCH from UI
 1. Open: **https://aptos-polymarket.vercel.app/demo-day**
-2. Server should show as **Connected** (green)
+2. Server should show as **Connected** (green) to 178.128.177.88:3001
 3. Click **ARM SYSTEM** → Pre-flight checks run
 4. All checks pass → Click **LAUNCH DEMO**
 5. 3-2-1 countdown → 30K TPS GO!
 
-### Monitor the Demo:
+### Monitor All Workers:
 ```bash
-./scripts/demo-monitor.sh
+./scripts/demo-monitor-all.sh
 ```
-Opens a tmux dashboard with:
-- HFT server logs (top)
-- Live TPS stats (bottom left)
-- Fullnode status (bottom right)
+Opens a 4-pane tmux dashboard:
+- Worker 1 logs (top)
+- Worker 2 logs (bottom left)
+- Worker 3 logs (bottom right)
+- Aggregated TPS stats (bottom)
 
-### Stop the Demo:
+### Stop All Workers:
 ```bash
-ssh root@164.92.117.18 'tmux kill-session -t hft-demo'
+./scripts/demo-stop-all.sh
 ```
 
 ---
