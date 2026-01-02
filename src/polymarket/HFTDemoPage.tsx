@@ -17,9 +17,9 @@ import { useHFTConnection } from '../hooks/useHFTConnection';
 const OUTCOMES = ["Trump Jr", "Vance", "DeSantis", "Haley", "Ramaswamy", "Other"];
 
 export function HFTDemoPage() {
-  const serverUrl = (import.meta.env.VITE_HFT_WS_URL || 'ws://localhost:3001')
-    .replace('ws://', 'http://')
-    .replace('wss://', 'https://');
+  // Use environment variable for production, fallback to localhost for dev
+  const wsUrl = import.meta.env.VITE_HFT_WS_URL || 'ws://localhost:3001';
+  const serverUrl = wsUrl.replace('ws://', 'http://').replace('wss://', 'https://');
   const {
     isConnected,
     isRunning,
