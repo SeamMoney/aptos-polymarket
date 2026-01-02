@@ -38,11 +38,12 @@ const MODULE = `${CONTRACT_ADDRESS}::market`;
 const MULTI_MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
 
 // Available run modes with escalating TPS targets
-type RunMode = 'dryrun' | 'normal' | 'turbo' | 'ultra' | 'quantum';
+type RunMode = 'dryrun' | 'light' | 'normal' | 'turbo' | 'ultra' | 'quantum';
 
 function resolveMode(): RunMode {
   const argMode = process.argv[2];
   if (argMode === 'dryrun' || process.env.HFT_DRYRUN === 'true') return 'dryrun';
+  if (argMode === 'light') return 'light';
   if (argMode === 'normal') return 'normal';
   if (argMode === 'turbo') return 'turbo';
   if (argMode === 'ultra') return 'ultra';
@@ -76,13 +77,23 @@ const MODE_CONFIGS: Record<RunMode, {
     TARGET_TPS: 10,
     MAX_PENDING: 20,
   },
-  // ~1,000 TPS - Light demo, good for testing
+  // ~100 TPS - Light stress test
+  light: {
+    BATCH_SIZE: 3,
+    BATCH_DELAY_MS: 80,
+    USE_MULTI_RPC: false,
+    FIRE_AND_FORGET_RATIO: 0.6,
+    TRADE_SAMPLE_RATE: 0.5,
+    TARGET_TPS: 100,
+    MAX_PENDING: 30,
+  },
+  // ~1,000 TPS - Medium demo, good for testing
   normal: {
     BATCH_SIZE: 10,
     BATCH_DELAY_MS: 50,
     USE_MULTI_RPC: true,
     FIRE_AND_FORGET_RATIO: 0.7,
-    TRADE_SAMPLE_RATE: 0.1,
+    TRADE_SAMPLE_RATE: 0.25,    // 25% = ~250 trades/sec shown - visible activity
     TARGET_TPS: 1000,
     MAX_PENDING: 50,
   },
@@ -92,7 +103,7 @@ const MODE_CONFIGS: Record<RunMode, {
     BATCH_DELAY_MS: 40,
     USE_MULTI_RPC: true,
     FIRE_AND_FORGET_RATIO: 0.85,
-    TRADE_SAMPLE_RATE: 0.05,
+    TRADE_SAMPLE_RATE: 0.15,    // 15% = ~450 trades/sec shown - good visibility
     TARGET_TPS: 3000,
     MAX_PENDING: 100,
   },
@@ -102,7 +113,7 @@ const MODE_CONFIGS: Record<RunMode, {
     BATCH_DELAY_MS: 30,
     USE_MULTI_RPC: true,
     FIRE_AND_FORGET_RATIO: 0.9,
-    TRADE_SAMPLE_RATE: 0.02,
+    TRADE_SAMPLE_RATE: 0.08,    // 8% = ~800 trades/sec shown
     TARGET_TPS: 10000,
     MAX_PENDING: 200,
   },
@@ -112,7 +123,7 @@ const MODE_CONFIGS: Record<RunMode, {
     BATCH_DELAY_MS: 20,
     USE_MULTI_RPC: true,
     FIRE_AND_FORGET_RATIO: 0.95,
-    TRADE_SAMPLE_RATE: 0.01,     // 1% sampling to prevent UI freeze at 30K TPS
+    TRADE_SAMPLE_RATE: 0.05,    // 5% = ~1500 trades/sec shown - busy but manageable
     TARGET_TPS: 30000,
     MAX_PENDING: 300,
   },
@@ -158,22 +169,19 @@ if (!API_KEY) {
 }
 
 // PHASE 17: Multi-RPC load balancing - spread load across multiple endpoints
-// More endpoints = higher aggregate rate limits = more TPS
-const QUICKNODE_RPC = process.env.QUICKNODE_RPC || '';
+// YOUR FULLNODE ONLY - NO RATE LIMITS! 🚀
+const CUSTOM_FULLNODE = process.env.FULLNODE_URL || 'http://164.92.117.18:8080/v1';
+
+// Use ONLY your custom fullnode - no public endpoints that will rate limit us!
+// For even more TPS, you can add multiple fullnodes via EXTRA_RPC_ENDPOINTS
 const RPC_ENDPOINTS = [
-  // Aptos Labs (public, ~20-30 RPS effective)
-  'https://fullnode.testnet.aptoslabs.com/v1',
-  'https://testnet.aptoslabs.com/v1',
-  'https://api.testnet.aptoslabs.com/v1',
-  // Ankr (free tier, 30 RPS)
-  'https://rpc.ankr.com/http/aptos_testnet/v1',
-  // QuickNode (free: 15 RPS, Build $49: 50 RPS)
-  ...(QUICKNODE_RPC ? [QUICKNODE_RPC] : []),
-  // Add more endpoints via env var (comma-separated)
+  CUSTOM_FULLNODE,
+  // Add additional fullnodes via env var (comma-separated) if you have more
   ...(process.env.EXTRA_RPC_ENDPOINTS ? process.env.EXTRA_RPC_ENDPOINTS.split(',') : []),
 ];
 
 // Create multiple Aptos clients for load balancing
+// Always use CUSTOM_FULLNODE as primary - no rate limits!
 const aptosClients: Aptos[] = CONFIG.USE_MULTI_RPC
   ? RPC_ENDPOINTS.map(fullnode => new Aptos(new AptosConfig({
       network: Network.TESTNET,
@@ -182,6 +190,7 @@ const aptosClients: Aptos[] = CONFIG.USE_MULTI_RPC
     })))
   : [new Aptos(new AptosConfig({
       network: Network.TESTNET,
+      fullnode: CUSTOM_FULLNODE,  // Use YOUR fullnode even in single-client mode
       clientConfig: API_KEY ? { API_KEY } : undefined,
     }))];
 
@@ -1536,8 +1545,9 @@ app.get('/stats', (req, res) => {
 // Mode emoji and description mapping
 const MODE_INFO: Record<RunMode, { emoji: string; desc: string }> = {
   dryrun:  { emoji: '🧪', desc: 'UI test mode (~10 TPS)' },
-  normal:  { emoji: '🔄', desc: 'Light demo (~1K TPS)' },
-  turbo:   { emoji: '⚡', desc: 'Medium intensity (~3K TPS)' },
+  light:   { emoji: '💡', desc: 'Light stress test (~100 TPS)' },
+  normal:  { emoji: '🔄', desc: 'Medium demo (~1K TPS)' },
+  turbo:   { emoji: '⚡', desc: 'Medium-high intensity (~3K TPS)' },
   ultra:   { emoji: '🔥', desc: 'High intensity (~10K TPS)' },
   quantum: { emoji: '🚀', desc: 'MAXIMUM POWER (~30K+ TPS)' },
 };
@@ -1569,7 +1579,7 @@ server.listen(CONFIG.PORT, async () => {
   // Auto-start if mode is passed as command line arg
   const mode = process.argv[2];
   const duration = parseInt(process.argv[3]) || 60;
-  if (mode === 'dryrun' || mode === 'normal' || mode === 'turbo' || mode === 'ultra' || mode === 'quantum' || mode === 'prod') {
+  if (mode === 'dryrun' || mode === 'light' || mode === 'normal' || mode === 'turbo' || mode === 'ultra' || mode === 'quantum' || mode === 'prod') {
     console.log(`\n${modeInfo.emoji} Starting ${RUN_MODE} mode for ${duration}s...`);
     await startTrading();
     if (duration > 0) {

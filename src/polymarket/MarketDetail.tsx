@@ -153,7 +153,7 @@ export function MarketDetail() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Use REAL Polymarket price data for the chart
+  // Use REAL Polymarket price data for the chart + LIVE price updates during HFT demo
   // IMPORTANT: All prices in 0-1 decimal format
   const chartOutcomes = useMemo(() => {
     // Check if this is the VP nominee market (has matching candidates)
@@ -178,39 +178,74 @@ export function MarketDetail() {
       return x - Math.floor(x);
     };
 
+    // Check if we have LIVE price data from the blockchain
+    const hasLivePrices = livePriceHistory.length > 5;
+    const isShortTimeframe = ['1H', '6H', '1D'].includes(timeRange);
+
     if (isVPMarket && market?.outcomes) {
-      // Use REAL Polymarket historical data with enhanced volatility
+      // Use REAL Polymarket historical data + LIVE price updates
       return TOP_CANDIDATES.map((candidateName, candIdx) => {
         const outcome = market.outcomes?.find(o => o.name === candidateName);
         const seed = candidateName.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
 
         // Get real prices from the Polymarket CSV data
         const realPrices = REAL_PRICE_HISTORY.map(point => point.prices[candidateName] || 0);
-        const currentPrice = LATEST_REAL_PRICES[candidateName] || 0.05;
 
-        // Sample the real data to match pointsToShow
+        // Use LIVE price as current price when available, otherwise use static
+        const liveCurrentPrice = livePriceHistory.length > 0
+          ? livePriceHistory[livePriceHistory.length - 1].prices[candIdx]
+          : null;
+        const currentPrice = liveCurrentPrice ?? LATEST_REAL_PRICES[candidateName] ?? 0.05;
+
+        // For short timeframes during HFT demo, use live prices for the recent portion
         let basePrices: number[];
-        if (timeRange === 'ALL') {
-          basePrices = [...realPrices];
+
+        if (hasLivePrices && isShortTimeframe) {
+          // Use live price history for recent data (makes chart animate!)
+          const livePricesForCandidate = livePriceHistory.map(p => p.prices[candIdx] || currentPrice);
+
+          // Take the most recent live prices
+          const livePointsToUse = Math.min(livePricesForCandidate.length, Math.floor(pointsToShow * 0.8));
+          const staticPointsNeeded = pointsToShow - livePointsToUse;
+
+          // Get static prices for the beginning
+          const staticPortion = realPrices.slice(-staticPointsNeeded);
+          while (staticPortion.length < staticPointsNeeded) {
+            staticPortion.unshift(staticPortion[0] || currentPrice);
+          }
+
+          // Combine static + live
+          basePrices = [...staticPortion, ...livePricesForCandidate.slice(-livePointsToUse)];
         } else {
-          const startIdx = Math.max(0, realPrices.length - pointsToShow);
-          basePrices = realPrices.slice(startIdx);
+          // Default behavior: use real Polymarket data
+          if (timeRange === 'ALL') {
+            basePrices = [...realPrices];
+          } else {
+            const startIdx = Math.max(0, realPrices.length - pointsToShow);
+            basePrices = realPrices.slice(startIdx);
+          }
         }
 
-        // Pad with the last real price if needed
+        // Pad with the last price if needed
         while (basePrices.length < pointsToShow) {
           basePrices.push(basePrices[basePrices.length - 1] || currentPrice);
         }
         basePrices = basePrices.slice(-pointsToShow);
 
         // Add volatility for visual distinction - more for lower-priced candidates
-        // This makes the lines move more so they're not flat
-        const volatilityScale = currentPrice < 0.1 ? 0.03 : currentPrice < 0.2 ? 0.02 : 0.015;
-
-        // For short timeframes, add intraday movement
-        const isShortTimeframe = ['1H', '6H', '1D'].includes(timeRange);
+        // Skip volatility noise when using live data (it's already moving!)
+        const volatilityScale = hasLivePrices && isShortTimeframe
+          ? 0 // No noise needed - live data moves on its own!
+          : (currentPrice < 0.1 ? 0.03 : currentPrice < 0.2 ? 0.02 : 0.015);
 
         const prices = basePrices.map((basePrice, i) => {
+          // Skip noise when using live data
+          if (volatilityScale === 0) {
+            // Just ensure end matches current price
+            if (i === basePrices.length - 1) return currentPrice;
+            return Math.max(0.005, Math.min(0.99, basePrice));
+          }
+
           // Deterministic noise based on position and candidate
           const noise1 = seededRandom(seed * 1000 + i * 7 + candIdx * 100);
           const noise2 = seededRandom(seed * 2000 + i * 13 + candIdx * 200);
@@ -227,7 +262,7 @@ export function MarketDetail() {
           if (noise2 > 0.95) spike = volatilityScale * 1.5;
           else if (noise2 < 0.05) spike = -volatilityScale * 1.5;
 
-          // Apply more volatility for short timeframes
+          // Apply more volatility for short timeframes (only when not live)
           const timeMultiplier = isShortTimeframe ? 2.5 : 1.0;
 
           let price = basePrice + (wave + randomWalk + spike) * timeMultiplier;
