@@ -14,7 +14,6 @@ import { mockMarkets } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useLiveTrades } from "../hooks/useLiveTrades";
 import { LATEST_REAL_PRICES } from "./realPriceData";
-import type { Trade } from "../hooks/useHFTConnection";
 
 const CHART_HEIGHT = 220;
 const CHART_PADDING_RIGHT = 50;
@@ -162,20 +161,24 @@ export function OutcomeDetail() {
   }, [market, outcomeId]);
 
   // Filter and convert blockchain trades for this specific outcome
-  const outcomeTrades: Trade[] = useMemo(() => {
+  // Convert to the Trade format expected by LiveOrderBook
+  const outcomeTrades = useMemo(() => {
     if (outcomeIndex < 0) return [];
     return blockchainTrades
       .filter(t => t.outcomeIndex === outcomeIndex)
       .map(t => ({
         id: t.id,
-        type: t.type,
-        price: t.price || (outcome?.price || 0.5),
+        bot: t.trader.slice(0, 8) + '...',
+        action: t.type,
+        actionDisplay: t.type === 'buy' ? 'BUY' : 'SELL',
         amount: t.amount,
-        timestamp: t.timestamp,
+        latency: 0,
+        success: true,
         txHash: t.txHash,
-        trader: t.trader,
+        timestamp: t.timestamp,
+        outcome: outcomeIndex,
       }));
-  }, [blockchainTrades, outcomeIndex, outcome?.price]);
+  }, [blockchainTrades, outcomeIndex]);
 
   // More data points for choppier/more detailed chart
   const numPoints = timeRange === "ALL" ? 200 : timeRange === "1M" ? 120 : timeRange === "1W" ? 80 : 60;
@@ -666,7 +669,6 @@ export function OutcomeDetail() {
             isConnected={outcomeTrades.length > 0}
             onLoadMore={loadMore}
             hasMore={hasMore}
-            outcomeName={outcome?.name}
           />
         </div>
 
