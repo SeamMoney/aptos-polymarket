@@ -6,6 +6,7 @@ import type { PanInfo } from "framer-motion";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import type { Market, Outcome } from "./types";
 import { saveTradeRecord, type TradeRecord } from "./PortfolioPage";
+import { emitTrade, type LiveTrade } from "../hooks/useLiveTrades";
 
 interface TradingSheetProps {
   market: Market;
@@ -190,6 +191,19 @@ export function TradingSheet({
           txHash: hash,
         };
         saveTradeRecord(tradeRecord);
+
+        // Emit trade to live trade stream immediately
+        const liveTrade: LiveTrade = {
+          id: `${Date.now()}-${hash}`,
+          type: direction,
+          outcomeIndex,
+          amount: totalCostAPT,
+          price: currentPriceForTrade / 100,
+          timestamp: Date.now(),
+          txHash: hash,
+          trader: account?.address?.toString() || '',
+        };
+        emitTrade(liveTrade);
       }
 
       setTxStatus("success");

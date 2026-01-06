@@ -1,9 +1,29 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 const CONTRACT_ADDRESS = "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1";
+
+// RPC endpoints in priority order (your fullnode first, then QuickNode fallback)
+const RPC_ENDPOINTS = [
+  "https://aptos.cash.trading/v1",  // Your fullnode - no rate limits
+  "https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1",  // QuickNode fallback
+];
+
+// Indexer endpoint (for GraphQL queries - may be rate limited)
 const INDEXER_URL = "https://api.testnet.aptoslabs.com/v1/graphql";
-// Use QuickNode for transaction details to avoid rate limiting
-const QUICKNODE_RPC = "https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1";
+
+// Helper to fetch from RPC with failover
+async function fetchFromRpc(path: string): Promise<Response> {
+  for (const baseUrl of RPC_ENDPOINTS) {
+    try {
+      const res = await fetch(`${baseUrl}${path}`);
+      if (res.ok) return res;
+      if (res.status === 429) continue; // Rate limited, try next
+    } catch {
+      continue; // Network error, try next
+    }
+  }
+  throw new Error('All RPC endpoints failed');
+}
 
 export interface LiveTrade {
   id: string;
@@ -22,35 +42,82 @@ interface UseLiveTradesReturn {
   lastUpdate: number | null;
   loadMore: () => void;
   hasMore: boolean;
+  addTrade: (trade: LiveTrade) => void;
+  addTradeFromTx: (txHash: string) => Promise<void>;
 }
 
-// GraphQL query for trades with pagination
-const TRADES_QUERY = (limit: number, offset: number) => `
-  query GetTrades {
-    buy: user_transactions(
-      where: { entry_function_id_str: { _eq: "${CONTRACT_ADDRESS}::multi_outcome_market::buy_outcome" } },
-      limit: ${limit},
-      offset: ${offset},
-      order_by: { version: desc }
-    ) {
-      version
-      sender
-      entry_function_id_str
-      timestamp
+// Event types for buy/sell
+const BUY_EVENT_TYPE = `${CONTRACT_ADDRESS}::multi_outcome_market::OutcomeTokenBought`;
+const SELL_EVENT_TYPE = `${CONTRACT_ADDRESS}::multi_outcome_market::OutcomeTokenSold`;
+
+// Global event bus for trades - allows TradingSheet to notify this hook
+type TradeListener = (trade: LiveTrade) => void;
+const tradeListeners = new Set<TradeListener>();
+
+export function subscribeToTrades(listener: TradeListener): () => void {
+  tradeListeners.add(listener);
+  return () => { tradeListeners.delete(listener); };
+}
+
+export function emitTrade(trade: LiveTrade) {
+  tradeListeners.forEach(listener => listener(trade));
+}
+
+// Helper to fetch and parse a trade from transaction hash
+export async function fetchTradeFromTx(txHash: string): Promise<LiveTrade | null> {
+  try {
+    const response = await fetchFromRpc(`/transactions/by_hash/${txHash}`);
+    if (!response.ok) return null;
+
+    const tx = await response.json();
+    if (!tx.success) return null;
+
+    const functionName = tx.payload?.function || '';
+    if (!functionName.includes('buy_outcome') && !functionName.includes('sell_outcome')) {
+      return null;
     }
-    sell: user_transactions(
-      where: { entry_function_id_str: { _eq: "${CONTRACT_ADDRESS}::multi_outcome_market::sell_outcome" } },
-      limit: ${limit},
-      offset: ${offset},
-      order_by: { version: desc }
-    ) {
-      version
-      sender
-      entry_function_id_str
-      timestamp
+
+    const isBuy = functionName.includes('buy_outcome');
+
+    // Extract data from events
+    let outcomeIndex = 0;
+    let amountAPT = 0;
+    let trader = tx.sender || '';
+
+    const tradeEvent = tx.events?.find((e: { type: string }) =>
+      e.type === BUY_EVENT_TYPE || e.type === SELL_EVENT_TYPE
+    );
+
+    if (tradeEvent?.data) {
+      outcomeIndex = parseInt(tradeEvent.data.outcome_index) || 0;
+      const collateral = tradeEvent.data.collateral_in || tradeEvent.data.collateral_out || '0';
+      amountAPT = parseInt(collateral) / 100_000_000;
+      trader = tradeEvent.data.buyer || tradeEvent.data.seller || trader;
+    } else if (tx.payload?.arguments) {
+      const args = tx.payload.arguments;
+      if (args.length >= 3) {
+        outcomeIndex = parseInt(args[1]) || 0;
+        amountAPT = parseInt(args[2]) / 100_000_000;
+      }
     }
+
+    const timestamp = tx.timestamp ? parseInt(tx.timestamp) / 1000 : Date.now();
+
+    return {
+      id: `${tx.version}-${txHash}`,
+      type: isBuy ? 'buy' : 'sell',
+      outcomeIndex,
+      amount: amountAPT,
+      price: 0,
+      timestamp,
+      txHash,
+      trader,
+    };
+  } catch (error) {
+    console.error('Error fetching trade from tx:', error);
+    return null;
   }
-`;
+}
 
 export function useLiveTrades(
   pollInterval: number = 5000,
@@ -61,151 +128,148 @@ export function useLiveTrades(
   const [isPolling, setIsPolling] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const [offset, setOffset] = useState(0);
-  const seenVersionsRef = useRef<Set<string>>(new Set());
-  const isInitialFetchRef = useRef(true);
+  const seenIdsRef = useRef<Set<string>>(new Set());
 
-  const fetchTrades = useCallback(async (isLoadMore = false) => {
+  // Add a trade directly (used when UI executes a trade)
+  const addTrade = useCallback((trade: LiveTrade) => {
+    if (seenIdsRef.current.has(trade.id)) return;
+    seenIdsRef.current.add(trade.id);
+
+    setTrades(prev => {
+      const combined = [trade, ...prev];
+      const unique = combined.filter((t, idx, arr) =>
+        arr.findIndex(x => x.id === t.id) === idx
+      );
+      return unique.sort((a, b) => b.timestamp - a.timestamp).slice(0, maxTrades);
+    });
+    setLastUpdate(Date.now());
+  }, [maxTrades]);
+
+  // Add trade by fetching from transaction hash
+  const addTradeFromTx = useCallback(async (txHash: string) => {
+    const trade = await fetchTradeFromTx(txHash);
+    if (trade) {
+      addTrade(trade);
+    }
+  }, [addTrade]);
+
+  // Subscribe to global trade events
+  useEffect(() => {
+    const unsubscribe = subscribeToTrades(addTrade);
+    return unsubscribe;
+  }, [addTrade]);
+
+  // Try to fetch recent trades from known sources
+  const fetchTrades = useCallback(async () => {
+    if (!enabled) return;
+
     try {
       setIsPolling(true);
 
-      const currentOffset = isLoadMore ? offset : 0;
-      const limit = isLoadMore ? 20 : 30;
+      // Try the Aptos indexer (may be rate limited)
+      const query = `
+        query GetTrades {
+          events(
+            where: {
+              type: { _in: [
+                "${BUY_EVENT_TYPE}",
+                "${SELL_EVENT_TYPE}"
+              ]}
+            },
+            limit: 50,
+            order_by: { transaction_version: desc }
+          ) {
+            transaction_version
+            data
+            type
+          }
+        }
+      `;
 
       const response = await fetch(INDEXER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: TRADES_QUERY(limit, currentOffset) })
+        body: JSON.stringify({ query })
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch from indexer');
-      }
+      if (response.ok) {
+        const result = await response.json();
+        if (result.data?.events) {
+          const events = result.data.events;
 
-      const result = await response.json();
-      const buyTxs = result.data?.buy || [];
-      const sellTxs = result.data?.sell || [];
-      const allTxs = [...buyTxs, ...sellTxs];
+          const newTrades: LiveTrade[] = await Promise.all(
+            events
+              .filter((e: { transaction_version: string }) =>
+                !seenIdsRef.current.has(e.transaction_version.toString())
+              )
+              .slice(0, 20)
+              .map(async (event: { transaction_version: string; data: Record<string, string>; type: string }) => {
+                const isBuy = event.type === BUY_EVENT_TYPE;
+                const data = event.data;
 
-      // For initial fetch or load more, include all trades
-      // For polling updates, only include new trades
-      const txsToProcess = isInitialFetchRef.current || isLoadMore
-        ? allTxs
-        : allTxs.filter(tx => !seenVersionsRef.current.has(tx.version.toString()));
+                // Fetch full transaction for hash using our RPC with failover
+                let txHash = event.transaction_version.toString();
+                try {
+                  const txResp = await fetchFromRpc(`/transactions/by_version/${event.transaction_version}`);
+                  if (txResp.ok) {
+                    const tx = await txResp.json();
+                    txHash = tx.hash || txHash;
+                  }
+                } catch {
+                  // Use version as fallback
+                }
 
-      if (txsToProcess.length === 0) {
-        if (isLoadMore) setHasMore(false);
-        setIsPolling(false);
-        return;
-      }
+                seenIdsRef.current.add(event.transaction_version.toString());
 
-      // Batch fetch transaction details (use QuickNode to avoid rate limits)
-      const detailPromises = txsToProcess.slice(0, 20).map(tx =>
-        fetch(`${QUICKNODE_RPC}/transactions/by_version/${tx.version}`)
-          .then(r => r.ok ? r.json() : null)
-          .catch(() => null)
-      );
+                return {
+                  id: `${event.transaction_version}-${txHash}`,
+                  type: isBuy ? 'buy' : 'sell',
+                  outcomeIndex: parseInt(data.outcome_index) || 0,
+                  amount: parseInt(data.collateral_in || data.collateral_out || '0') / 100_000_000,
+                  price: 0,
+                  timestamp: Date.now(), // Events don't have timestamp, use now
+                  txHash,
+                  trader: data.buyer || data.seller || '',
+                } as LiveTrade;
+              })
+          );
 
-      const details = await Promise.all(detailPromises);
-
-      const newTrades: LiveTrade[] = txsToProcess.slice(0, 20).map((tx, idx) => {
-        const detail = details[idx];
-        const functionName = tx.entry_function_id_str || '';
-        const isBuy = functionName.includes('buy_outcome');
-
-        let outcomeIndex = 0;
-        let amountAPT = 1 + Math.random() * 5;
-        let txHash = tx.version.toString();
-
-        if (detail?.payload?.arguments) {
-          const args = detail.payload.arguments;
-          txHash = detail.hash || txHash;
-          if (args.length >= 3) {
-            outcomeIndex = parseInt(args[1]) || 0;
-            const amountOctas = parseInt(args[2]) || 0;
-            if (amountOctas > 0) {
-              amountAPT = amountOctas / 100_000_000;
-            }
+          if (newTrades.length > 0) {
+            setTrades(prev => {
+              const combined = [...newTrades, ...prev];
+              const unique = combined.filter((t, idx, arr) =>
+                arr.findIndex(x => x.id === t.id) === idx
+              );
+              return unique.sort((a, b) => b.timestamp - a.timestamp).slice(0, maxTrades);
+            });
+            setLastUpdate(Date.now());
           }
         }
-
-        // Mark as seen
-        seenVersionsRef.current.add(tx.version.toString());
-
-        return {
-          id: `${tx.version}-${txHash}`,
-          type: isBuy ? 'buy' : 'sell',
-          outcomeIndex,
-          amount: amountAPT,
-          price: 0,
-          // Indexer returns UTC timestamps without 'Z' suffix - add it for proper parsing
-          timestamp: new Date(tx.timestamp.endsWith('Z') ? tx.timestamp : tx.timestamp + 'Z').getTime(),
-          txHash,
-          trader: tx.sender,
-        } as LiveTrade;
-      });
-
-      if (newTrades.length > 0) {
-        setTrades(prev => {
-          if (isLoadMore) {
-            // Append for load more
-            const combined = [...prev, ...newTrades];
-            // Remove duplicates by id
-            const unique = combined.filter((trade, idx, arr) =>
-              arr.findIndex(t => t.id === trade.id) === idx
-            );
-            return unique.sort((a, b) => b.timestamp - a.timestamp).slice(0, maxTrades);
-          } else if (isInitialFetchRef.current) {
-            // Replace for initial fetch
-            isInitialFetchRef.current = false;
-            return newTrades.sort((a, b) => b.timestamp - a.timestamp);
-          } else {
-            // Prepend for polling updates
-            const combined = [...newTrades, ...prev];
-            const unique = combined.filter((trade, idx, arr) =>
-              arr.findIndex(t => t.id === trade.id) === idx
-            );
-            return unique.sort((a, b) => b.timestamp - a.timestamp).slice(0, maxTrades);
-          }
-        });
-        setLastUpdate(Date.now());
-
-        if (isLoadMore) {
-          setOffset(prev => prev + limit);
-        }
       }
-
-      setIsPolling(false);
     } catch (error) {
-      console.error('Error fetching trades:', error);
+      // Silently fail - indexer may be rate limited
+      console.debug('Trade fetch failed (may be rate limited):', error);
+    } finally {
       setIsPolling(false);
     }
-  }, [offset, maxTrades]);
+  }, [enabled, maxTrades]);
 
   const loadMore = useCallback(() => {
-    if (!isPolling && hasMore) {
-      fetchTrades(true);
-    }
-  }, [fetchTrades, isPolling, hasMore]);
+    setHasMore(false); // For now, disable load more since we can't paginate without indexer
+  }, []);
 
   // Initial fetch and polling
   useEffect(() => {
     if (!enabled) return;
 
-    // Reset state on mount
-    seenVersionsRef.current.clear();
-    isInitialFetchRef.current = true;
-    setOffset(0);
-    setHasMore(true);
-
     // Initial fetch
-    fetchTrades(false);
+    fetchTrades();
 
-    // Set up polling for new trades
-    const interval = setInterval(() => fetchTrades(false), pollInterval);
+    // Set up polling
+    const interval = setInterval(fetchTrades, pollInterval);
 
     return () => clearInterval(interval);
-  }, [enabled, pollInterval]); // Note: fetchTrades not in deps to avoid re-triggering
+  }, [enabled, pollInterval, fetchTrades]);
 
   return {
     trades,
@@ -213,5 +277,7 @@ export function useLiveTrades(
     lastUpdate,
     loadMore,
     hasMore,
+    addTrade,
+    addTradeFromTx,
   };
 }
