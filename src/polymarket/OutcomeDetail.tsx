@@ -12,7 +12,9 @@ import { TradingSheet } from "./TradingSheet";
 import { LiveOrderBook } from "./LiveOrderBook";
 import { mockMarkets } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
+import { useLiveTrades } from "../hooks/useLiveTrades";
 import { LATEST_REAL_PRICES } from "./realPriceData";
+import type { Trade } from "../hooks/useHFTConnection";
 
 const CHART_HEIGHT = 220;
 const CHART_PADDING_RIGHT = 50;
@@ -133,6 +135,9 @@ export function OutcomeDetail() {
     loading: marketsLoading,
   } = usePolymarkets();
 
+  // Live trades from blockchain
+  const { trades: blockchainTrades, loadMore, hasMore } = useLiveTrades(5000, 100, true);
+
   useEffect(() => {
     const timer = setTimeout(() => setIsLoaded(true), 100);
     return () => clearTimeout(timer);
@@ -149,6 +154,28 @@ export function OutcomeDetail() {
     () => market?.outcomes?.find((o) => o.id === outcomeId),
     [market, outcomeId]
   );
+
+  // Get outcome index for filtering trades
+  const outcomeIndex = useMemo(() => {
+    if (!market?.outcomes || !outcomeId) return -1;
+    return market.outcomes.findIndex(o => o.id === outcomeId);
+  }, [market, outcomeId]);
+
+  // Filter and convert blockchain trades for this specific outcome
+  const outcomeTrades: Trade[] = useMemo(() => {
+    if (outcomeIndex < 0) return [];
+    return blockchainTrades
+      .filter(t => t.outcomeIndex === outcomeIndex)
+      .map(t => ({
+        id: t.id,
+        type: t.type,
+        price: t.price || (outcome?.price || 0.5),
+        amount: t.amount,
+        timestamp: t.timestamp,
+        txHash: t.txHash,
+        trader: t.trader,
+      }));
+  }, [blockchainTrades, outcomeIndex, outcome?.price]);
 
   // More data points for choppier/more detailed chart
   const numPoints = timeRange === "ALL" ? 200 : timeRange === "1M" ? 120 : timeRange === "1W" ? 80 : 60;
@@ -635,8 +662,11 @@ export function OutcomeDetail() {
             noPrice={noPrice}
             yesReserve={1000}
             noReserve={1000}
-            trades={[]}
-            isConnected={false}
+            trades={outcomeTrades}
+            isConnected={outcomeTrades.length > 0}
+            onLoadMore={loadMore}
+            hasMore={hasMore}
+            outcomeName={outcome?.name}
           />
         </div>
 
