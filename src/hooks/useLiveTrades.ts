@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 const CONTRACT_ADDRESS = "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1";
+const TRADES_STORAGE_KEY = 'polymarket_live_trades';
+const MAX_STORED_TRADES = 100;
+const TRADE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // RPC endpoints in priority order (your fullnode first, then QuickNode fallback)
 const RPC_ENDPOINTS = [
@@ -34,6 +37,30 @@ export interface LiveTrade {
   timestamp: number;
   txHash: string;
   trader: string;
+}
+
+// LocalStorage helpers for trade persistence
+function loadStoredTrades(): LiveTrade[] {
+  try {
+    const stored = localStorage.getItem(TRADES_STORAGE_KEY);
+    if (!stored) return [];
+    const trades: LiveTrade[] = JSON.parse(stored);
+    // Filter out expired trades (older than 24 hours)
+    const now = Date.now();
+    return trades.filter(t => now - t.timestamp < TRADE_EXPIRY_MS);
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredTrades(trades: LiveTrade[]): void {
+  try {
+    // Keep only recent trades up to max limit
+    const toStore = trades.slice(0, MAX_STORED_TRADES);
+    localStorage.setItem(TRADES_STORAGE_KEY, JSON.stringify(toStore));
+  } catch {
+    // localStorage might be full or disabled
+  }
 }
 
 interface UseLiveTradesReturn {
@@ -124,11 +151,24 @@ export function useLiveTrades(
   maxTrades: number = 100,
   enabled: boolean = true
 ): UseLiveTradesReturn {
-  const [trades, setTrades] = useState<LiveTrade[]>([]);
+  // Initialize trades from localStorage
+  const [trades, setTrades] = useState<LiveTrade[]>(() => loadStoredTrades());
   const [isPolling, setIsPolling] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const seenIdsRef = useRef<Set<string>>(new Set());
+
+  // Populate seenIds from loaded trades
+  useEffect(() => {
+    trades.forEach(t => seenIdsRef.current.add(t.id));
+  }, []); // Only on mount
+
+  // Persist trades to localStorage whenever they change
+  useEffect(() => {
+    if (trades.length > 0) {
+      saveStoredTrades(trades);
+    }
+  }, [trades]);
 
   // Add a trade directly (used when UI executes a trade)
   const addTrade = useCallback((trade: LiveTrade) => {
