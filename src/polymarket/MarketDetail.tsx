@@ -18,7 +18,7 @@ import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useHFTConnection } from "../hooks/useHFTConnection";
 import { useLivePrices } from "../hooks/useLivePrices";
-import { useLiveTrades } from "../hooks/useLiveTrades";
+import { useLiveTrades, emitTrade, type LiveTrade } from "../hooks/useLiveTrades";
 import type { Category, Outcome } from "./types";
 import type { Trade } from "../hooks/useHFTConnection";
 
@@ -104,6 +104,29 @@ export function MarketDetail() {
 
   // Live trades from blockchain polling (disabled when HFT WebSocket is connected)
   const { trades: blockchainTrades, loadMore, hasMore } = useLiveTrades(5000, 100, !hftConnected);
+
+  // Persist HFT trades to localStorage so they survive page navigation
+  const lastHftTradeCountRef = useRef(0);
+  useEffect(() => {
+    if (hftTrades.length > lastHftTradeCountRef.current) {
+      // New trades came in - save them
+      const newTrades = hftTrades.slice(0, hftTrades.length - lastHftTradeCountRef.current);
+      newTrades.forEach(t => {
+        const liveTrade: LiveTrade = {
+          id: t.id,
+          type: t.action.includes('buy') ? 'buy' : 'sell',
+          outcomeIndex: t.outcome || 0,
+          amount: t.amount,
+          price: 0,
+          timestamp: t.timestamp,
+          txHash: t.txHash || '',
+          trader: t.bot || '',
+        };
+        emitTrade(liveTrade);
+      });
+      lastHftTradeCountRef.current = hftTrades.length;
+    }
+  }, [hftTrades]);
 
   // Combine HFT trades with blockchain trades, preferring HFT when available
   const combinedTrades: Trade[] = useMemo(() => {
