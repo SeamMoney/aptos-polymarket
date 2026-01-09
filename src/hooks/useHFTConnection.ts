@@ -71,7 +71,12 @@ export interface HFTConnectionState {
   tpsHistory: number[];
 }
 
-export function useHFTConnection() {
+export interface HFTConnectionOptions {
+  autoConnect?: boolean; // Only connect if true (default: false)
+}
+
+export function useHFTConnection(options: HFTConnectionOptions = {}) {
+  const { autoConnect = false } = options;
   const [isConnected, setIsConnected] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,93 +112,123 @@ export function useHFTConnection() {
   // Trade batching for high TPS - buffer trades and flush every 100ms
   const tradeBufferRef = useRef<Trade[]>([]);
   const batchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const serverAvailableRef = useRef(false);
 
-  // Connect to WebSocket with exponential backoff
+  // Check if HFT server is available via HTTP (silent, no console errors)
+  const checkServerAvailable = useCallback(async (): Promise<boolean> => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const response = await fetch(`${HFT_SERVER_URL}/health`, {
+        signal: controller.signal,
+        mode: 'no-cors', // Allows checking without CORS errors
+      });
+      clearTimeout(timeout);
+      // With no-cors, we get an opaque response, but if it doesn't throw, server is up
+      return response.type === 'opaque' || response.ok;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // Connect to WebSocket (only called after HTTP check succeeds)
   const connectWebSocket = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN ||
         wsRef.current?.readyState === WebSocket.CONNECTING) {
       return;
     }
 
-    try {
-      const ws = new WebSocket(HFT_WS_URL);
+    const ws = new WebSocket(HFT_WS_URL);
 
-      ws.onopen = () => {
-        console.log('🔌 Connected to HFT server');
-        setIsConnected(true);
-        setError(null);
-        reconnectDelayRef.current = 500;
-      };
+    ws.onopen = () => {
+      setIsConnected(true);
+      setError(null);
+      serverAvailableRef.current = true;
+      reconnectDelayRef.current = 5000; // Start at 5s for reconnects
+    };
 
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
 
-          if (message.type === 'trade') {
-            const trade = message.data as Trade;
-            // Buffer trades instead of immediate state update (high TPS optimization)
-            tradeBufferRef.current.push(trade);
-            // Still update other state immediately (stats, market info, etc.)
-            setStats(message.stats);
-            if (message.market) setMarketInfo(message.market);
-            if (message.position) setPosition(message.position);
-            if (message.botBalance !== undefined) setBotBalance(message.botBalance);
-            if (message.marketReserves) setMarketReserves(message.marketReserves);
-          } else if (message.type === 'state') {
-            setIsRunning(message.data.isRunning);
-            setStats(message.data.stats);
-            if (message.data.market) setMarketInfo(message.data.market);
-            if (message.data.position) setPosition(message.data.position);
-            if (message.data.botBalance !== undefined) setBotBalance(message.data.botBalance);
-            if (message.data.marketReserves) setMarketReserves(message.data.marketReserves);
-          } else if (message.type === 'started') {
-            setIsRunning(true);
-            if (message.market) setMarketInfo(message.market);
-            if (message.botBalance !== undefined) setBotBalance(message.botBalance);
-            if (message.marketReserves) setMarketReserves(message.marketReserves);
-          } else if (message.type === 'stopped') {
-            setIsRunning(false);
-            if (message.position) setPosition(message.position);
-          } else if (message.type === 'rate_limited') {
-            setError(message.message || 'Rate limited - waiting...');
-          } else if (message.type === 'low_balance') {
-            setIsRunning(false);
-            setError(`${message.message || 'Low balance - trading stopped'}`);
-            if (message.botBalance !== undefined) setBotBalance(message.botBalance);
-          }
-        } catch (e) {
-          console.error('Failed to parse message:', e);
+        if (message.type === 'trade') {
+          const trade = message.data as Trade;
+          tradeBufferRef.current.push(trade);
+          setStats(message.stats);
+          if (message.market) setMarketInfo(message.market);
+          if (message.position) setPosition(message.position);
+          if (message.botBalance !== undefined) setBotBalance(message.botBalance);
+          if (message.marketReserves) setMarketReserves(message.marketReserves);
+        } else if (message.type === 'state') {
+          setIsRunning(message.data.isRunning);
+          setStats(message.data.stats);
+          if (message.data.market) setMarketInfo(message.data.market);
+          if (message.data.position) setPosition(message.data.position);
+          if (message.data.botBalance !== undefined) setBotBalance(message.data.botBalance);
+          if (message.data.marketReserves) setMarketReserves(message.data.marketReserves);
+        } else if (message.type === 'started') {
+          setIsRunning(true);
+          if (message.market) setMarketInfo(message.market);
+          if (message.botBalance !== undefined) setBotBalance(message.botBalance);
+          if (message.marketReserves) setMarketReserves(message.marketReserves);
+        } else if (message.type === 'stopped') {
+          setIsRunning(false);
+          if (message.position) setPosition(message.position);
+        } else if (message.type === 'rate_limited') {
+          setError(message.message || 'Rate limited - waiting...');
+        } else if (message.type === 'low_balance') {
+          setIsRunning(false);
+          setError(`${message.message || 'Low balance - trading stopped'}`);
+          if (message.botBalance !== undefined) setBotBalance(message.botBalance);
         }
-      };
+      } catch {
+        // Silently ignore parse errors
+      }
+    };
 
-      ws.onclose = () => {
-        console.log('🔌 Disconnected from HFT server');
-        setIsConnected(false);
-        wsRef.current = null;
+    ws.onclose = () => {
+      setIsConnected(false);
+      wsRef.current = null;
+      // Schedule reconnect check (not immediate WebSocket attempt)
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = setTimeout(tryConnect, reconnectDelayRef.current);
+      reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 1.5, 60000);
+    };
 
-        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connectWebSocket();
-        }, reconnectDelayRef.current);
-        reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 1.5, 30000);
-      };
+    ws.onerror = () => {
+      // Don't set error - server just isn't available
+      serverAvailableRef.current = false;
+    };
 
-      ws.onerror = () => {
-        setError('Cannot connect to HFT server');
-      };
-
-      wsRef.current = ws;
-    } catch {
-      setError('WebSocket connection failed');
-    }
+    wsRef.current = ws;
   }, []);
 
-  // Connect on mount
+  // Try to connect: first check HTTP, then WebSocket
+  const tryConnect = useCallback(async () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+    const available = await checkServerAvailable();
+    if (available) {
+      connectWebSocket();
+    } else {
+      // Server not available, schedule next check
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = setTimeout(tryConnect, reconnectDelayRef.current);
+      reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 1.5, 60000);
+    }
+  }, [checkServerAvailable, connectWebSocket]);
+
+  // Connect on mount ONLY if autoConnect is enabled
+  // This prevents console errors when HFT server is offline
   useEffect(() => {
+    if (!autoConnect) return; // Skip if not auto-connecting
+
     let mounted = true;
+
+    // Initial connection attempt after short delay
     const initTimeout = setTimeout(() => {
-      if (mounted) connectWebSocket();
-    }, 100);
+      if (mounted) connectWebSocket(); // Direct WebSocket, skip HTTP check
+    }, 500);
 
     return () => {
       mounted = false;
@@ -204,7 +239,7 @@ export function useHFTConnection() {
         wsRef.current = null;
       }
     };
-  }, [connectWebSocket]);
+  }, [autoConnect, connectWebSocket]);
 
   // Trade batching - flush buffer every 100ms (10 updates/sec max for smooth UI at high TPS)
   useEffect(() => {
@@ -283,6 +318,11 @@ export function useHFTConnection() {
     }
   }, []);
 
+  // Manual connect function for lazy connection
+  const connect = useCallback(() => {
+    connectWebSocket();
+  }, [connectWebSocket]);
+
   return {
     isConnected,
     isRunning,
@@ -296,5 +336,6 @@ export function useHFTConnection() {
     tpsHistory,
     startTrading,
     stopTrading,
+    connect, // For manual connection
   };
 }

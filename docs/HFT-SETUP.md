@@ -2,7 +2,7 @@
 
 ## Overview
 
-High-frequency trading (HFT) system for the Aptos Polymarket prediction market, targeting 20,000+ TPS using distributed workers and orderless transactions.
+High-frequency trading (HFT) system for the Aptos Polymarket prediction market, targeting 30,000+ TPS using distributed workers with coordinated stats aggregation.
 
 ---
 
@@ -15,8 +15,124 @@ High-frequency trading (HFT) system for the Aptos Polymarket prediction market, 
 
 **Market Details:**
 - Name: Republican Presidential Nominee 2028
-- Outcomes: 6 (Trump Jr, Vance, DeSantis, Haley, Ramaswamy, Other)
+- Outcomes: 6 (J.D. Vance, Marco Rubio, Donald Trump, Ron DeSantis, Tucker Carlson, Other)
 - Initial Liquidity: 5,000 APT
+
+---
+
+## Worker Architecture
+
+### Coordinator Pattern
+
+The HFT system uses a coordinator pattern for aggregated TPS display:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           YOUR LAPTOP                                    │
+│  ┌──────────────────┐                                                   │
+│  │ React Frontend   │◄──── WebSocket ────────────────────┐              │
+│  │ - TPS Dashboard  │                                    │              │
+│  │ - Trade Stream   │                                    │              │
+│  └──────────────────┘                                    │              │
+└──────────────────────────────────────────────────────────┼──────────────┘
+                                                           │
+┌──────────────────────────────────────────────────────────┼──────────────┐
+│                         CLOUD WORKERS                    │              │
+│                                                          ▼              │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                    WORKER 1 (COORDINATOR)                        │   │
+│  │                     178.128.177.88:3001                          │   │
+│  │                        9 accounts                                │   │
+│  │                                                                   │   │
+│  │  - WebSocket server (frontend connects here)                     │   │
+│  │  - Receives stats from Workers 2 & 3                             │   │
+│  │  - Aggregates TPS from ALL 25 accounts                           │   │
+│  │  - Broadcasts combined stats to UI                               │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                              ▲                                          │
+│              HTTP POST /worker-stats (every 500ms)                      │
+│                              │                                          │
+│        ┌─────────────────────┴─────────────────────┐                   │
+│        │                                           │                    │
+│  ┌─────┴───────────────┐                 ┌────────┴──────────────┐    │
+│  │    WORKER 2         │                 │      WORKER 3         │    │
+│  │ 147.182.237.239:3001│                 │  161.35.231.0:3001    │    │
+│  │   8 accounts        │                 │    8 accounts         │    │
+│  │   (secondary)       │                 │    (secondary)        │    │
+│  └─────────────────────┘                 └───────────────────────┘    │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Worker Configuration
+
+| Worker | IP | Port | Accounts | Role | Est. TPS |
+|--------|-----|------|----------|------|----------|
+| Worker 1 | 178.128.177.88 | 3001 | 9 | **Coordinator** | ~13K |
+| Worker 2 | 147.182.237.239 | 3001 | 8 | Secondary | ~12K |
+| Worker 3 | 161.35.231.0 | 3001 | 8 | Secondary | ~12K |
+| **Total** | | | **25** | | **~37K** |
+
+### Environment Variables
+
+**Coordinator (Worker 1):**
+```bash
+export HFT_PORT=3001
+# No COORDINATOR_URL = becomes coordinator
+```
+
+**Secondary Workers (Workers 2 & 3):**
+```bash
+export HFT_PORT=3001
+export COORDINATOR_URL="http://178.128.177.88:3001"
+export WORKER_ID="worker-2"  # or "worker-3"
+```
+
+---
+
+## Orchestrator Commands
+
+The main orchestrator script manages all workers:
+
+```bash
+./scripts/orchestrator.sh <command> [options]
+```
+
+| Command | Description |
+|---------|-------------|
+| `deploy` | Push latest server code to all workers |
+| `standby` | Start all workers in STANDBY mode (wait for UI) |
+| `dryrun` | Quick 100 TPS test (5 seconds) |
+| `demo [duration]` | Full 30K TPS demo (default 60 sec) |
+| `status` | Check all infrastructure |
+| `stop` | Stop all workers |
+| `logs` | View logs from all workers |
+
+### Recommended Workflow
+
+```bash
+# Step 1: Deploy latest code
+./scripts/orchestrator.sh deploy
+
+# Step 2: Start in standby mode
+./scripts/orchestrator.sh standby
+
+# Step 3: Start frontend
+npm run dev
+
+# Step 4: Open browser → ARM → LAUNCH
+# http://localhost:5173/demo-day
+```
+
+---
+
+## RPC Endpoints
+
+| Endpoint | Rate Limit | Usage |
+|----------|------------|-------|
+| QuickNode | 50 RPS | Primary for frontend |
+| Aptos Labs | 20-30 RPS | Fallback |
+| Your Fullnode (164.92.117.18:8080) | Unlimited | HFT transactions |
 
 ---
 
@@ -24,87 +140,24 @@ High-frequency trading (HFT) system for the Aptos Polymarket prediction market, 
 
 ### Account Distribution
 
-| Accounts | Balance Each | Total | Keys |
-|----------|--------------|-------|------|
-| 1-10 | 8,000 APT | 80,000 APT | Original (secp256k1 + ed25519) |
-| 11-20 | 4,080 APT | 40,800 APT | New (ed25519) |
-| **Total** | | **~120,800 APT** | 20 accounts |
-
-### All Private Keys
-
-See `.env.local` for the complete list of private keys.
+| Worker | Accounts | Balance Each | Total Balance |
+|--------|----------|--------------|---------------|
+| Worker 1 | 9 | ~1,400 APT | ~12,660 APT |
+| Worker 2 | 8 | ~2,350 APT | ~18,800 APT |
+| Worker 3 | 8 | ~11,200 APT | ~89,600 APT |
+| **Total** | **25** | | **~121,060 APT** |
 
 ---
 
-## Infrastructure
+## TPS Modes
 
-### Worker Distribution
-
-| Worker | Location | IP | Accounts | Balance |
-|--------|----------|-----|----------|---------|
-| Worker 1 | Your Mac | localhost | 1-7 | ~56,000 APT |
-| Worker 2 | DO VM 1 | 209.38.172.28 | 8-14 | ~32,000 APT |
-| Worker 3 | DO VM 2 | 147.182.237.239 | 15-20 | ~24,000 APT |
-
-### RPC Endpoints
-
-| Endpoint | Type | Rate Limit |
-|----------|------|------------|
-| QuickNode Build | Premium | 50 RPS |
-| Aptos Labs Public | Free | ~30 RPS |
-| Ankr | Free | 30 RPS |
-
----
-
-## Scripts Reference
-
-### Running the HFT System
-
-```bash
-# Single worker (local, all 20 accounts)
-./scripts/run-demo.sh normal 60
-
-# 3 workers combined (~22k TPS)
-./scripts/run-3-workers.sh normal 60
-
-# Check remote worker status
-./scripts/check-remote-hft.sh
-
-# Stop remote workers
-./scripts/stop-remote-hft.sh
-```
-
-### On Remote VMs (SSH first)
-
-```bash
-# VM 1
-ssh root@209.38.172.28
-cd /opt/aptos-hft && ./run-hft.sh normal 60
-
-# VM 2
-ssh root@147.182.237.239
-cd /opt/aptos-hft && ./run-hft.sh normal 60
-```
-
----
-
-## TPS Capacity
-
-| Configuration | Workers | Theoretical Max TPS |
-|---------------|---------|---------------------|
-| Local only | 1 | ~7,500 |
-| Local + 1 VM | 2 | ~15,000 |
-| Local + 2 VMs | 3 | ~22,500 |
-| **With Fullnode** | 1+ | **30,000+** |
-
-### TPS Formula
-
-```
-TPS = RPS × Batch_Size × Num_Workers
-
-Example (3 workers):
-  50 RPS × 150 batch × 3 workers = 22,500 TPS
-```
+| Mode | Target TPS | Batch | Delay | Use Case |
+|------|-----------|-------|-------|----------|
+| `dryrun` | ~10 | 1 | 100ms | UI testing |
+| `normal` | ~1,000 | 10 | 50ms | Light demo |
+| `turbo` | ~3,000 | 30 | 40ms | Medium |
+| `ultra` | ~10,000 | 80 | 30ms | High intensity |
+| `quantum` | ~30,000+ | 150 | 20ms | **DEMO DAY** |
 
 ---
 
@@ -115,6 +168,7 @@ Example (3 workers):
 3. **Multi-RPC Load Balancing** - Spread requests across endpoints
 4. **Fire-and-Forget (98%)** - Don't wait for confirmations
 5. **Large Batch Sizes (150)** - More txns per RPC call
+6. **Worker Coordination** - Aggregated TPS from all 25 accounts
 
 ---
 
@@ -122,11 +176,10 @@ Example (3 workers):
 
 | File | Purpose |
 |------|---------|
-| `.env.local` | All private keys and config (git-ignored) |
-| `server/hft-ultra-server.ts` | Main HFT server |
-| `scripts/run-demo.sh` | Local demo launcher |
-| `scripts/run-3-workers.sh` | Distributed launcher |
-| `scripts/setup-fullnode.sh` | Fullnode setup (for 30k+ TPS) |
+| `.env.local` | Frontend WebSocket URL |
+| `server/hft-ultra-server.ts` | Main HFT server (1,800+ lines) |
+| `scripts/orchestrator.sh` | Deployment and control |
+| `/tmp/run-worker-*.sh` | Per-worker launch scripts |
 
 ---
 
@@ -142,26 +195,39 @@ To eliminate rate limits entirely, run your own Aptos fullnode:
 | RAM | 32 GB |
 | Storage | 300 GB SSD |
 
-### Recommended: DigitalOcean General Purpose 32GB ($192/mo)
+### Current Fullnode
 
-See `scripts/setup-fullnode.sh` for automated setup.
+- IP: 164.92.117.18:8080
+- Type: DigitalOcean General Purpose 32GB
 
 ---
 
 ## Troubleshooting
 
+### Workers not aggregating?
+```bash
+# Check if Worker 1 is receiving stats
+curl http://178.128.177.88:3001/aggregated-stats
+
+# Check if secondary workers are reporting
+curl http://147.182.237.239:3001/status
+curl http://161.35.231.0:3001/status
+```
+
 ### Rate Limit Errors
-- Add more RPC endpoints to `RPC_ENDPOINTS` array
+- Add more RPC endpoints to `EXTRA_RPC_ENDPOINTS`
 - Use multiple workers from different IPs
 - Consider fullnode for unlimited TPS
 
 ### Mempool Full Errors
 - Server automatically backs off with exponential delay
-- Reduce `BATCH_SIZE` if persistent
+- Reduce batch size if persistent
 
 ### Account Balance Low
-- Check balances: `aptos account list --account <address>`
-- Transfer more APT to bot wallets
+```bash
+# Check all balances
+npx tsx scripts/audit-accounts.ts
+```
 
 ---
 
@@ -170,8 +236,8 @@ See `scripts/setup-fullnode.sh` for automated setup.
 | Component | Monthly Cost |
 |-----------|--------------|
 | QuickNode Build | $49 |
-| DO VM 1 (4GB) | ~$24 |
-| DO VM 2 (4GB) | ~$24 |
-| Fullnode (optional) | $192 |
-| **Current Total** | **~$97** |
-| **With Fullnode** | **~$289** |
+| Worker 1 (4GB) | ~$24 |
+| Worker 2 (4GB) | ~$24 |
+| Worker 3 (4GB) | ~$24 |
+| Fullnode (32GB) | $192 |
+| **Total** | **~$313** |

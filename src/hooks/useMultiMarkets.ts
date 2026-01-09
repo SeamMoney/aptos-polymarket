@@ -170,9 +170,12 @@ export function useMultiMarkets() {
 
     const amountUnits = Math.floor(parseFloat(amountAPT) * 100_000_000);
 
+    // Stringify all arguments for better Petra wallet compatibility
+    // Include typeArguments: [] as required by Petra
     const payload = {
       function: `${MODULE}::buy_outcome`,
-      functionArguments: [marketAddress, outcomeIndex, amountUnits, 0],
+      typeArguments: [] as string[],
+      functionArguments: [marketAddress, String(outcomeIndex), String(amountUnits), "0"],
     };
 
     return payload;
@@ -184,9 +187,12 @@ export function useMultiMarkets() {
 
     const amountUnits = Math.floor(parseFloat(amountTokens) * 100_000_000);
 
+    // Stringify all arguments for better Petra wallet compatibility
+    // Include typeArguments: [] as required by Petra
     const payload = {
       function: `${MODULE}::sell_outcome`,
-      functionArguments: [marketAddress, outcomeIndex, amountUnits, 0],
+      typeArguments: [] as string[],
+      functionArguments: [marketAddress, String(outcomeIndex), String(amountUnits), "0"],
     };
 
     return payload;
@@ -198,9 +204,12 @@ export function useMultiMarkets() {
 
     const amountUnits = Math.floor(parseFloat(amountAPT) * 100_000_000);
 
+    // Stringify for Petra wallet compatibility
+    // Include typeArguments: [] as required by Petra
     const payload = {
       function: `${MODULE}::mint_complete_set`,
-      functionArguments: [marketAddress, amountUnits],
+      typeArguments: [] as string[],
+      functionArguments: [marketAddress, String(amountUnits)],
     };
 
     return payload;
@@ -212,9 +221,12 @@ export function useMultiMarkets() {
 
     const amountUnits = Math.floor(parseFloat(amountTokens) * 100_000_000);
 
+    // Stringify for Petra wallet compatibility
+    // Include typeArguments: [] as required by Petra
     const payload = {
       function: `${MODULE}::redeem_complete_set`,
-      functionArguments: [marketAddress, amountUnits],
+      typeArguments: [] as string[],
+      functionArguments: [marketAddress, String(amountUnits)],
     };
 
     return payload;

@@ -41,7 +41,8 @@ function AptosKeylessIcon() {
 
 // Faucet deployer key for demo (testnet only)
 // Address: 0x20a30d83eec219a31e4d4a6aec1787bbaab089c99a8d263df03147782a0d490c
-const FAUCET_KEY = "0x6ceeeb36800665f36af48c88ecd8afdc4d34cfbe3793202b6313f6741866ab50";
+// AIP-80 compliant format for ed25519 private key
+const FAUCET_KEY = "ed25519-priv-0x6ceeeb36800665f36af48c88ecd8afdc4d34cfbe3793202b6313f6741866ab50";
 const FUND_AMOUNT_APT = 50; // $50 worth of APT
 
 export function PolyHeader() {

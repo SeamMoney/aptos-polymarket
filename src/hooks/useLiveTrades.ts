@@ -11,9 +11,6 @@ const RPC_ENDPOINTS = [
   "https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1",  // QuickNode fallback
 ];
 
-// Indexer endpoint (for GraphQL queries - may be rate limited)
-const INDEXER_URL = "https://api.testnet.aptoslabs.com/v1/graphql";
-
 // Helper to fetch from RPC with failover
 async function fetchFromRpc(path: string): Promise<Response> {
   for (const baseUrl of RPC_ENDPOINTS) {
@@ -153,7 +150,8 @@ export function useLiveTrades(
 ): UseLiveTradesReturn {
   // Initialize trades from localStorage
   const [trades, setTrades] = useState<LiveTrade[]>(() => loadStoredTrades());
-  const [isPolling, setIsPolling] = useState(false);
+  const [isPolling, _setIsPolling] = useState(false);
+  void _setIsPolling; // Suppress unused warning - kept for future use
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const seenIdsRef = useRef<Set<string>>(new Set());
@@ -199,100 +197,12 @@ export function useLiveTrades(
     return unsubscribe;
   }, [addTrade]);
 
-  // Try to fetch recent trades from known sources
+  // NOTE: Indexer GraphQL doesn't support CORS from browser, so we rely on
+  // HFT WebSocket for live trades and localStorage for persistence.
+  // This is now a no-op but kept for API compatibility.
   const fetchTrades = useCallback(async () => {
-    if (!enabled) return;
-
-    try {
-      setIsPolling(true);
-
-      // Try the Aptos indexer (may be rate limited)
-      const query = `
-        query GetTrades {
-          events(
-            where: {
-              type: { _in: [
-                "${BUY_EVENT_TYPE}",
-                "${SELL_EVENT_TYPE}"
-              ]}
-            },
-            limit: 50,
-            order_by: { transaction_version: desc }
-          ) {
-            transaction_version
-            data
-            type
-          }
-        }
-      `;
-
-      const response = await fetch(INDEXER_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.data?.events) {
-          const events = result.data.events;
-
-          const newTrades: LiveTrade[] = await Promise.all(
-            events
-              .filter((e: { transaction_version: string }) =>
-                !seenIdsRef.current.has(e.transaction_version.toString())
-              )
-              .slice(0, 20)
-              .map(async (event: { transaction_version: string; data: Record<string, string>; type: string }) => {
-                const isBuy = event.type === BUY_EVENT_TYPE;
-                const data = event.data;
-
-                // Fetch full transaction for hash using our RPC with failover
-                let txHash = event.transaction_version.toString();
-                try {
-                  const txResp = await fetchFromRpc(`/transactions/by_version/${event.transaction_version}`);
-                  if (txResp.ok) {
-                    const tx = await txResp.json();
-                    txHash = tx.hash || txHash;
-                  }
-                } catch {
-                  // Use version as fallback
-                }
-
-                seenIdsRef.current.add(event.transaction_version.toString());
-
-                return {
-                  id: `${event.transaction_version}-${txHash}`,
-                  type: isBuy ? 'buy' : 'sell',
-                  outcomeIndex: parseInt(data.outcome_index) || 0,
-                  amount: parseInt(data.collateral_in || data.collateral_out || '0') / 100_000_000,
-                  price: 0,
-                  timestamp: Date.now(), // Events don't have timestamp, use now
-                  txHash,
-                  trader: data.buyer || data.seller || '',
-                } as LiveTrade;
-              })
-          );
-
-          if (newTrades.length > 0) {
-            setTrades(prev => {
-              const combined = [...newTrades, ...prev];
-              const unique = combined.filter((t, idx, arr) =>
-                arr.findIndex(x => x.id === t.id) === idx
-              );
-              return unique.sort((a, b) => b.timestamp - a.timestamp).slice(0, maxTrades);
-            });
-            setLastUpdate(Date.now());
-          }
-        }
-      }
-    } catch (error) {
-      // Silently fail - indexer may be rate limited
-      console.debug('Trade fetch failed (may be rate limited):', error);
-    } finally {
-      setIsPolling(false);
-    }
-  }, [enabled, maxTrades]);
+    // No-op: trades come from HFT WebSocket via addTrade() or addTradeFromTx()
+  }, []);
 
   const loadMore = useCallback(() => {
     setHasMore(false); // For now, disable load more since we can't paginate without indexer

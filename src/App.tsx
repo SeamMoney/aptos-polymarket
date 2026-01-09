@@ -104,7 +104,8 @@ function App() {
           function: side === 'yes'
             ? `${CONTRACT_ADDRESS}::market::buy_yes`
             : `${CONTRACT_ADDRESS}::market::buy_no`,
-          functionArguments: [marketAddress, amountInUnits, 0], // 0 = no slippage protection for demo
+          typeArguments: [],
+          functionArguments: [marketAddress, String(amountInUnits), "0"], // Stringify for Petra
         },
       });
 
@@ -155,7 +156,8 @@ function App() {
           function: side === 'yes'
             ? `${CONTRACT_ADDRESS}::market::sell_yes`
             : `${CONTRACT_ADDRESS}::market::sell_no`,
-          functionArguments: [marketAddress, amountInUnits, 0], // 0 = no slippage protection
+          typeArguments: [],
+          functionArguments: [marketAddress, String(amountInUnits), "0"], // Stringify for Petra
         },
       });
 
@@ -189,10 +191,12 @@ function App() {
     try {
       const amountInUnits = Math.floor(parseFloat(amount) * 100_000_000);
 
+      // Stringify all arguments for better Petra wallet compatibility
       const response = await signAndSubmitTransaction({
         data: {
           function: `${CONTRACT_ADDRESS}::multi_outcome_market::buy_outcome`,
-          functionArguments: [marketAddress, outcomeIndex, amountInUnits, 0],
+          typeArguments: [],
+          functionArguments: [marketAddress, String(outcomeIndex), String(amountInUnits), "0"],
         },
       });
 
@@ -224,10 +228,12 @@ function App() {
     try {
       const amountInUnits = Math.floor(parseFloat(amount) * 100_000_000);
 
+      // Stringify all arguments for better Petra wallet compatibility
       const response = await signAndSubmitTransaction({
         data: {
           function: `${CONTRACT_ADDRESS}::multi_outcome_market::sell_outcome`,
-          functionArguments: [marketAddress, outcomeIndex, amountInUnits, 0],
+          typeArguments: [],
+          functionArguments: [marketAddress, String(outcomeIndex), String(amountInUnits), "0"],
         },
       });
 

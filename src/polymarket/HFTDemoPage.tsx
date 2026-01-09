@@ -29,7 +29,7 @@ export function HFTDemoPage() {
     startTrading,
     stopTrading,
     error,
-  } = useHFTConnection();
+  } = useHFTConnection({ autoConnect: true }); // Auto-connect on this page
 
   // Format numbers
   const formatNumber = (n: number) => {

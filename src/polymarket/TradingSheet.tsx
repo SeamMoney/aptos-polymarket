@@ -138,6 +138,7 @@ export function TradingSheet({
       if (isMultiOutcome && (onBuyOutcome || onSellOutcome)) {
         // Multi-outcome market
         const outcomeIndex = getOutcomeIndex();
+
         if (direction === "buy" && onBuyOutcome) {
           result = await onBuyOutcome(market.id, outcomeIndex, amountAPT);
         } else if (direction === "sell" && onSellOutcome) {

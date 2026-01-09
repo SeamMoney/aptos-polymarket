@@ -19,17 +19,30 @@
                              │ ws://178.128.177.88:3001
                              ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         HFT SERVERS (3 Workers)                             │
+│                    HFT SERVERS (3 Workers - Coordinated)                    │
 │                                                                              │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐             │
-│  │    Worker 1     │  │    Worker 2     │  │    Worker 3     │             │
-│  │ 178.128.177.88  │  │ 161.35.231.0    │  │  (Local Mac)    │             │
-│  │  Accounts 1-10  │  │  Accounts 11-20 │  │  Backup/Dev     │             │
-│  │   ~10K TPS      │  │   ~10K TPS      │  │   ~10K TPS      │             │
-│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘             │
-│           │                    │                    │                       │
-│           └────────────────────┴────────────────────┘                       │
-│                                │                                            │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                   WORKER 1 (COORDINATOR)                             │   │
+│  │                    178.128.177.88:3001                               │   │
+│  │                       9 accounts                                     │   │
+│  │                                                                       │   │
+│  │   - WebSocket server (frontend connects here)                        │   │
+│  │   - Receives stats from Workers 2 & 3 via HTTP POST                  │   │
+│  │   - Aggregates TPS from ALL 25 accounts                              │   │
+│  │   - Broadcasts combined stats to UI                                  │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                              ▲                                              │
+│              HTTP POST /worker-stats (every 500ms)                          │
+│                              │                                              │
+│        ┌─────────────────────┴─────────────────────┐                       │
+│        │                                           │                        │
+│  ┌─────┴───────────────┐                 ┌────────┴──────────────┐        │
+│  │    WORKER 2         │                 │      WORKER 3         │        │
+│  │ 147.182.237.239:3001│                 │  161.35.231.0:3001    │        │
+│  │   8 accounts        │                 │    8 accounts         │        │
+│  │   (secondary)       │                 │    (secondary)        │        │
+│  └─────────────────────┘                 └───────────────────────┘        │
+│                                                                              │
 │                    Multi-RPC Load Balancing                                 │
 │                                ▼                                            │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -77,14 +90,18 @@
 
 ### Digital Ocean Droplets (3 Workers + 1 Fullnode)
 
-| Worker | IP | Accounts | Purpose |
-|--------|-----|----------|---------|
-| Worker 1 | 178.128.177.88 | 9 (accounts 1-7 + 2 new) | **HFT Worker 1** |
-| Worker 2 | 147.182.237.239 | 8 (accounts 8-15) | **HFT Worker 2** |
-| Worker 3 | 161.35.231.0 | 8 (accounts 16-20 + 3 new) | **HFT Worker 3** |
-| Fullnode | 164.92.117.18 | N/A | **Aptos Fullnode (32GB)** |
+| Worker | IP | Accounts | Role | Est. TPS |
+|--------|-----|----------|------|----------|
+| Worker 1 | 178.128.177.88 | 9 | **Coordinator** | ~13K |
+| Worker 2 | 147.182.237.239 | 8 | Secondary | ~12K |
+| Worker 3 | 161.35.231.0 | 8 | Secondary | ~12K |
+| Fullnode | 164.92.117.18 | N/A | Aptos Fullnode (32GB) | - |
+| **Total** | | **25** | | **~37K** |
 
-**Total: 25 trading accounts across 3 cloud workers**
+**Worker Coordination:**
+- Worker 1 is the **coordinator** - frontend connects via WebSocket here
+- Workers 2 & 3 are **secondary** - report stats to Worker 1 every 500ms via HTTP POST
+- TPS displayed in UI is aggregated from ALL 25 accounts across all workers
 
 ### RPC Endpoints
 
@@ -182,33 +199,56 @@ npx tsx server/hft-ultra-server.ts quantum 60   # 60 seconds at ~30K TPS
 
 ## Running the Demo
 
+### Recommended Workflow (Standby Mode)
+
+```bash
+# Step 1: Deploy latest code to all workers
+./scripts/orchestrator.sh deploy
+
+# Step 2: Start all workers in STANDBY mode (no auto-trading)
+./scripts/orchestrator.sh standby
+
+# Step 3: Start frontend
+npm run dev
+
+# Step 4: Open browser → ARM → LAUNCH
+# http://localhost:5173/demo-day
+```
+
+### Orchestrator Commands
+
+| Command | Description |
+|---------|-------------|
+| `deploy` | Push latest server code to all workers |
+| `standby` | Start workers in STANDBY (wait for UI ARM → LAUNCH) |
+| `dryrun` | Quick 100 TPS test (5 seconds) |
+| `demo [duration]` | Full 30K TPS demo (default 60 sec) |
+| `status` | Check all infrastructure |
+| `stop` | Stop all workers |
+| `logs` | View logs from all workers |
+
 ### Quick Start (Dry Run - 5 seconds)
 
 ```bash
-# Terminal 1: Start HFT server in dryrun mode
+# Single command for quick test
+./scripts/orchestrator.sh dryrun
+
+# Or manual:
 npx tsx server/hft-ultra-server.ts dryrun 5
-
-# Terminal 2: Start frontend
-npm run dev
-
-# Browser: http://localhost:5173/demo-day
-# Click "ARM SYSTEM" → "LAUNCH DEMO"
 ```
 
 ### Full 30K TPS Demo (QUANTUM MODE)
 
 ```bash
-# Set environment variables
-export APTOS_API_KEY="AG-3JMDT54EN4DCLULDWAUXCYGQ56JJQCYHH"
-export QUICKNODE_RPC="https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1"
-export ULTRA_PRIVATE_KEYS="<25 comma-separated keys>"
-export MULTI_MARKET="0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96"
+# Option A: Orchestrator with standby (RECOMMENDED)
+./scripts/orchestrator.sh standby
+# Then ARM → LAUNCH from UI
 
-# Option A: Orchestrator (recommended)
+# Option B: Auto-start demo (60 seconds)
 ./scripts/orchestrator.sh demo
 
-# Option B: Direct quantum mode
-npx tsx server/hft-ultra-server.ts quantum 60
+# Option C: Custom duration
+./scripts/orchestrator.sh demo 30
 ```
 
 ### Using the HFT Launch Control UI
@@ -277,7 +317,7 @@ curl -s -X POST "https://fullnode.testnet.aptoslabs.com/v1/view" \
 ```
 aptos-polymarket/
 ├── server/
-│   └── hft-ultra-server.ts     # HFT server (1,400+ lines)
+│   └── hft-ultra-server.ts     # HFT server (1,800+ lines, worker coordination)
 │
 ├── src/
 │   ├── polymarket/

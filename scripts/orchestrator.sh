@@ -5,11 +5,12 @@
 # Coordinates multiple HFT workers for high TPS demos
 #
 # Usage:
-#   ./scripts/orchestrator.sh setup      # Set up VM worker (one-time)
-#   ./scripts/orchestrator.sh test       # Test mode: ~100 TPS for 30 seconds
-#   ./scripts/orchestrator.sh demo       # Demo mode: Max TPS for 60 seconds
+#   ./scripts/orchestrator.sh deploy     # Deploy latest code to all workers
+#   ./scripts/orchestrator.sh standby    # Start all workers in STANDBY mode (wait for UI)
+#   ./scripts/orchestrator.sh demo       # Auto-start demo mode (quantum for 60s)
 #   ./scripts/orchestrator.sh status     # Check all infrastructure status
 #   ./scripts/orchestrator.sh stop       # Stop all workers
+#   ./scripts/orchestrator.sh logs       # View logs from all workers
 #
 
 set -e
@@ -360,6 +361,139 @@ cmd_stop() {
 }
 
 # ============================================
+# DEPLOY COMMAND - Push latest code to workers
+# ============================================
+
+cmd_deploy() {
+    print_header "DEPLOYING LATEST CODE TO ALL WORKERS"
+
+    LOCAL_FILE="server/hft-ultra-server.ts"
+    if [ ! -f "$LOCAL_FILE" ]; then
+        echo -e "${RED}Error: $LOCAL_FILE not found. Run from project root.${NC}"
+        exit 1
+    fi
+
+    LOCAL_LINES=$(wc -l < "$LOCAL_FILE")
+    echo "Local server code: ${LOCAL_LINES} lines"
+    echo ""
+
+    for i in 1 2 3; do
+        eval "VM_IP=\${WORKER_VM${i}_IP}"
+        echo -n "Worker $i ($VM_IP): "
+
+        # Deploy server code
+        scp -o ConnectTimeout=10 "$LOCAL_FILE" ${WORKER_VM_USER}@${VM_IP}:/opt/aptos-hft/server/hft-ultra-server.ts 2>/dev/null
+
+        # Verify
+        REMOTE_LINES=$(ssh ${WORKER_VM_USER}@${VM_IP} "wc -l /opt/aptos-hft/server/hft-ultra-server.ts" 2>/dev/null | awk '{print $1}')
+
+        if [ "$REMOTE_LINES" = "$LOCAL_LINES" ]; then
+            echo -e "${GREEN}✓ Deployed (${REMOTE_LINES} lines)${NC}"
+        else
+            echo -e "${RED}✗ Mismatch (remote: ${REMOTE_LINES}, local: ${LOCAL_LINES})${NC}"
+        fi
+    done
+
+    echo ""
+    echo -e "${GREEN}Deployment complete.${NC}"
+}
+
+# ============================================
+# STANDBY COMMAND - Start workers without auto-trading
+# ============================================
+
+cmd_standby() {
+    print_header "STARTING ALL WORKERS IN STANDBY MODE"
+
+    echo "This starts all 3 workers waiting for UI to trigger trading."
+    echo "No auto-trading - you control start/stop from the frontend."
+    echo ""
+
+    # Stop any existing workers first
+    echo "[1/4] Stopping any existing workers..."
+    for i in 1 2 3; do
+        eval "VM_IP=\${WORKER_VM${i}_IP}"
+        ssh ${WORKER_VM_USER}@${VM_IP} "pkill -f hft-ultra-server 2>/dev/null; screen -S hft -X quit 2>/dev/null" 2>/dev/null || true
+    done
+    sleep 1
+    echo "  ✓ Cleared"
+
+    # Start workers in standby (no mode = no auto-trading)
+    echo ""
+    echo "[2/4] Starting Worker 1 (${WORKER_VM1_IP}) - PRIMARY (frontend connects here)..."
+    ssh ${WORKER_VM_USER}@${WORKER_VM1_IP} "screen -dmS hft bash -c 'cd /opt/aptos-hft && ./run-worker.sh > /tmp/hft-worker.log 2>&1'" 2>/dev/null
+    echo "  ✓ Started on port 3001"
+
+    echo "[3/4] Starting Worker 2 (${WORKER_VM2_IP})..."
+    ssh ${WORKER_VM_USER}@${WORKER_VM2_IP} "screen -dmS hft bash -c 'cd /opt/aptos-hft && ./run-worker.sh > /tmp/hft-worker.log 2>&1'" 2>/dev/null
+    echo "  ✓ Started on port 3001"
+
+    echo "[4/4] Starting Worker 3 (${WORKER_VM3_IP})..."
+    ssh ${WORKER_VM_USER}@${WORKER_VM3_IP} "screen -dmS hft bash -c 'cd /opt/aptos-hft && ./run-worker.sh > /tmp/hft-worker.log 2>&1'" 2>/dev/null
+    echo "  ✓ Started on port 3001"
+
+    # Wait for servers to initialize
+    echo ""
+    echo "Waiting for servers to initialize..."
+    sleep 3
+
+    # Verify all workers are running
+    echo ""
+    echo "Verifying workers..."
+    ALL_OK=true
+    for i in 1 2 3; do
+        eval "VM_IP=\${WORKER_VM${i}_IP}"
+        echo -n "  Worker $i ($VM_IP): "
+        if ssh ${WORKER_VM_USER}@${VM_IP} "pgrep -f hft-ultra-server" &>/dev/null; then
+            # Check if WebSocket is listening
+            if ssh ${WORKER_VM_USER}@${VM_IP} "ss -tlnp | grep -q ':3001'" 2>/dev/null; then
+                echo -e "${GREEN}✓ Running & listening on :3001${NC}"
+            else
+                echo -e "${YELLOW}○ Running but port not ready yet${NC}"
+            fi
+        else
+            echo -e "${RED}✗ Not running${NC}"
+            ALL_OK=false
+        fi
+    done
+
+    echo ""
+    if [ "$ALL_OK" = true ]; then
+        print_header "ALL WORKERS READY - STANDBY MODE"
+        echo "Workers are initialized and waiting."
+        echo ""
+        echo "Frontend connection:"
+        echo "  VITE_HFT_WS_URL=ws://${WORKER_VM1_IP}:3001"
+        echo ""
+        echo "To start trading from UI:"
+        echo "  1. Open http://localhost:5173/demo-day"
+        echo "  2. Click ARM SYSTEM"
+        echo "  3. Click LAUNCH"
+        echo ""
+        echo "Or to auto-start in a specific mode:"
+        echo "  ./scripts/orchestrator.sh demo turbo 60"
+    else
+        echo -e "${RED}Some workers failed to start. Check logs with:${NC}"
+        echo "  ./scripts/orchestrator.sh logs"
+    fi
+}
+
+# ============================================
+# LOGS COMMAND - View logs from all workers
+# ============================================
+
+cmd_logs() {
+    print_header "WORKER LOGS"
+
+    for i in 1 2 3; do
+        eval "VM_IP=\${WORKER_VM${i}_IP}"
+        echo "=== Worker $i ($VM_IP) ==="
+        ssh ${WORKER_VM_USER}@${VM_IP} "tail -30 /tmp/hft-worker.log 2>/dev/null" || echo "No logs found"
+        echo ""
+    done
+}
+
+# ============================================
 # MAIN
 # ============================================
 
@@ -370,6 +504,12 @@ case "${1:-status}" in
     status)
         cmd_status
         ;;
+    deploy)
+        cmd_deploy
+        ;;
+    standby)
+        cmd_standby
+        ;;
     dryrun)
         cmd_dryrun
         ;;
@@ -379,15 +519,24 @@ case "${1:-status}" in
     stop)
         cmd_stop
         ;;
+    logs)
+        cmd_logs
+        ;;
     *)
-        echo "Usage: $0 {setup|status|dryrun|demo|stop}"
+        echo "Usage: $0 {deploy|standby|demo|status|stop|logs}"
         echo ""
         echo "Commands:"
-        echo "  setup   - Set up VM worker (one-time)"
+        echo "  deploy  - Deploy latest server code to all workers"
+        echo "  standby - Start all workers in STANDBY (wait for UI to launch)"
+        echo "  demo    - Auto-start demo in quantum mode (default 60s)"
         echo "  status  - Check all infrastructure status"
-        echo "  dryrun  - Quick test: ~100 TPS for 5 seconds (< 0.5 APT)"
-        echo "  demo    - Full 30K TPS demo (default 60s)"
         echo "  stop    - Stop all workers"
+        echo "  logs    - View logs from all workers"
+        echo ""
+        echo "Workflow:"
+        echo "  1. ./scripts/orchestrator.sh deploy   # Deploy code"
+        echo "  2. ./scripts/orchestrator.sh standby  # Start in standby"
+        echo "  3. Open browser, ARM → LAUNCH         # Start trading from UI"
         exit 1
         ;;
 esac

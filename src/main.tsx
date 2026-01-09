@@ -18,6 +18,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/demo" element={<DemoMode />} />
             <Route path="/demo-day" element={<HFTDemoPage />} />
             <Route path="/polymarket" element={<><PolymarketHome /><BottomNav /></>} />
+            <Route path="/polymarket/hft-demo" element={<HFTDemoPage />} />
             <Route path="/polymarket/search" element={<><SearchPage /><BottomNav /></>} />
             <Route path="/polymarket/breaking" element={<><BreakingPage /><BottomNav /></>} />
             <Route path="/polymarket/more" element={<><MorePage /><BottomNav /></>} />

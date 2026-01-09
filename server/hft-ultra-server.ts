@@ -38,10 +38,11 @@ const MODULE = `${CONTRACT_ADDRESS}::market`;
 const MULTI_MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
 
 // Available run modes with escalating TPS targets
-type RunMode = 'dryrun' | 'light' | 'normal' | 'turbo' | 'ultra' | 'quantum';
+type RunMode = 'dryrun' | 'light' | 'normal' | 'turbo' | 'ultra' | 'quantum' | 'verify';
 
 function resolveMode(): RunMode {
   const argMode = process.argv[2];
+  if (argMode === 'verify') return 'verify';
   if (argMode === 'dryrun' || process.env.HFT_DRYRUN === 'true') return 'dryrun';
   if (argMode === 'light') return 'light';
   if (argMode === 'normal') return 'normal';
@@ -126,6 +127,16 @@ const MODE_CONFIGS: Record<RunMode, {
     TRADE_SAMPLE_RATE: 0.05,    // 5% = ~1500 trades/sec shown - busy but manageable
     TARGET_TPS: 30000,
     MAX_PENDING: 300,
+  },
+  // ~1 TPS - Full on-chain verification mode (verify each tx lands on-chain)
+  verify: {
+    BATCH_SIZE: 1,              // One transaction at a time
+    BATCH_DELAY_MS: 1000,       // 1 second between submissions
+    USE_MULTI_RPC: false,       // Single RPC for consistency
+    FIRE_AND_FORGET_RATIO: 0.0, // 0% fire-and-forget = 100% verified
+    TRADE_SAMPLE_RATE: 1.0,     // 100% - show every trade
+    TARGET_TPS: 1,
+    MAX_PENDING: 1,
   },
 };
 
@@ -241,6 +252,9 @@ interface GlobalState {
   // Multi-outcome market data
   outcomePrices: number[]; // Actual prices for each outcome (0-100)
   outcomeLabels: string[]; // Labels for each outcome
+  // Verification mode stats
+  verifiedOnChain: number;
+  verificationFailures: number;
 }
 
 const state: GlobalState = {
@@ -267,15 +281,77 @@ const state: GlobalState = {
   outcomePositions: [],
   outcomePrices: [],
   outcomeLabels: [],
+  // Verification mode stats
+  verifiedOnChain: 0,
+  verificationFailures: 0,
 };
 
 const clients = new Set<WebSocket>();
+
+// ============================================
+// WORKER COORDINATION - Aggregate TPS from multiple workers
+// ============================================
+// Worker 1 = Primary (frontend connects here)
+// Workers 2 & 3 = Secondary (report stats to Worker 1)
+
+interface SecondaryWorkerStats {
+  workerId: string;
+  totalTrades: number;
+  successfulTrades: number;
+  failedTrades: number;
+  currentTps: number;
+  accountCount: number;
+  lastUpdate: number;
+}
+
+// Map of secondary worker stats (keyed by worker ID)
+const secondaryWorkerStats = new Map<string, SecondaryWorkerStats>();
+
+// Coordinator URL (for secondary workers to connect to)
+const COORDINATOR_URL = process.env.COORDINATOR_URL; // e.g., 'ws://178.128.177.88:3001'
+const WORKER_ID = process.env.WORKER_ID || `worker-${Date.now()}`;
+const IS_COORDINATOR = !COORDINATOR_URL; // If no coordinator URL, we ARE the coordinator
+
+// Get aggregated stats (this worker + all secondary workers)
+function getAggregatedStats() {
+  // Start with this worker's stats
+  let totalTrades = state.totalTrades;
+  let successfulTrades = state.successfulTrades;
+  let failedTrades = state.failedTrades;
+  let totalCurrentTps = state.recentTps.length > 0 ? state.recentTps[state.recentTps.length - 1] : 0;
+  let totalAccounts = state.accounts.length;
+
+  // Add secondary worker stats (only if we're coordinator)
+  if (IS_COORDINATOR) {
+    const now = Date.now();
+    secondaryWorkerStats.forEach((worker, id) => {
+      // Only include workers that reported in last 10 seconds
+      if (now - worker.lastUpdate < 10000) {
+        totalTrades += worker.totalTrades;
+        successfulTrades += worker.successfulTrades;
+        failedTrades += worker.failedTrades;
+        totalCurrentTps += worker.currentTps;
+        totalAccounts += worker.accountCount;
+      }
+    });
+  }
+
+  return {
+    totalTrades,
+    successfulTrades,
+    failedTrades,
+    currentTps: totalCurrentTps,
+    totalAccounts,
+    workerCount: IS_COORDINATOR ? 1 + secondaryWorkerStats.size : 1,
+  };
+}
 
 // Bot names for visualization
 const BOT_NAMES = ['Ultra-A', 'Ultra-B', 'Ultra-C', 'Ultra-D', 'Ultra-E', 'Hyper-1', 'Hyper-2', 'Mega-X'];
 const ACTIONS = ['buy_yes', 'buy_no', 'buy_outcome'] as const;
 
 let tradeIdCounter = 0;
+let ffDebugCounter = 0; // Debug: track fire-and-forget resolutions
 let lastTpsCalcTime = Date.now();
 let lastTpsCalcTrades = 0;
 
@@ -405,20 +481,34 @@ function printStatsBanner() {
     ).join('  ');
     console.log(`  ${CYAN}Prices:${RESET} ${priceStr}`);
   }
+  // Show verification stats when in verify mode
+  if (RUN_MODE === 'verify') {
+    const RED = '\x1b[31m';
+    console.log(
+      `  ${CYAN}Verified:${RESET} ${GREEN}${state.verifiedOnChain}${RESET}  ` +
+      `${CYAN}Failed:${RESET} ${state.verificationFailures > 0 ? RED : ''}${state.verificationFailures}${RESET}`
+    );
+  }
   console.log(`${DIM}────────────────────────────────────────────────────────${RESET}`);
   console.log('');
 }
 
 // Get stats - includes all fields UI expects (with caching for performance)
+// Uses aggregated stats from all workers when in coordinator mode
 function getStats() {
   const now = Date.now();
 
-  // Return cached stats if still valid
-  if (cachedStats && now - cachedStatsTime < CONFIG.STATS_CACHE_TTL_MS) {
+  // Return cached stats if still valid (shorter TTL when coordinating)
+  const cacheTtl = IS_COORDINATOR && secondaryWorkerStats.size > 0 ? 100 : CONFIG.STATS_CACHE_TTL_MS;
+  if (cachedStats && now - cachedStatsTime < cacheTtl) {
     return cachedStats;
   }
 
   const tps = calculateTps();
+
+  // Get aggregated stats from all workers (if coordinator)
+  const aggregated = getAggregatedStats();
+
   const avgTps = state.recentTps.length > 0
     ? state.recentTps.reduce((a, b) => a + b, 0) / state.recentTps.length
     : 0;
@@ -426,21 +516,33 @@ function getStats() {
     ? Math.round(state.recentLatencies.reduce((a, b) => a + b, 0) / state.recentLatencies.length)
     : 150;
 
+  // Use aggregated values for trades/TPS, local values for latency/delay
   const stats = {
-    totalTrades: state.totalTrades,
-    successfulTrades: state.successfulTrades,
-    failedTrades: state.failedTrades,
-    successRate: state.totalTrades > 0
-      ? Math.round((state.successfulTrades / state.totalTrades) * 100)
+    totalTrades: aggregated.totalTrades,
+    successfulTrades: aggregated.successfulTrades,
+    failedTrades: aggregated.failedTrades,
+    successRate: aggregated.totalTrades > 0
+      ? Math.round((aggregated.successfulTrades / aggregated.totalTrades) * 100)
       : 100,
-    currentTps: Math.round(tps),
-    avgTps: Math.round(avgTps),
-    peakTps: Math.round(state.peakTps),
+    currentTps: Math.round(aggregated.currentTps),
+    avgTps: Math.round(avgTps), // Local avg (aggregated TPS varies too much)
+    peakTps: Math.round(Math.max(state.peakTps, aggregated.currentTps)),
     avgLatency,
     currentDelay: currentDelay,
     activeAccounts: state.accounts.filter(a => a.isActive).length,
-    totalAccounts: state.accounts.length,
+    totalAccounts: aggregated.totalAccounts,
+    // New: worker coordination info
+    workerCount: aggregated.workerCount,
+    isCoordinator: IS_COORDINATOR,
+    // Verification mode stats
+    verifiedOnChain: state.verifiedOnChain,
+    verificationFailures: state.verificationFailures,
   };
+
+  // Update peak TPS if current aggregated is higher
+  if (aggregated.currentTps > state.peakTps) {
+    state.peakTps = aggregated.currentTps;
+  }
 
   // Cache the result
   cachedStats = stats;
@@ -699,7 +801,7 @@ function updateMomentum(): void {
 }
 
 // Build transaction payload - MOMENTUM-BASED trading for price swings
-function buildPayload(marketAddress: string): { payload: InputGenerateTransactionPayloadData; isBuy: boolean } {
+function buildPayload(marketAddress: string): { payload: InputGenerateTransactionPayloadData; isBuy: boolean; outcomeIndex: number } {
   if (state.isMultiOutcome) {
     // Update momentum state
     updateMomentum();
@@ -717,6 +819,7 @@ function buildPayload(marketAddress: string): { payload: InputGenerateTransactio
           functionArguments: [marketAddress, amount],
         },
         isBuy: true,
+        outcomeIndex: momentumState.hotOutcome, // Use hot outcome for display
       };
     }
 
@@ -729,6 +832,7 @@ function buildPayload(marketAddress: string): { payload: InputGenerateTransactio
             functionArguments: [marketAddress, momentumState.hotOutcome, amount, 0n],
           },
           isBuy: true,
+          outcomeIndex: momentumState.hotOutcome,
         };
       } else {
         return {
@@ -737,6 +841,7 @@ function buildPayload(marketAddress: string): { payload: InputGenerateTransactio
             functionArguments: [marketAddress, momentumState.hotOutcome, amount, 0n],
           },
           isBuy: false,
+          outcomeIndex: momentumState.hotOutcome,
         };
       }
     }
@@ -752,6 +857,7 @@ function buildPayload(marketAddress: string): { payload: InputGenerateTransactio
           functionArguments: [marketAddress, otherOutcome, amount, 0n],
         },
         isBuy: true,
+        outcomeIndex: otherOutcome,
       };
     } else {
       return {
@@ -760,27 +866,35 @@ function buildPayload(marketAddress: string): { payload: InputGenerateTransactio
           functionArguments: [marketAddress, otherOutcome, amount, 0n],
         },
         isBuy: false,
+        outcomeIndex: otherOutcome,
       };
     }
   } else {
+    // Binary market: buy_yes, buy_no, sell_yes, sell_no
     const amount = BigInt(Math.floor(getRandomAmount() * 100_000_000));
+    const isBuy = Math.random() < 0.7; // 70% buys, 30% sells
+    const isYes = Math.random() < 0.5; // 50% yes, 50% no
+    const outcomeIdx = isYes ? 0 : 1; // 0 = yes, 1 = no
+
     if (isBuy) {
-      const action = Math.random() < 0.5 ? 'buy_yes' : 'buy_no';
+      const action = isYes ? 'buy_yes' : 'buy_no';
       return {
         payload: {
           function: `${MODULE}::${action}`,
           functionArguments: [marketAddress, amount, 0n],
         },
         isBuy: true,
+        outcomeIndex: outcomeIdx,
       };
     } else {
-      const action = Math.random() < 0.5 ? 'sell_yes' : 'sell_no';
+      const action = isYes ? 'sell_yes' : 'sell_no';
       return {
         payload: {
           function: `${MODULE}::${action}`,
           functionArguments: [marketAddress, amount, 0n],
         },
         isBuy: false,
+        outcomeIndex: outcomeIdx,
       };
     }
   }
@@ -796,8 +910,8 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
   const startTime = Date.now();
   const baseSeq = accState.sequenceNumber;
 
-  // Build all payloads with buy/sell info
-  const payloadsWithInfo: { payload: InputGenerateTransactionPayloadData; isBuy: boolean }[] = [];
+  // Build all payloads with buy/sell info and outcome index
+  const payloadsWithInfo: { payload: InputGenerateTransactionPayloadData; isBuy: boolean; outcomeIndex: number }[] = [];
   for (let i = 0; i < batchSize; i++) {
     payloadsWithInfo.push(buildPayload(state.marketAddress));
   }
@@ -841,7 +955,7 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
 
   // Stage 3: Submit transactions
   // PHASE 18: Use batch endpoint for single-request submission (150 txns in 1 HTTP call)
-  let results: { success: boolean; hash?: string; error?: string; isBuy: boolean }[];
+  let results: { success: boolean; hash?: string; error?: string; isBuy: boolean; outcomeIndex: number }[];
 
   if (CONFIG.USE_BATCH_SUBMIT) {
     // TRUE batch submit: use aptos.transaction.batch.forSingleAccount
@@ -877,13 +991,13 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
 
         results = builtTxs.map((tx, i) => {
           if (!tx || !signedTxs[i]) {
-            return { success: false, error: 'Build/sign failed', isBuy: payloadsWithInfo[i].isBuy };
+            return { success: false, error: 'Build/sign failed', isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex };
           }
           const r = resultMap.get(i);
           if (r?.success) {
-            return { success: true, hash: r.hash, isBuy: payloadsWithInfo[i].isBuy };
+            return { success: true, hash: r.hash, isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex };
           } else {
-            return { success: false, error: r?.error || 'Unknown', isBuy: payloadsWithInfo[i].isBuy };
+            return { success: false, error: r?.error || 'Unknown', isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex };
           }
         });
       } else {
@@ -891,6 +1005,7 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
           success: false,
           error: 'Build/sign failed',
           isBuy: payloadsWithInfo[i].isBuy,
+          outcomeIndex: payloadsWithInfo[i].outcomeIndex,
         }));
       }
     } catch (e: any) {
@@ -899,26 +1014,27 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
         success: false,
         error: e.message || 'Batch submit failed',
         isBuy: payloadsWithInfo[i].isBuy,
+        outcomeIndex: payloadsWithInfo[i].outcomeIndex,
       }));
     }
   } else {
     // Legacy: Submit each transaction individually in parallel
     const submitPromises = builtTxs.map((tx, i) => {
       if (!tx || !signedTxs[i]) {
-        return Promise.resolve({ success: false, error: 'Build/sign failed', isBuy: payloadsWithInfo[i].isBuy });
+        return Promise.resolve({ success: false, error: 'Build/sign failed', isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex });
       }
       const client = getNextAptos(); // Round-robin RPC selection
       return client.transaction.submit.simple({
         transaction: tx,
         senderAuthenticator: signedTxs[i]!,
       })
-      .then(pending => ({ success: true, hash: pending.hash, isBuy: payloadsWithInfo[i].isBuy }))
+      .then(pending => ({ success: true, hash: pending.hash, isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex }))
       .catch((e: any) => {
         const errMsg = e.message || 'Unknown error';
         if (i === 0 && !errMsg.includes('INSUFFICIENT_BALANCE')) {
           console.error(`  [ERROR] ${errMsg.slice(0, 60)}`);
         }
-        return { success: false, error: errMsg, isBuy: payloadsWithInfo[i].isBuy };
+        return { success: false, error: errMsg, isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex };
       });
     });
 
@@ -982,6 +1098,7 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
             txHash: result.hash,
             explorerUrl: `https://explorer.aptoslabs.com/txn/${result.hash}?network=testnet`,
             timestamp: Date.now(),
+            outcome: result.outcomeIndex, // Include outcome index for UI display
           },
           ...uiData,
         });
@@ -1105,7 +1222,7 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
 
   // Build and submit without waiting
   for (let i = 0; i < batchSize; i++) {
-    const { payload, isBuy } = buildPayload(state.marketAddress);
+    const { payload, isBuy, outcomeIndex } = buildPayload(state.marketAddress);
 
     // PHASE 10: Orderless uses random nonces, legacy uses sequence numbers
     const options: any = CONFIG.USE_ORDERLESS
@@ -1130,6 +1247,12 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
       state.totalTrades++;
       state.successfulTrades++;
       accState.successCount++;
+      ffDebugCounter++;
+
+      // Debug: log sample hashes
+      if (ffDebugCounter <= 3 || ffDebugCounter % 100 === 0) {
+        console.log(`🔥 FF-SUCCESS #${ffDebugCounter}: ${pending.hash}`);
+      }
 
       // Broadcast sample
       if (Math.random() < 0.05) {
@@ -1148,14 +1271,19 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
             txHash: pending.hash,
             explorerUrl: `https://explorer.aptoslabs.com/txn/${pending.hash}?network=testnet`,
             timestamp: Date.now(),
+            outcome: outcomeIndex, // Include outcome index for UI display
           },
           ...getFullUIData(),
         });
       }
-    }).catch(() => {
+    }).catch((err) => {
       state.totalTrades++;
       state.failedTrades++;
       accState.failCount++;
+      // Debug: log failures
+      if (state.failedTrades <= 3 || state.failedTrades % 100 === 0) {
+        console.log(`❌ FF-FAIL #${state.failedTrades}: ${err?.message || err}`);
+      }
     });
   }
 
@@ -1179,6 +1307,168 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
   );
 }
 
+/**
+ * Execute a single transaction with full on-chain verification.
+ * Used in "verify" mode for guaranteed confirmation before proceeding.
+ */
+async function executeVerifiedTransaction(accState: AccountState): Promise<void> {
+  if (!state.marketAddress || !accState.isActive) return;
+
+  const startTime = Date.now();
+  const { payload, isBuy, outcomeIndex } = buildPayload(state.marketAddress);
+  const tradeAmount = getRandomAmount();
+
+  try {
+    // Build transaction with orderless (random nonce)
+    const tx = await aptos.transaction.build.simple({
+      sender: accState.account.accountAddress,
+      data: payload,
+      options: {
+        replayProtectionNonce: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
+        expireTimestamp: Math.floor(Date.now() / 1000) + 55,
+      },
+    });
+
+    // Sign transaction
+    const signedTx = aptos.transaction.sign({
+      signer: accState.account,
+      transaction: tx,
+    });
+
+    // Submit transaction
+    const submitTime = Date.now();
+    const pending = await aptos.transaction.submit.simple({
+      transaction: tx,
+      senderAuthenticator: signedTx,
+    });
+
+    console.log(`🔍 [VERIFY] Submitted: ${pending.hash}`);
+
+    // Wait for on-chain confirmation
+    const confirmed = await aptos.waitForTransaction({
+      transactionHash: pending.hash,
+      options: { checkSuccess: true },
+    });
+
+    const verificationLatency = Date.now() - submitTime;
+    const totalLatency = Date.now() - startTime;
+
+    // Update stats
+    state.totalTrades++;
+    state.verifiedOnChain++;
+
+    if (confirmed.success) {
+      state.successfulTrades++;
+      accState.successCount++;
+
+      // Color codes for logging
+      const GREEN = '\x1b[32m';
+      const CYAN = '\x1b[36m';
+      const DIM = '\x1b[2m';
+      const RESET = '\x1b[0m';
+      const BOLD = '\x1b[1m';
+
+      console.log(
+        `${GREEN}✅ [VERIFY] CONFIRMED:${RESET} ${CYAN}${pending.hash.slice(0, 18)}...${RESET} ` +
+        `${DIM}|${RESET} ${BOLD}${verificationLatency}ms${RESET} verify ` +
+        `${DIM}|${RESET} ${totalLatency}ms total ` +
+        `${DIM}| gas: ${(confirmed as any).gas_used}${RESET}`
+      );
+
+      // Broadcast to UI with full verification info
+      tradeIdCounter++;
+      const actionDisplay = isBuy ? 'BUY (VERIFIED)' : 'SELL (VERIFIED)';
+
+      broadcast({
+        type: 'trade',
+        data: {
+          id: `verify-${tradeIdCounter}`,
+          bot: 'Verify-Bot',
+          action: isBuy ? 'buy_outcome' : 'sell_outcome',
+          actionDisplay,
+          amount: tradeAmount,
+          latency: verificationLatency,
+          success: true,
+          verified: true,
+          txHash: pending.hash,
+          explorerUrl: `https://explorer.aptoslabs.com/txn/${pending.hash}?network=testnet`,
+          timestamp: Date.now(),
+          gasUsed: (confirmed as any).gas_used,
+          vmStatus: (confirmed as any).vm_status,
+          outcome: outcomeIndex, // Include outcome index for UI display
+        },
+        ...getFullUIData(),
+      });
+
+    } else {
+      // Transaction landed but failed on-chain
+      state.failedTrades++;
+      accState.failCount++;
+      state.verificationFailures++;
+
+      const RED = '\x1b[31m';
+      const RESET = '\x1b[0m';
+
+      console.log(
+        `${RED}❌ [VERIFY] TX FAILED ON-CHAIN:${RESET} ${pending.hash.slice(0, 18)}... ` +
+        `| vm_status: ${(confirmed as any).vm_status}`
+      );
+
+      broadcast({
+        type: 'trade',
+        data: {
+          id: `verify-${++tradeIdCounter}`,
+          bot: 'Verify-Bot',
+          action: isBuy ? 'buy_outcome' : 'sell_outcome',
+          actionDisplay: isBuy ? 'BUY (FAILED)' : 'SELL (FAILED)',
+          amount: tradeAmount,
+          latency: verificationLatency,
+          success: false,
+          verified: true,
+          txHash: pending.hash,
+          explorerUrl: `https://explorer.aptoslabs.com/txn/${pending.hash}?network=testnet`,
+          timestamp: Date.now(),
+          error: (confirmed as any).vm_status,
+          outcome: outcomeIndex, // Include outcome index for UI display
+        },
+        ...getFullUIData(),
+      });
+    }
+
+  } catch (err: any) {
+    // Submission or verification failed
+    state.totalTrades++;
+    state.failedTrades++;
+    state.verificationFailures++;
+    accState.failCount++;
+
+    const RED = '\x1b[31m';
+    const RESET = '\x1b[0m';
+
+    console.error(
+      `${RED}⏰ [VERIFY] ERROR:${RESET} ${err.message?.slice(0, 80) || err}`
+    );
+
+    broadcast({
+      type: 'trade',
+      data: {
+        id: `verify-${++tradeIdCounter}`,
+        bot: 'Verify-Bot',
+        action: 'unknown',
+        actionDisplay: 'ERROR',
+        amount: tradeAmount,
+        latency: Date.now() - startTime,
+        success: false,
+        verified: false,
+        timestamp: Date.now(),
+        error: `Verification failed: ${err.message?.slice(0, 50) || err}`,
+        outcome: outcomeIndex, // Include outcome index for UI display
+      },
+      ...getFullUIData(),
+    });
+  }
+}
+
 // Main trading loop for single account
 async function accountTradingLoop(accState: AccountState, accountIndex: number): Promise<void> {
   console.log(`[Account ${accountIndex + 1}] Trading loop started`);
@@ -1194,6 +1484,15 @@ async function accountTradingLoop(accState: AccountState, accountIndex: number):
 
   while (state.isRunning && accState.isActive) {
     try {
+      // VERIFY MODE: One verified transaction at a time with on-chain confirmation
+      if (RUN_MODE === 'verify') {
+        await executeVerifiedTransaction(accState);
+        // Fixed delay between verified transactions
+        await new Promise(r => setTimeout(r, CONFIG.BATCH_DELAY_MS));
+        batchCount++;
+        continue; // Skip the rest of the loop logic
+      }
+
       // HYBRID MODE: 70% fire-and-forget for speed, 30% safe mode for sequence sync
       if (Math.random() < CONFIG.FIRE_AND_FORGET_RATIO) {
         // Fire-and-forget: maximum speed, speculative sequence increment
@@ -1286,12 +1585,12 @@ function parsePrivateKey(key: string): Ed25519PrivateKey {
 function initializeAccounts(): Account[] {
   const accounts: Account[] = [];
 
-  // Check for multi-account mode
+  // Check for multi-account mode - ALWAYS load all accounts
+  // (trading speed is controlled by mode config, not account count)
   const ultraKeys = process.env.ULTRA_PRIVATE_KEYS;
   if (ultraKeys) {
     const keys = ultraKeys.split(',').map(k => k.trim());
-    const maxAccounts = CONFIG.IS_DRYRUN ? 2 : keys.length;
-    for (const key of keys.slice(0, maxAccounts)) {
+    for (const key of keys) {
       try {
         accounts.push(Account.fromPrivateKey({ privateKey: parsePrivateKey(key) }));
       } catch (e) {
@@ -1379,6 +1678,9 @@ async function startTrading(): Promise<void> {
   state.recentTps = [];
   state.recentLatencies = [];
   state.totalInvested = 0;
+  // Reset verification stats
+  state.verifiedOnChain = 0;
+  state.verificationFailures = 0;
   lastTpsCalcTime = Date.now();
   lastTpsCalcTrades = 0;
 
@@ -1442,6 +1744,23 @@ wss.on('connection', (ws) => {
     type: 'state',
     data: { isRunning: state.isRunning, ...getFullUIData() },
   }));
+
+  // Handle incoming messages (relay trade broadcasts from external scripts)
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+      // If it's a trade message, relay to all other clients
+      if (msg.type === 'trade' && msg.data) {
+        // Update our stats
+        state.totalTrades++;
+        state.successfulTrades++;
+        // Broadcast to all clients (including sender, for confirmation)
+        broadcast(msg);
+      }
+    } catch {
+      // Ignore invalid messages
+    }
+  });
 
   ws.on('close', () => {
     console.log('Client disconnected');
@@ -1512,6 +1831,44 @@ app.post('/stop', (req, res) => {
   res.json({ success: true });
 });
 
+// Endpoint for secondary workers to report their stats to coordinator
+app.post('/worker-stats', (req, res) => {
+  if (!IS_COORDINATOR) {
+    return res.status(400).json({ error: 'Not a coordinator' });
+  }
+
+  const { workerId, totalTrades, successfulTrades, failedTrades, currentTps, accountCount } = req.body;
+
+  if (!workerId) {
+    return res.status(400).json({ error: 'Missing workerId' });
+  }
+
+  // Update secondary worker stats
+  secondaryWorkerStats.set(workerId, {
+    workerId,
+    totalTrades: totalTrades || 0,
+    successfulTrades: successfulTrades || 0,
+    failedTrades: failedTrades || 0,
+    currentTps: currentTps || 0,
+    accountCount: accountCount || 0,
+    lastUpdate: Date.now(),
+  });
+
+  console.log(`[Coordinator] Worker ${workerId}: ${currentTps?.toFixed(0) || 0} TPS, ${totalTrades || 0} trades`);
+
+  res.json({ success: true });
+});
+
+// Get aggregated stats from all workers
+app.get('/aggregated-stats', (req, res) => {
+  const agg = getAggregatedStats();
+  res.json({
+    ...agg,
+    isCoordinator: IS_COORDINATOR,
+    secondaryWorkers: Array.from(secondaryWorkerStats.keys()),
+  });
+});
+
 app.post('/start', async (req, res) => {
   if (state.isRunning) {
     return res.json({ success: true, message: 'Already running' });
@@ -1543,6 +1900,9 @@ app.post('/start', async (req, res) => {
   state.recentTps = [];
   state.recentLatencies = [];
   state.totalInvested = 0;
+  // Reset verification stats
+  state.verifiedOnChain = 0;
+  state.verificationFailures = 0;
   lastTpsCalcTime = Date.now();
   lastTpsCalcTrades = 0;
 
@@ -1597,6 +1957,7 @@ const MODE_INFO: Record<RunMode, { emoji: string; desc: string }> = {
   turbo:   { emoji: '⚡', desc: 'Medium-high intensity (~3K TPS)' },
   ultra:   { emoji: '🔥', desc: 'High intensity (~10K TPS)' },
   quantum: { emoji: '🚀', desc: 'MAXIMUM POWER (~30K+ TPS)' },
+  verify:  { emoji: '🔍', desc: 'Full on-chain verification (~1 TPS)' },
 };
 
 // Initialize server state (accounts + market) without starting trading
@@ -1658,8 +2019,8 @@ async function initializeServerState(): Promise<void> {
   console.log('✓ Server ready. Use UI to ARM and LAUNCH, or auto-start with mode arg.\n');
 }
 
-// Start server
-server.listen(CONFIG.PORT, async () => {
+// Start server - bind to 0.0.0.0 to accept external connections
+server.listen(CONFIG.PORT, '0.0.0.0', async () => {
   const modeInfo = MODE_INFO[RUN_MODE];
   console.log('='.repeat(70));
   console.log(`${modeInfo.emoji} ULTRA HFT SERVER - ${RUN_MODE.toUpperCase()} MODE ${modeInfo.emoji}`);
@@ -1688,18 +2049,62 @@ server.listen(CONFIG.PORT, async () => {
   // Auto-start trading ONLY if mode is passed as command line arg
   const mode = process.argv[2];
   const duration = parseInt(process.argv[3]) || 60;
-  if (mode === 'dryrun' || mode === 'light' || mode === 'normal' || mode === 'turbo' || mode === 'ultra' || mode === 'quantum' || mode === 'prod') {
+  if (mode === 'dryrun' || mode === 'light' || mode === 'normal' || mode === 'turbo' || mode === 'ultra' || mode === 'quantum' || mode === 'verify' || mode === 'prod') {
     console.log(`\n${modeInfo.emoji} AUTO-START: ${RUN_MODE} mode for ${duration}s...`);
     await startTrading();
     if (duration > 0) {
-      setTimeout(() => {
+      setTimeout(async () => {
         console.log(`\n${duration}s completed. Stopping...`);
         state.isRunning = false;
+
+        // Grace period: wait for pending fire-and-forget transactions to complete
+        // Fire-and-forget batches send HTTP requests without awaiting them.
+        // We need to give these in-flight requests time to complete before exiting.
+        const gracePeriodMs = 15000;
+        console.log(`⏳ Waiting ${gracePeriodMs/1000}s for pending transactions to complete...`);
+        await new Promise(resolve => setTimeout(resolve, gracePeriodMs));
+
+        console.log(`✅ Grace period complete. FF resolved: ${ffDebugCounter}`);
+        console.log(`   Total trades: ${state.totalTrades}, Success: ${state.successfulTrades}, Failed: ${state.failedTrades}`);
         process.exit(0);
       }, duration * 1000);
     }
   } else {
     console.log('\n⏸️  STANDBY MODE: Waiting for UI to ARM and LAUNCH');
     console.log('   Or restart with a mode: npx tsx server/hft-ultra-server.ts turbo 60\n');
+  }
+
+  // If this is a secondary worker, connect to coordinator and report stats
+  if (COORDINATOR_URL) {
+    console.log(`\n📡 SECONDARY WORKER MODE - Reporting stats to coordinator: ${COORDINATOR_URL}`);
+
+    // Convert ws:// to http:// for REST API
+    const coordinatorHttpUrl = COORDINATOR_URL.replace('ws://', 'http://').replace('wss://', 'https://');
+
+    // Report stats every 500ms
+    setInterval(async () => {
+      if (!state.isRunning) return;
+
+      try {
+        const currentTps = state.recentTps.length > 0 ? state.recentTps[state.recentTps.length - 1] : 0;
+
+        await fetch(`${coordinatorHttpUrl}/worker-stats`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workerId: WORKER_ID,
+            totalTrades: state.totalTrades,
+            successfulTrades: state.successfulTrades,
+            failedTrades: state.failedTrades,
+            currentTps,
+            accountCount: state.accounts.length,
+          }),
+        });
+      } catch (e) {
+        // Silently ignore - coordinator might be down
+      }
+    }, 500);
+  } else {
+    console.log('\n👑 COORDINATOR MODE - Aggregating stats from all workers');
   }
 });

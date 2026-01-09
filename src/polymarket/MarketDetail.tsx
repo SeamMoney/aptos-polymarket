@@ -84,7 +84,7 @@ export function MarketDetail() {
     loading: marketsLoading,
   } = usePolymarkets();
 
-  // HFT connection for live demo
+  // HFT connection for live demo - auto-connect to show live trades
   const {
     isConnected: hftConnected,
     isRunning: hftRunning,
@@ -93,7 +93,7 @@ export function MarketDetail() {
     marketReserves: hftReserves,
     trades: hftTrades,
     tpsHistory,
-  } = useHFTConnection();
+  } = useHFTConnection({ autoConnect: true });
 
   // Live price tracking for real-time chart updates
   const {
@@ -102,8 +102,8 @@ export function MarketDetail() {
     isConnected: _pricesConnected,
   } = useLivePrices(3000); // Poll every 3 seconds
 
-  // Live trades from blockchain polling (disabled when HFT WebSocket is connected)
-  const { trades: blockchainTrades, loadMore, hasMore } = useLiveTrades(5000, 100, !hftConnected);
+  // Live trades from blockchain polling - always enabled to show all trades
+  const { trades: blockchainTrades, loadMore, hasMore } = useLiveTrades(5000, 100, true);
 
   // Persist HFT trades to localStorage so they survive page navigation
   const lastHftTradeCountRef = useRef(0);
@@ -128,15 +128,10 @@ export function MarketDetail() {
     }
   }, [hftTrades]);
 
-  // Combine HFT trades with blockchain trades, preferring HFT when available
+  // Combine HFT trades with blockchain trades - show ALL trades from both sources
   const combinedTrades: Trade[] = useMemo(() => {
-    // If HFT is connected and has trades, use those
-    if (hftConnected && hftTrades.length > 0) {
-      return hftTrades;
-    }
-
-    // Otherwise, convert blockchain trades to Trade format
-    return blockchainTrades.map((bt) => ({
+    // Convert blockchain trades to Trade format
+    const convertedBlockchainTrades: Trade[] = blockchainTrades.map((bt) => ({
       id: bt.id,
       bot: bt.trader.slice(0, 8) + '...',
       action: bt.type === 'buy' ? 'buy_outcome' : 'sell_outcome',
@@ -148,7 +143,19 @@ export function MarketDetail() {
       timestamp: bt.timestamp,
       outcome: bt.outcomeIndex,
     }));
-  }, [hftConnected, hftTrades, blockchainTrades]);
+
+    // Merge HFT trades and blockchain trades, deduplicating by txHash
+    const allTrades = [...hftTrades, ...convertedBlockchainTrades];
+    const seenHashes = new Set<string>();
+    const uniqueTrades = allTrades.filter(t => {
+      if (!t.txHash || seenHashes.has(t.txHash)) return false;
+      seenHashes.add(t.txHash);
+      return true;
+    });
+
+    // Sort by timestamp descending (newest first)
+    return uniqueTrades.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 100);
+  }, [hftTrades, blockchainTrades]);
 
   // Try to find market from on-chain data first, then fall back to mock data
   const market = useMemo(() => {
@@ -956,7 +963,7 @@ export function MarketDetail() {
           </div>
           {/* Tag Pills */}
           <div className="flex flex-wrap gap-2 mb-4">
-            {["Politics", "Elections", "2025", market.category].filter(Boolean).map((tag) => (
+            {[...new Set(["Politics", "Elections", "2025", market.category].filter(Boolean))].map((tag) => (
               <button
                 key={tag}
                 className="px-3 py-1.5 bg-[#2a3d4e] border border-[#3a4f60] rounded-full text-[#8297a3] text-sm hover:text-white hover:border-[#5a6f80] transition-colors"

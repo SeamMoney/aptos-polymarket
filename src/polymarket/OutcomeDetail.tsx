@@ -13,6 +13,7 @@ import { LiveOrderBook } from "./LiveOrderBook";
 import { mockMarkets } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useLiveTrades } from "../hooks/useLiveTrades";
+import { useHFTConnection } from "../hooks/useHFTConnection";
 import { LATEST_REAL_PRICES } from "./realPriceData";
 
 const CHART_HEIGHT = 220;
@@ -137,6 +138,13 @@ export function OutcomeDetail() {
   // Live trades from blockchain
   const { trades: blockchainTrades, loadMore, hasMore } = useLiveTrades(5000, 100, true);
 
+  // HFT connection for live market reserves
+  const {
+    isConnected: hftConnected,
+    marketReserves: hftReserves,
+    trades: hftTrades,
+  } = useHFTConnection({ autoConnect: true });
+
   useEffect(() => {
     const timer = setTimeout(() => setIsLoaded(true), 100);
     return () => clearTimeout(timer);
@@ -162,23 +170,36 @@ export function OutcomeDetail() {
 
   // Filter and convert blockchain trades for this specific outcome
   // Convert to the Trade format expected by LiveOrderBook
+  // Combine HFT trades with blockchain trades for live feed
   const outcomeTrades = useMemo(() => {
-    if (outcomeIndex < 0) return [];
-    return blockchainTrades
-      .filter(t => t.outcomeIndex === outcomeIndex)
-      .map(t => ({
-        id: t.id,
-        bot: t.trader.slice(0, 8) + '...',
-        action: t.type,
-        actionDisplay: t.type === 'buy' ? 'BUY' : 'SELL',
-        amount: t.amount,
-        latency: 0,
-        success: true,
-        txHash: t.txHash,
-        timestamp: t.timestamp,
-        outcome: outcomeIndex,
-      }));
-  }, [blockchainTrades, outcomeIndex]);
+    // HFT trades (already in correct format, filter by outcome)
+    const hftFiltered = hftTrades
+      .filter(t => t.outcome === outcomeIndex || outcomeIndex < 0)
+      .slice(0, 50);
+
+    // Blockchain trades (convert format)
+    const blockchainFiltered = outcomeIndex >= 0
+      ? blockchainTrades
+          .filter(t => t.outcomeIndex === outcomeIndex)
+          .map(t => ({
+            id: t.id,
+            bot: t.trader.slice(0, 8) + '...',
+            action: t.type,
+            actionDisplay: t.type === 'buy' ? 'BUY' : 'SELL',
+            amount: t.amount,
+            latency: 0,
+            success: true,
+            txHash: t.txHash,
+            timestamp: t.timestamp,
+            outcome: outcomeIndex,
+          }))
+      : [];
+
+    // Merge and sort by timestamp (newest first)
+    return [...hftFiltered, ...blockchainFiltered]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 100);
+  }, [blockchainTrades, hftTrades, outcomeIndex]);
 
   // More data points for choppier/more detailed chart
   const numPoints = timeRange === "ALL" ? 200 : timeRange === "1M" ? 120 : timeRange === "1W" ? 80 : 60;
@@ -375,6 +396,69 @@ export function OutcomeDetail() {
 
   // Map "Other" to "Donald Trump Jr." for display
   const displayName = outcome.name === "Other" ? "Donald Trump Jr." : outcome.name;
+
+  // Helper to parse liquidity string
+  const parseLiquidity = (liq: string): number => {
+    const num = parseFloat(liq.replace(/[$,]/g, ''));
+    if (liq.includes('M')) return num * 1_000_000;
+    if (liq.includes('K')) return num * 1_000;
+    return num;
+  };
+
+  // Track cumulative trade impact for visual reserve changes
+  const [tradeImpact, setTradeImpact] = useState({ buyVolume: 0, sellVolume: 0 });
+  const lastTradeCountRef = useRef(0);
+
+  // Update trade impact when new trades come in
+  useEffect(() => {
+    if (hftTrades.length > lastTradeCountRef.current) {
+      const newTrades = hftTrades.slice(0, hftTrades.length - lastTradeCountRef.current);
+      let buyVol = 0;
+      let sellVol = 0;
+      for (const t of newTrades) {
+        if (t.action?.includes('buy') || t.actionDisplay?.includes('BUY')) {
+          buyVol += t.amount || 1;
+        } else {
+          sellVol += t.amount || 1;
+        }
+      }
+      setTradeImpact(prev => ({
+        buyVolume: prev.buyVolume + buyVol,
+        sellVolume: prev.sellVolume + sellVol,
+      }));
+      lastTradeCountRef.current = hftTrades.length;
+    }
+  }, [hftTrades]);
+
+  // Calculate dynamic reserves based on price and TVL
+  // For AMM: reserves are inversely related to price
+  // Higher price = lower reserve (less tokens available)
+  // Use HFT live reserves when connected, otherwise estimate from market data
+  const { yesReserve, noReserve, tvl } = useMemo(() => {
+    const marketLiquidity = market?.liquidity ? parseLiquidity(market.liquidity) : 5000;
+    const estimatedTvl = marketLiquidity;
+
+    // Base reserves from HFT or estimate
+    let baseYes = hftConnected && hftReserves.tvl > 0
+      ? hftReserves.yesReserve
+      : Math.floor(estimatedTvl * (1 - realPrice) * 0.5);
+    let baseNo = hftConnected && hftReserves.tvl > 0
+      ? hftReserves.noReserve
+      : Math.floor(estimatedTvl * realPrice * 0.5);
+
+    // Apply trade impact for visual feedback (buys increase yes reserve, sells increase no reserve)
+    // Scale impact to be noticeable - each trade shifts reserves visibly
+    const impactScale = 5; // Each APT traded shifts reserves by 5 APT
+    const netImpact = (tradeImpact.buyVolume - tradeImpact.sellVolume) * impactScale;
+    const yesRes = Math.floor(baseYes + netImpact);
+    const noRes = Math.floor(baseNo - netImpact);
+
+    return {
+      yesReserve: Math.max(100, yesRes),
+      noReserve: Math.max(100, noRes),
+      tvl: hftReserves.tvl > 0 ? hftReserves.tvl : estimatedTvl,
+    };
+  }, [market?.liquidity, realPrice, hftConnected, hftReserves, tradeImpact]);
 
   // Calculate proportional volume based on outcome's share of market
   const parseVolume = (vol: string): number => {
@@ -663,10 +747,11 @@ export function OutcomeDetail() {
           <LiveOrderBook
             yesPrice={yesPrice}
             noPrice={noPrice}
-            yesReserve={1000}
-            noReserve={1000}
+            yesReserve={yesReserve}
+            noReserve={noReserve}
+            tvl={tvl}
             trades={outcomeTrades}
-            isConnected={outcomeTrades.length > 0}
+            isConnected={hftConnected || outcomeTrades.length > 0}
             onLoadMore={loadMore}
             hasMore={hasMore}
           />
