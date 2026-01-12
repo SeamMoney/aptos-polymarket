@@ -2,11 +2,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 
-const CONTRACT_ADDRESS = '0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1';
-const MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1';
+const MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market` as const;
+
+type MoveFn = `${string}::${string}::${string}`;
+
+// Explicit market addresses (SmartTable registry doesn't support enumeration)
+// Format: comma-separated addresses
+const EXPLICIT_MARKETS = import.meta.env.VITE_MULTI_MARKETS?.split(',').filter(Boolean) || [];
 
 // Use QuickNode RPC to avoid Aptos Labs rate limiting
-const QUICKNODE_RPC = 'https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1';
+const QUICKNODE_RPC = import.meta.env.VITE_RPC_URL || 'https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1';
 const aptos = new Aptos(new AptosConfig({
   network: Network.TESTNET,
   fullnode: QUICKNODE_RPC,
@@ -42,15 +48,24 @@ export function useMultiMarkets() {
 
   const fetchMarkets = useCallback(async () => {
     try {
-      // Get all multi-outcome market addresses
-      const result = await aptos.view({
-        payload: {
-          function: `${MODULE}::get_all_multi_markets`,
-          functionArguments: [],
-        },
-      });
+      // Use explicit market addresses if configured, otherwise try registry
+      let marketAddresses: string[] = [];
 
-      const marketAddresses = result[0] as string[];
+      if (EXPLICIT_MARKETS.length > 0) {
+        marketAddresses = EXPLICIT_MARKETS;
+      } else {
+        try {
+          const result = await aptos.view({
+            payload: {
+              function: `${MODULE}::get_all_multi_markets` as MoveFn,
+              functionArguments: [],
+            },
+          });
+          marketAddresses = result[0] as string[];
+        } catch {
+          console.warn('Could not fetch markets from registry. Set VITE_MULTI_MARKETS env var.');
+        }
+      }
 
       if (marketAddresses.length === 0) {
         setMarkets([]);
@@ -58,37 +73,45 @@ export function useMultiMarkets() {
         return;
       }
 
-      // Fetch details for each market
-      const marketPromises = marketAddresses.map(async (addr) => {
+      // Fetch all markets in PARALLEL for speed
+      const fetchSingleMarket = async (addr: string): Promise<MultiMarket | null> => {
         try {
-          // Get market info
-          const infoResult = await aptos.view({
-            payload: {
-              function: `${MODULE}::get_multi_market_info`,
-              functionArguments: [addr],
-            },
-          });
+          // Make all RPC calls for this market in parallel
+          const [infoResult, labelsResult, pricesResult, positionsResult] = await Promise.all([
+            aptos.view({
+              payload: {
+                function: `${MODULE}::get_multi_market_info` as MoveFn,
+                functionArguments: [addr],
+              },
+            }),
+            aptos.view({
+              payload: {
+                function: `${MODULE}::get_outcome_labels` as MoveFn,
+                functionArguments: [addr],
+              },
+            }),
+            aptos.view({
+              payload: {
+                function: `${MODULE}::get_all_prices` as MoveFn,
+                functionArguments: [addr],
+              },
+            }),
+            walletAddress
+              ? aptos.view({
+                  payload: {
+                    function: `${MODULE}::get_user_multi_positions` as MoveFn,
+                    functionArguments: [addr, walletAddress],
+                  },
+                }).catch(() => [new Array(10).fill('0')])
+              : Promise.resolve([new Array(10).fill('0')]),
+          ]);
 
           const [question, description, category, outcomeCount, endTime, resolved, winningOutcome, totalCollateral] =
             infoResult as [string, string, string, string, string, boolean, { vec: string[] }, string];
 
-          // Get outcome labels
-          const labelsResult = await aptos.view({
-            payload: {
-              function: `${MODULE}::get_outcome_labels`,
-              functionArguments: [addr],
-            },
-          });
           const labels = labelsResult[0] as string[];
-
-          // Get prices
-          const pricesResult = await aptos.view({
-            payload: {
-              function: `${MODULE}::get_all_prices`,
-              functionArguments: [addr],
-            },
-          });
           const rawPrices = (pricesResult[0] as string[]).map(p => parseInt(p));
+          const userBalances = (positionsResult[0] as string[]).map(b => parseInt(b) / 100_000_000);
 
           // Normalize prices to sum to 100%
           const priceSum = rawPrices.reduce((acc, p) => acc + p, 0);
@@ -96,29 +119,12 @@ export function useMultiMarkets() {
             priceSum > 0 ? (p / priceSum) * 100 : 100 / rawPrices.length
           );
 
-          // Get user positions if wallet connected
-          let userBalances: number[] = new Array(parseInt(outcomeCount)).fill(0);
-          if (walletAddress) {
-            try {
-              const positionsResult = await aptos.view({
-                payload: {
-                  function: `${MODULE}::get_user_multi_positions`,
-                  functionArguments: [addr, walletAddress],
-                },
-              });
-              userBalances = (positionsResult[0] as string[]).map(b => parseInt(b) / 100_000_000);
-            } catch {
-              // User might not have positions
-            }
-          }
-
-          // Build outcomes array
           const outcomes: Outcome[] = labels.map((label, i) => ({
             index: i,
             label,
             price: normalizedPrices[i],
             rawPrice: rawPrices[i],
-            userBalance: userBalances[i],
+            userBalance: userBalances[i] || 0,
           }));
 
           return {
@@ -137,11 +143,11 @@ export function useMultiMarkets() {
           console.error(`Error fetching market ${addr}:`, err);
           return null;
         }
-      });
+      };
 
-      const fetchedMarkets = (await Promise.all(marketPromises)).filter(
-        (m): m is MultiMarket => m !== null
-      );
+      // Fetch ALL markets in parallel
+      const results = await Promise.all(marketAddresses.map(fetchSingleMarket));
+      const fetchedMarkets = results.filter((m): m is MultiMarket => m !== null);
 
       setMarkets(fetchedMarkets);
       setError(null);
