@@ -15,6 +15,18 @@ const isMobileDevice = () => {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 };
 
+// Detect iOS Safari specifically (has popup issues)
+const isIOSSafari = () => {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua);
+  const isWebkit = /WebKit/.test(ua);
+  const isChrome = /CriOS/.test(ua);
+  const isFirefox = /FxiOS/.test(ua);
+  // iOS Safari is iOS + WebKit but not Chrome or Firefox
+  return isIOS && isWebkit && !isChrome && !isFirefox;
+};
+
 // Generate Petra deep link to open this dApp in Petra mobile browser
 const getPetraDeepLink = () => {
   if (typeof window === 'undefined') return '';
@@ -185,8 +197,9 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
   const connectingWalletRef = useRef<string | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Check if on mobile
+  // Check if on mobile and iOS Safari
   const isMobile = useMemo(() => isMobileDevice(), []);
+  const isMobileSafari = useMemo(() => isIOSSafari(), []);
   const petraDeepLink = useMemo(() => getPetraDeepLink(), []);
 
   // Close modal when connected and clear timeout
@@ -367,12 +380,48 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
           {/* Wallet List */}
           <div className="px-6 pb-6 max-h-[400px] overflow-y-auto">
             <div className="space-y-3">
-              {/* Social Login (Aptos Connect) */}
-              {petraWebWallets.length > 0 && (
+              {/* On mobile (especially iOS Safari), show Petra App option FIRST */}
+              {isMobile && (
                 <div className="space-y-2">
                   <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider mb-2">
-                    Quick Sign In
+                    Recommended for Mobile
                   </div>
+                  <a
+                    href={petraDeepLink}
+                    className="w-full flex items-center gap-3 p-3 bg-[#6C5CE7] hover:bg-[#5B4ED6] rounded-xl transition-colors"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                      <Smartphone size={20} className="text-white" />
+                    </div>
+                    <div className="flex-1 text-left">
+                      <span className="text-white font-medium">Open in Petra App</span>
+                      <p className="text-white/70 text-xs">Best experience on mobile</p>
+                    </div>
+                    <ExternalLink size={16} className="text-white/70" />
+                  </a>
+
+                  {isMobileSafari && (
+                    <p className="text-xs text-amber-400/80 px-1">
+                      Note: Google/Apple login may not work in Safari. Use Petra App for best results.
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-3 py-2">
+                    <div className="flex-1 h-px bg-[#3a4f60]" />
+                    <span className="text-xs text-[#6b7a8a]">or try social login</span>
+                    <div className="flex-1 h-px bg-[#3a4f60]" />
+                  </div>
+                </div>
+              )}
+
+              {/* Social Login (Aptos Connect) - show after Petra on mobile */}
+              {petraWebWallets.length > 0 && (
+                <div className="space-y-2">
+                  {!isMobile && (
+                    <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider mb-2">
+                      Quick Sign In
+                    </div>
+                  )}
                   {petraWebWallets.map(wallet => (
                     <AptosConnectButton
                       key={wallet.name}
@@ -385,34 +434,6 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
                   <div className="flex items-center gap-3 py-2">
                     <div className="flex-1 h-px bg-[#3a4f60]" />
                     <span className="text-xs text-[#6b7a8a]">or connect wallet</span>
-                    <div className="flex-1 h-px bg-[#3a4f60]" />
-                  </div>
-                </div>
-              )}
-
-              {/* Petra Mobile Deep Link - Show on mobile or always as option */}
-              {isMobile && (
-                <div className="space-y-2">
-                  <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider mb-2">
-                    Mobile Wallet
-                  </div>
-                  <a
-                    href={petraDeepLink}
-                    className="w-full flex items-center gap-3 p-3 bg-[#6C5CE7] hover:bg-[#5B4ED6] rounded-xl transition-colors"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-                      <Smartphone size={20} className="text-white" />
-                    </div>
-                    <div className="flex-1 text-left">
-                      <span className="text-white font-medium">Open in Petra App</span>
-                      <p className="text-white/70 text-xs">Continue in Petra mobile wallet</p>
-                    </div>
-                    <ExternalLink size={16} className="text-white/70" />
-                  </a>
-
-                  <div className="flex items-center gap-3 py-2">
-                    <div className="flex-1 h-px bg-[#3a4f60]" />
-                    <span className="text-xs text-[#6b7a8a]">or use browser wallet</span>
                     <div className="flex-1 h-px bg-[#3a4f60]" />
                   </div>
                 </div>
