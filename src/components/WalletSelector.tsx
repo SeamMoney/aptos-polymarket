@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { useWallet } from '@aptos-labs/wallet-adapter-react';
+import { useState, useEffect, useMemo } from 'react';
+import { useWallet, WalletItem, isInstallRequired } from '@aptos-labs/wallet-adapter-react';
 import {
   groupAndSortWallets,
   type AdapterWallet,
@@ -7,7 +7,7 @@ import {
   APTOS_CONNECT_ACCOUNT_URL
 } from '@aptos-labs/wallet-adapter-core';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Loader2, ExternalLink, Smartphone } from 'lucide-react';
+import { X, ExternalLink, Smartphone } from 'lucide-react';
 
 // Detect if user is on mobile device
 const isMobileDevice = () => {
@@ -71,55 +71,42 @@ const AppleIcon = () => (
   </svg>
 );
 
-// Aptos Connect Button for social login
+// Aptos Connect Button for social login - uses official WalletItem component
 function AptosConnectButton({
   wallet,
   onConnect,
-  connecting,
 }: {
   wallet: AdapterWallet;
   onConnect: () => void;
-  connecting: boolean;
 }) {
   const isGoogle = wallet.name.toLowerCase().includes('google');
   const isApple = wallet.name.toLowerCase().includes('apple');
 
   return (
-    <button
-      onClick={onConnect}
-      disabled={connecting}
-      className="w-full flex items-center justify-center gap-3 p-3 bg-white hover:bg-gray-100 rounded-xl transition-colors disabled:opacity-50 border border-gray-200"
-    >
-      {isGoogle && <GoogleIcon />}
-      {isApple && <AppleIcon />}
-      <span className="text-gray-900 font-medium">
-        {isGoogle ? 'Continue with Google' : isApple ? 'Continue with Apple' : wallet.name}
-      </span>
-      {connecting && <Loader2 size={18} className="text-gray-500 animate-spin" />}
-    </button>
+    <WalletItem wallet={wallet} onConnect={onConnect}>
+      <WalletItem.ConnectButton asChild>
+        <button
+          className="w-full flex items-center justify-center gap-3 p-3 bg-white hover:bg-gray-100 rounded-xl transition-colors disabled:opacity-50 border border-gray-200"
+        >
+          {isGoogle && <GoogleIcon />}
+          {isApple && <AppleIcon />}
+          <span className="text-gray-900 font-medium">
+            {isGoogle ? 'Continue with Google' : isApple ? 'Continue with Apple' : wallet.name}
+          </span>
+        </button>
+      </WalletItem.ConnectButton>
+    </WalletItem>
   );
 }
 
-// Regular wallet button
+// Regular wallet button - uses official WalletItem component
 function WalletButton({
   wallet,
   onConnect,
-  connecting,
-  isInstalled,
 }: {
   wallet: AdapterWallet | AdapterNotDetectedWallet;
   onConnect: () => void;
-  connecting: boolean;
-  isInstalled: boolean;
 }) {
-  const handleClick = () => {
-    if (isInstalled) {
-      onConnect();
-    } else if (wallet.url) {
-      window.open(wallet.url, '_blank');
-    }
-  };
-
   // Get chain label from wallet name
   const getChainLabel = () => {
     if (wallet.name.includes('Solana')) return 'Solana';
@@ -130,45 +117,74 @@ function WalletButton({
   const chainLabel = getChainLabel();
   const displayName = wallet.name.replace(' (Solana)', '').replace(' (Ethereum)', '');
   const walletIcon = WALLET_ICONS[wallet.name] || WALLET_ICONS[displayName] || wallet.icon;
+  const needsInstall = isInstallRequired(wallet);
 
   return (
-    <button
-      onClick={handleClick}
-      disabled={connecting}
-      className="w-full flex items-center gap-3 p-3 bg-[#1c2b3a] hover:bg-[#2a3d4e] rounded-xl transition-colors disabled:opacity-50"
-    >
-      {walletIcon ? (
-        <img
-          src={walletIcon}
-          alt={wallet.name}
-          className={`w-10 h-10 rounded-xl ${!isInstalled ? 'opacity-50' : ''}`}
-        />
-      ) : (
-        <div className={`w-10 h-10 rounded-xl bg-[#3a4f60] flex items-center justify-center ${!isInstalled ? 'opacity-50' : ''}`}>
-          <span className="text-white font-bold">{displayName[0]}</span>
-        </div>
-      )}
-      <div className="flex-1 text-left">
-        <div className="flex items-center gap-2">
-          <span className={`text-white font-medium ${!isInstalled ? 'opacity-50' : ''}`}>
-            {displayName}
-          </span>
-          {chainLabel && (
-            <span className="text-[10px] text-[#8297a3]">({chainLabel})</span>
+    <WalletItem wallet={wallet} onConnect={onConnect}>
+      {needsInstall ? (
+        <a
+          href={wallet.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full flex items-center gap-3 p-3 bg-[#1c2b3a] hover:bg-[#2a3d4e] rounded-xl transition-colors"
+        >
+          {walletIcon ? (
+            <img
+              src={walletIcon}
+              alt={wallet.name}
+              className="w-10 h-10 rounded-xl opacity-50"
+            />
+          ) : (
+            <div className="w-10 h-10 rounded-xl bg-[#3a4f60] flex items-center justify-center opacity-50">
+              <span className="text-white font-bold">{displayName[0]}</span>
+            </div>
           )}
-        </div>
-      </div>
-      {isInstalled ? (
-        <span className="px-3 py-1.5 bg-[#60a5fa] hover:bg-[#3b82f6] text-white text-sm font-medium rounded-lg">
-          Connect
-        </span>
+          <div className="flex-1 text-left">
+            <div className="flex items-center gap-2">
+              <span className="text-white font-medium opacity-50">
+                {displayName}
+              </span>
+              {chainLabel && (
+                <span className="text-[10px] text-[#8297a3]">({chainLabel})</span>
+              )}
+            </div>
+            <span className="text-[10px] text-[#6b7a8a]">Not installed</span>
+          </div>
+          <ExternalLink size={16} className="text-[#6b7a8a]" />
+        </a>
       ) : (
-        <span className="px-3 py-1.5 text-[#60a5fa] text-sm font-medium flex items-center gap-1">
-          Install <ExternalLink size={12} />
-        </span>
+        <WalletItem.ConnectButton asChild>
+          <button
+            className="w-full flex items-center gap-3 p-3 bg-[#1c2b3a] hover:bg-[#2a3d4e] rounded-xl transition-colors disabled:opacity-50"
+          >
+            {walletIcon ? (
+              <img
+                src={walletIcon}
+                alt={wallet.name}
+                className="w-10 h-10 rounded-xl"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-[#3a4f60] flex items-center justify-center">
+                <span className="text-white font-bold">{displayName[0]}</span>
+              </div>
+            )}
+            <div className="flex-1 text-left">
+              <div className="flex items-center gap-2">
+                <span className="text-white font-medium">
+                  {displayName}
+                </span>
+                {chainLabel && (
+                  <span className="text-[10px] text-[#8297a3]">({chainLabel})</span>
+                )}
+              </div>
+            </div>
+            <span className="px-3 py-1.5 bg-[#60a5fa] hover:bg-[#3b82f6] text-white text-sm font-medium rounded-lg">
+              Connect
+            </span>
+          </button>
+        </WalletItem.ConnectButton>
       )}
-      {connecting && <Loader2 size={18} className="text-[#60a5fa] animate-spin" />}
-    </button>
+    </WalletItem>
   );
 }
 
@@ -190,38 +206,21 @@ const clearAptosConnectCache = () => {
 };
 
 export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
-  const { wallets, notDetectedWallets = [], connect, connected } = useWallet();
-  const [connectingWallet, setConnectingWallet] = useState<string | null>(null);
+  const { wallets, notDetectedWallets = [], connected } = useWallet();
   const [error, setError] = useState<string | null>(null);
   const [showTroubleshooting, setShowTroubleshooting] = useState(false);
-  const connectingWalletRef = useRef<string | null>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check if on mobile and iOS Safari
   const isMobile = useMemo(() => isMobileDevice(), []);
   const isMobileSafari = useMemo(() => isIOSSafari(), []);
   const petraDeepLink = useMemo(() => getPetraDeepLink(), []);
 
-  // Close modal when connected and clear timeout
+  // Close modal when connected
   useEffect(() => {
     if (connected && isOpen) {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-      connectingWalletRef.current = null;
       onClose();
     }
   }, [connected, isOpen, onClose]);
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, []);
 
   // Use the official groupAndSortWallets function from wallet adapter
   // Important: Pass both wallets and notDetectedWallets for proper grouping
@@ -248,59 +247,6 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
   );
   const solanaInstallable = installableWallets.filter(w => w.name.includes('Solana'));
   const ethereumInstallable = installableWallets.filter(w => w.name.includes('Ethereum'));
-
-  // IMPORTANT: Safari blocks popups if there's ANY async operation between
-  // the user click and window.open(). We must call connect() IMMEDIATELY
-  // without any state updates first to prevent popup blocking.
-  // The connect() function returns void - async handling is internal.
-  // Errors are handled via the onError callback in the provider.
-  const handleConnect = (walletName: string) => {
-    // Clear any previous error
-    setError(null);
-    setShowTroubleshooting(false);
-
-    // Find the wallet object for more detailed logging
-    const targetWallet = [...petraWebWallets, ...availableWallets].find(w => w.name === walletName);
-    console.log('[WalletSelector] Attempting to connect:', walletName);
-    console.log('[WalletSelector] Wallet details:', targetWallet ? { name: targetWallet.name, url: targetWallet.url, readyState: targetWallet.readyState } : 'NOT FOUND');
-
-    // Call connect IMMEDIATELY - this must be the first thing that happens
-    // after the user click to prevent Safari popup blocking
-    try {
-      connect(walletName);
-      console.log('[WalletSelector] connect() called successfully');
-    } catch (err) {
-      console.error('[WalletSelector] connect() threw:', err);
-      setError(err instanceof Error ? err.message : 'Connection failed');
-      return;
-    }
-
-    // Now we can safely update UI state
-    setConnectingWallet(walletName);
-    connectingWalletRef.current = walletName;
-
-    // Clear any existing timeout
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-
-    // For Aptos Connect (Google/Apple), show a helpful message after timeout
-    // since blank screen issues are common with rate limiting
-    const isAptosConnect = walletName.toLowerCase().includes('google') ||
-                           walletName.toLowerCase().includes('apple');
-
-    timeoutRef.current = setTimeout(() => {
-      // Use ref to get current connecting wallet (avoids stale closure)
-      if (connectingWalletRef.current === walletName) {
-        setConnectingWallet(null);
-        connectingWalletRef.current = null;
-        if (isAptosConnect) {
-          setError('Login timed out. If you see a blank popup, the service may be temporarily rate-limited. Try again in a few minutes or use a different wallet.');
-          setShowTroubleshooting(true);
-        }
-      }
-    }, isAptosConnect ? 30000 : 15000); // 30s for Aptos Connect, 15s for others
-  };
 
   if (!isOpen) return null;
 
@@ -365,7 +311,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
                       onClick={() => {
                         clearAptosConnectCache();
                         setError(null);
-                        setConnectingWallet(null);
+                        setShowTroubleshooting(false);
                       }}
                       className="mt-2 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs rounded-lg transition-colors"
                     >
@@ -426,8 +372,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
                     <AptosConnectButton
                       key={wallet.name}
                       wallet={wallet}
-                      onConnect={() => handleConnect(wallet.name)}
-                      connecting={connectingWallet === wallet.name}
+                      onConnect={onClose}
                     />
                   ))}
 
@@ -449,9 +394,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
                     <WalletButton
                       key={wallet.name}
                       wallet={wallet}
-                      onConnect={() => handleConnect(wallet.name)}
-                      connecting={connectingWallet === wallet.name}
-                      isInstalled={true}
+                      onConnect={onClose}
                     />
                   ))}
                 </div>
@@ -468,9 +411,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
                     <WalletButton
                       key={wallet.name}
                       wallet={wallet}
-                      onConnect={() => handleConnect(wallet.name)}
-                      connecting={connectingWallet === wallet.name}
-                      isInstalled={true}
+                      onConnect={onClose}
                     />
                   ))}
                 </div>
@@ -487,9 +428,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
                     <WalletButton
                       key={wallet.name}
                       wallet={wallet}
-                      onConnect={() => handleConnect(wallet.name)}
-                      connecting={connectingWallet === wallet.name}
-                      isInstalled={true}
+                      onConnect={onClose}
                     />
                   ))}
                 </div>
@@ -505,9 +444,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
                     <WalletButton
                       key={wallet.name}
                       wallet={wallet}
-                      onConnect={() => handleConnect(wallet.name)}
-                      connecting={connectingWallet === wallet.name}
-                      isInstalled={false}
+                      onConnect={onClose}
                     />
                   ))}
                 </div>

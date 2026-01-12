@@ -29,7 +29,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
       devnet: import.meta.env.VITE_APTOS_API_KEY_DEVNET,
       mainnet: import.meta.env.VITE_APTOS_API_KEY_MAINNET,
     },
-    // Note: crossChainWallets is enabled via setupAutomaticEthereumWalletDerivation/setupAutomaticSolanaWalletDerivation above
+    // Enable cross-chain wallets (Phantom Solana, MetaMask Ethereum, etc.)
+    crossChainWallets: true,
     // Aptos Connect configuration for keyless wallets (Google/Apple login)
     // Using the official example dappId that is confirmed working
     aptosConnect: {
