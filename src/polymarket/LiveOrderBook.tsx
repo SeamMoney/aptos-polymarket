@@ -278,7 +278,7 @@ export function LiveOrderBook({
                   </div>
                   <div className="text-right">
                     <div className="text-xs text-[#6b7a8a]">Spread: {spread.toFixed(1)}¢</div>
-                    <div className="text-sm font-medium text-white">{displayTvl.toLocaleString('en-US', { maximumFractionDigits: 0 })} APT</div>
+                    <div className="text-sm font-medium text-white">{displayTvl.toLocaleString('en-US', { maximumFractionDigits: 0 })} USD1</div>
                   </div>
                 </div>
 
@@ -389,7 +389,7 @@ export function LiveOrderBook({
 
                         {/* Amount - prevent wrapping */}
                         <span className="text-right text-white font-medium tabular-nums whitespace-nowrap text-xs">
-                          {formatTradeAmount(trade.amount)} APT
+                          {formatTradeAmount(trade.amount)} USD1
                         </span>
 
                         {/* Tx link */}

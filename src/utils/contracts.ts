@@ -2,13 +2,17 @@ import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import type { InputViewFunctionData } from '@aptos-labs/ts-sdk';
 
 // Contract configuration - Deployed on Aptos Testnet
-export const PREDICTION_MARKET_ADDRESS = '0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4';
+// Use env var with fallback to USD1 contract (deployed Jan 11, 2026)
+export const PREDICTION_MARKET_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134';
 
 // Testnet USDC token metadata address
 export const USDC_ADDRESS = '0x69091fbab5f7d635ee7ac5098cf0c1efbe31d68fec0f2cd565e8d168daf52832';
 
 // Module path
 const MODULE = `${PREDICTION_MARKET_ADDRESS}::market`;
+
+// Type for Move function paths
+type MoveFn = `${string}::${string}::${string}`;
 
 // Initialize Aptos client
 const aptosConfig = new AptosConfig({ network: Network.TESTNET });
@@ -114,7 +118,7 @@ export function redeemPayload(marketAddr: string) {
  */
 export async function getYesPrice(marketAddr: string): Promise<number> {
   const payload: InputViewFunctionData = {
-    function: `${MODULE}::get_yes_price`,
+    function: `${MODULE}::get_yes_price` as MoveFn,
     functionArguments: [marketAddr],
   };
   const result = await aptos.view({ payload });
@@ -126,7 +130,7 @@ export async function getYesPrice(marketAddr: string): Promise<number> {
  */
 export async function getNoPrice(marketAddr: string): Promise<number> {
   const payload: InputViewFunctionData = {
-    function: `${MODULE}::get_no_price`,
+    function: `${MODULE}::get_no_price` as MoveFn,
     functionArguments: [marketAddr],
   };
   const result = await aptos.view({ payload });
@@ -148,7 +152,7 @@ export interface MarketInfo {
 
 export async function getMarketInfo(marketAddr: string): Promise<MarketInfo> {
   const payload: InputViewFunctionData = {
-    function: `${MODULE}::get_market_info`,
+    function: `${MODULE}::get_market_info` as MoveFn,
     functionArguments: [marketAddr],
   };
   const result = await aptos.view({ payload });
@@ -177,7 +181,7 @@ export async function getUserPositions(
   userAddr: string
 ): Promise<UserPositions> {
   const payload: InputViewFunctionData = {
-    function: `${MODULE}::get_user_positions`,
+    function: `${MODULE}::get_user_positions` as MoveFn,
     functionArguments: [marketAddr, userAddr],
   };
   const result = await aptos.view({ payload });
@@ -193,7 +197,7 @@ export async function getUserPositions(
  */
 export async function getAllMarkets(): Promise<string[]> {
   const payload: InputViewFunctionData = {
-    function: `${MODULE}::get_all_markets`,
+    function: `${MODULE}::get_all_markets` as MoveFn,
     functionArguments: [],
   };
   const result = await aptos.view({ payload });
@@ -209,7 +213,7 @@ export async function quoteBuy(
   isYes: boolean
 ): Promise<number> {
   const payload: InputViewFunctionData = {
-    function: `${MODULE}::quote_buy`,
+    function: `${MODULE}::quote_buy` as MoveFn,
     functionArguments: [marketAddr, amountIn, isYes],
   };
   const result = await aptos.view({ payload });
@@ -225,7 +229,7 @@ export async function quoteSell(
   isYes: boolean
 ): Promise<number> {
   const payload: InputViewFunctionData = {
-    function: `${MODULE}::quote_sell`,
+    function: `${MODULE}::quote_sell` as MoveFn,
     functionArguments: [marketAddr, amountIn, isYes],
   };
   const result = await aptos.view({ payload });

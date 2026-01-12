@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 
-const CONTRACT_ADDRESS = "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1";
-const MARKET_ADDRESS = "0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96";
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134";
+// First market from VITE_MULTI_MARKETS or default to first new market
+const MARKET_ADDRESS = import.meta.env.VITE_MULTI_MARKETS?.split(',')[0] || "0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052";
 
 const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
 

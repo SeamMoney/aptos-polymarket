@@ -10,7 +10,7 @@ import { usePolymarkets } from "../hooks/usePolymarkets";
 import { LATEST_REAL_PRICES } from "./realPriceData";
 import type { Category, Market } from "./types";
 
-const topicFilters = ["All", "Trump", "Venezuela", "New Years", "Ukraine", "Mideast"];
+const topicFilters = ["All", "Trump", "WLFI", "Geopolitics", "Crypto", "Fed"];
 
 export function PolymarketHome() {
   const navigate = useNavigate();
@@ -30,7 +30,18 @@ export function PolymarketHome() {
     }
   }, [loading, initialLoadDone]);
 
-  // Combine on-chain markets with mock markets (on-chain first)
+  // Normalize question text for deduplication (handles punctuation, whitespace, case)
+  const normalizeQuestion = (q: string): string => {
+    return q
+      .toLowerCase()
+      .trim()
+      .replace(/[?!.,;:'"]/g, '')  // Remove punctuation
+      .replace(/\s+/g, ' ')        // Normalize whitespace
+      .replace(/\$/g, '')          // Remove $ symbols
+      .substring(0, 50);           // First 50 chars for matching (handles slight variations)
+  };
+
+  // Combine on-chain markets with mock markets (on-chain first, deduplicated)
   // Wait for initial load to prevent visual swap
   const allMarkets: Market[] = useMemo(() => {
     // During initial load, show nothing or minimal skeleton
@@ -38,7 +49,17 @@ export function PolymarketHome() {
       return [];
     }
     if (showRealMarkets && onChainMarkets.length > 0) {
-      return [...onChainMarkets, ...mockMarkets];
+      // Deduplicate: filter out mock markets that have same question as on-chain
+      // Use normalized comparison to handle punctuation/whitespace differences
+      const onChainQuestions = new Set(
+        onChainMarkets.map(m => normalizeQuestion(m.question))
+      );
+      const filteredMockMarkets = mockMarkets.filter(
+        m => !onChainQuestions.has(normalizeQuestion(m.question))
+      );
+      // Debug: log which mock markets are being filtered
+      console.log('[Dedup] On-chain markets:', onChainMarkets.length, 'Mock filtered out:', mockMarkets.length - filteredMockMarkets.length);
+      return [...onChainMarkets, ...filteredMockMarkets];
     }
     return mockMarkets;
   }, [onChainMarkets, showRealMarkets, initialLoadDone, loading]);
@@ -54,6 +75,7 @@ export function PolymarketHome() {
   const filteredMarkets = useMemo(() => {
     let filtered = allMarkets;
 
+    // Category filtering
     if (
       selectedCategory !== "All" &&
       selectedCategory !== "Breaking" &&
@@ -68,8 +90,25 @@ export function PolymarketHome() {
       filtered = filtered.filter((market) => market.isNew);
     }
 
+    // Topic filtering
+    if (selectedTopic !== "All") {
+      const topicKeywords: Record<string, string[]> = {
+        "Trump": ["trump", "greenland", "fed chair", "nominate"],
+        "WLFI": ["wlfi", "world liberty", "banking charter", "usd1"],
+        "Geopolitics": ["iran", "taiwan", "china", "russia", "ukraine", "venezuela", "ceasefire", "invade", "khamenei"],
+        "Crypto": ["bitcoin", "btc", "$150k", "$90k", "$100k", "$120k", "ethereum", "crypto"],
+        "Fed": ["fed", "fomc", "rate", "25bps", "50bps", "powell", "warsh", "hassett"],
+      };
+      const keywords = topicKeywords[selectedTopic] || [];
+      if (keywords.length > 0) {
+        filtered = filtered.filter((market) =>
+          keywords.some((kw) => market.question.toLowerCase().includes(kw))
+        );
+      }
+    }
+
     return filtered;
-  }, [selectedCategory, allMarkets]);
+  }, [selectedCategory, selectedTopic, allMarkets]);
 
   const isSearching = searchQuery.trim().length > 0;
 

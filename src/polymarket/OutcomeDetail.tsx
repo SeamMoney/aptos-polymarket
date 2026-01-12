@@ -135,8 +135,21 @@ export function OutcomeDetail() {
     loading: marketsLoading,
   } = usePolymarkets();
 
-  // Live trades from blockchain
-  const { trades: blockchainTrades, loadMore, hasMore } = useLiveTrades(5000, 100, true);
+  // Extract market address from market ID (format: "multi-0x..." or "binary-0x...")
+  const marketAddress = useMemo(() => {
+    if (!marketId) return undefined;
+    if (marketId.startsWith('multi-')) return marketId.replace('multi-', '');
+    if (marketId.startsWith('binary-')) return marketId.replace('binary-', '');
+    return marketId;  // Assume raw address
+  }, [marketId]);
+
+  // Live trades from blockchain (with Geomi integration when marketAddress available)
+  const { trades: blockchainTrades, loadMore, hasMore } = useLiveTrades({
+    marketAddress,
+    pollInterval: 5000,
+    maxTrades: 100,
+    enabled: true,
+  });
 
   // HFT connection for live market reserves
   const {

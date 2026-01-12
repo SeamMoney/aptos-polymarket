@@ -172,25 +172,23 @@ function TradeExpansion({
 // Outcome row for multi-outcome markets
 function OutcomeRow({
   outcome,
-  endDate,
   onYesPress,
   onNoPress,
 }: {
   outcome: Outcome;
-  endDate?: string;
   onYesPress: () => void;
   onNoPress: () => void;
 }) {
-  // Use REAL Polymarket prices for display
+  // Use REAL Polymarket prices for display if available, otherwise use outcome.price
   const realPrice = (LATEST_REAL_PRICES as Record<string, number>)[outcome.name] || outcome.price;
   const yesPrice = Math.round(realPrice * 100);
 
   return (
     <div className="flex items-center py-2.5">
-      {/* Outcome name / date */}
+      {/* Outcome name */}
       <div className="flex-1 min-w-0">
         <span className="text-white text-sm">
-          {endDate || outcome.name}
+          {outcome.name}
         </span>
       </div>
 
@@ -303,11 +301,10 @@ export function MarketCard({ market, onPress }: MarketCardProps) {
           {/* Multi-outcome list */}
           {market.isMultiOutcome && market.outcomes && (
             <div className="mb-3">
-              {market.outcomes.slice(0, 2).map((outcome, idx) => (
+              {market.outcomes.slice(0, 2).map((outcome) => (
                 <OutcomeRow
                   key={outcome.id}
                   outcome={outcome}
-                  endDate={idx === 0 ? market.endDate : undefined}
                   onYesPress={() => {}}
                   onNoPress={() => {}}
                 />

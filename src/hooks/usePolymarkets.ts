@@ -5,6 +5,9 @@ import type { OnChainMarket } from './useMarkets';
 import { useMultiMarkets } from './useMultiMarkets';
 import type { Market, Category, Outcome } from '../polymarket/types';
 
+// Contract address from env var (USD1 contract deployed Jan 11, 2026)
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134';
+
 // Outcome colors for multi-outcome markets
 const OUTCOME_COLORS = [
   '#00c853', '#5b9cf6', '#f5a623', '#00bcd4', '#ef4444',
@@ -16,20 +19,41 @@ const CATEGORY_IMAGES: Record<string, string> = {
   Politics: 'https://images.unsplash.com/photo-1540910419892-4a36d2c3266c?w=200',
   Crypto: 'https://images.unsplash.com/photo-1518546305927-5a555bb7020d?w=200',
   Sports: 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=200',
-  Business: 'https://images.unsplash.com/photo-1491933382434-500287f9b54b?w=200',
+  Business: 'https://images.unsplash.com/photo-1541354329998-f4d9a9f9297f?w=200',
   Science: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=200',
   Culture: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=200',
   World: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=200',
   default: 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=200',
 };
 
-// Special market images (for specific markets)
+// Special market images (for specific markets by keyword)
 const SPECIAL_MARKET_IMAGES: Record<string, string> = {
   'republican': '/images/republican-elephant.png',
+  // Trump/WLFI markets
+  'wlfi': 'https://images.unsplash.com/photo-1541354329998-f4d9a9f9297f?w=200',
+  'banking charter': 'https://images.unsplash.com/photo-1541354329998-f4d9a9f9297f?w=200',
+  'greenland': 'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=200',
+  'fed chair': 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=200',
+  // Geopolitics
+  'khamenei': 'https://images.unsplash.com/photo-1565967511849-76a60a516170?w=200',
+  'iran': 'https://images.unsplash.com/photo-1565967511849-76a60a516170?w=200',
+  'taiwan': 'https://images.unsplash.com/photo-1513628253939-010e64ac66cd?w=200',
+  'china invade': 'https://images.unsplash.com/photo-1513628253939-010e64ac66cd?w=200',
+  'ukraine': 'https://images.unsplash.com/photo-1646548168566-84ca6a431f8f?w=200',
+  'russia': 'https://images.unsplash.com/photo-1646548168566-84ca6a431f8f?w=200',
+  'ceasefire': 'https://images.unsplash.com/photo-1646548168566-84ca6a431f8f?w=200',
+  'venezuela': 'https://images.unsplash.com/photo-1589519160732-57fc498494f8?w=200',
+  // Crypto/Economic
+  'bitcoin': 'https://images.unsplash.com/photo-1518546305927-5a555bb7020d?w=200',
+  'btc': 'https://images.unsplash.com/photo-1518546305927-5a555bb7020d?w=200',
+  '$150k': 'https://images.unsplash.com/photo-1621761191319-c6fb62004040?w=200',
+  'fed rate': 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=200',
+  'fomc': 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=200',
 };
 
-// Candidate face images for outcomes
+// Candidate/person face images for outcomes
 const CANDIDATE_IMAGES: Record<string, string> = {
+  // GOP Nominees
   'j.d. vance': '/images/jd-vance.png',
   'jd vance': '/images/jd-vance.png',
   'vance': '/images/jd-vance.png',
@@ -50,6 +74,18 @@ const CANDIDATE_IMAGES: Record<string, string> = {
   'greene': '/images/marjorie-taylor-greene.png',
   'nikki haley': '/images/nikki-haley.png',
   'haley': '/images/nikki-haley.png',
+  // Fed Chair nominees (use placeholder initials style - handled by UI)
+  'kevin warsh': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
+  'warsh': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
+  'kevin hassett': 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100',
+  'hassett': 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100',
+  'powell stays': 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=100',
+  'powell': 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=100',
+  // Venezuela leaders
+  'delcy rodriguez': 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=100',
+  'maria corina machado': 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100',
+  'machado': 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100',
+  'military junta': 'https://images.unsplash.com/photo-1579912437766-7896df6d3cd3?w=100',
 };
 
 // Get candidate image from name
@@ -269,7 +305,7 @@ export function usePolymarkets(): PolymarketsHook {
     const amountUnits = Math.floor(parseFloat(amountAPT) * 100_000_000);
 
     const payload = {
-      function: `0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4::market::buy_yes` as const,
+      function: `${CONTRACT_ADDRESS}::market::buy_yes` as const,
       functionArguments: [address, amountUnits, 0],
     };
 
@@ -282,7 +318,7 @@ export function usePolymarkets(): PolymarketsHook {
     const amountUnits = Math.floor(parseFloat(amountAPT) * 100_000_000);
 
     const payload = {
-      function: `0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4::market::buy_no` as const,
+      function: `${CONTRACT_ADDRESS}::market::buy_no` as const,
       functionArguments: [address, amountUnits, 0],
     };
 
@@ -295,7 +331,7 @@ export function usePolymarkets(): PolymarketsHook {
     const amountUnits = Math.floor(parseFloat(amount) * 100_000_000);
 
     const payload = {
-      function: `0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4::market::sell_yes` as const,
+      function: `${CONTRACT_ADDRESS}::market::sell_yes` as const,
       functionArguments: [address, amountUnits, 0],
     };
 
@@ -308,7 +344,7 @@ export function usePolymarkets(): PolymarketsHook {
     const amountUnits = Math.floor(parseFloat(amount) * 100_000_000);
 
     const payload = {
-      function: `0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4::market::sell_no` as const,
+      function: `${CONTRACT_ADDRESS}::market::sell_no` as const,
       functionArguments: [address, amountUnits, 0],
     };
 

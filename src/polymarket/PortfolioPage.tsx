@@ -5,16 +5,16 @@ import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import { PolyHeader } from "./PolyHeader";
 import { usePolymarkets } from "../hooks/usePolymarkets";
+import { useGeomiUserTrades } from "../hooks/useGeomiTrades";
 
 // Initialize Aptos client
 const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
 
-// Contract addresses (moved outside component to prevent re-renders)
-const CONTRACT_ADDRESS = "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1";
-const MARKET_ADDRESS = "0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96";
+// Contract addresses (from env vars)
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134";
+const MARKET_ADDRESS = import.meta.env.VITE_MULTI_MARKETS?.split(',')[0] || "0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052";
 const MARKET_CONTRACTS = [
-  "0x3f13249e31a1fbdb886741f7945cccc40307311abc08ba188894bd1a050e19b4", // binary market
-  CONTRACT_ADDRESS, // multi-outcome market
+  CONTRACT_ADDRESS, // multi-outcome market (USD1)
 ];
 
 // Trade history item type
@@ -584,6 +584,17 @@ export function PortfolioPage() {
 
   const timeRanges = ["1D", "1W", "1M", "ALL"];
 
+  // Geomi trades - provides accurate token amounts from indexed events
+  const {
+    rawTrades: geomiRawTrades,
+    isLoading: geomiLoading,
+    isConfigured: geomiConfigured,
+  } = useGeomiUserTrades(account?.address?.toString(), {
+    pollInterval: 10000,
+    limit: 100,
+    enabled: connected && activeTab === 'history',
+  });
+
   // Calculate total portfolio value (wallet + positions)
   const totalPortfolioValue = useMemo(() => {
     const positionValue = positions.reduce((sum, p) => sum + p.currentValue, 0);
@@ -790,6 +801,7 @@ export function PortfolioPage() {
   }, [activeTab, fetchPositions]);
 
   // Fetch trade history and reconstruct trade records for cost basis
+  // Uses Geomi indexer when configured for ACCURATE token amounts
   const fetchTrades = useCallback(async () => {
     if (!connected || !account?.address) {
       setTrades([]);
@@ -798,11 +810,9 @@ export function PortfolioPage() {
 
     try {
       setIsLoadingTrades(true);
-      const address = account.address.toString();
 
-      // First, get outcome labels and current prices for mapping
+      // First, get outcome labels for mapping
       let outcomeLabels: string[] = [];
-      let outcomePrices: number[] = [];
       try {
         const labelsResult = await aptos.view({
           payload: {
@@ -812,7 +822,54 @@ export function PortfolioPage() {
           },
         });
         outcomeLabels = labelsResult[0] as string[];
+      } catch (e) {
+        console.error("Could not fetch outcome labels:", e);
+      }
 
+      // PRIMARY: Use Geomi indexed data when available (has ACCURATE token amounts)
+      if (geomiConfigured && geomiRawTrades.length > 0) {
+        console.log('[Portfolio] Using Geomi for trade history - accurate token amounts');
+
+        const marketTrades: TradeHistoryItem[] = geomiRawTrades.map(trade => {
+          const isBuy = trade.event_type.includes('OutcomeTokenBought');
+          const collateralAPT = parseInt(trade.collateral_amount) / 100_000_000;
+          const actualTokens = parseInt(trade.token_amount) / 100_000_000; // ACCURATE!
+          const outcomeName = outcomeLabels[trade.outcome_index] || `Outcome ${trade.outcome_index}`;
+
+          // Save accurate trade record for cost basis
+          const tradeRecord: TradeRecord = {
+            timestamp: Date.now(), // Geomi doesn't have timestamp yet
+            outcomeIndex: trade.outcome_index,
+            outcomeName,
+            type: isBuy ? 'buy' : 'sell',
+            tokens: actualTokens, // ACTUAL tokens from indexed event!
+            pricePerToken: trade.new_price, // Price at time of trade (0-100)
+            totalCost: collateralAPT,
+            txHash: trade.sequence_number,
+          };
+          saveTradeRecord(tradeRecord);
+
+          return {
+            hash: trade.sequence_number,
+            type: isBuy ? 'buy' as const : 'sell' as const,
+            outcome: outcomeName,
+            amount: collateralAPT,
+            timestamp: Date.now() / 1000,
+            success: true,
+          };
+        });
+
+        setTrades(marketTrades);
+        return;
+      }
+
+      // FALLBACK: Parse transactions if Geomi not available
+      console.log('[Portfolio] Falling back to transaction parsing (estimated tokens)');
+      const address = account.address.toString();
+
+      // Get current prices for estimation (fallback only)
+      let outcomePrices: number[] = [];
+      try {
         const pricesResult = await aptos.view({
           payload: {
             function: `${CONTRACT_ADDRESS}::multi_outcome_market::get_all_prices`,
@@ -822,7 +879,7 @@ export function PortfolioPage() {
         });
         outcomePrices = (pricesResult[0] as string[]).map(p => parseInt(p));
       } catch (e) {
-        console.error("Could not fetch outcome labels/prices:", e);
+        console.error("Could not fetch outcome prices:", e);
       }
 
       // Fetch recent transactions for this account
@@ -900,7 +957,7 @@ export function PortfolioPage() {
           });
 
           // Also save as TradeRecord for cost basis tracking
-          // Use current price as estimate (best we can do without historical data)
+          // NOTE: These are ESTIMATED tokens - Geomi provides accurate values
           const estimatedPrice = outcomePrices[outcomeIndex] || 20; // Default 20% if unknown
           const estimatedTokens = estimatedPrice > 0 ? amountAPT / (estimatedPrice / 100) : amountAPT;
 
@@ -909,7 +966,7 @@ export function PortfolioPage() {
             outcomeIndex,
             outcomeName: outcome,
             type: tradeType,
-            tokens: estimatedTokens,
+            tokens: estimatedTokens, // WARNING: Estimated, not accurate
             pricePerToken: estimatedPrice,
             totalCost: amountAPT,
             txHash: userTx.hash,
@@ -925,7 +982,7 @@ export function PortfolioPage() {
     } finally {
       setIsLoadingTrades(false);
     }
-  }, [connected, account?.address]);
+  }, [connected, account?.address, geomiConfigured, geomiRawTrades]);
 
   // Fetch trades when tab changes to history
   useEffect(() => {
@@ -1136,10 +1193,12 @@ export function PortfolioPage() {
         {/* Content based on active tab */}
         {activeTab === "history" ? (
           <div className="space-y-3">
-            {isLoadingTrades ? (
+            {(isLoadingTrades || geomiLoading) ? (
               <div className="text-center py-12">
                 <Loader2 size={24} className="animate-spin text-[#8297a3] mx-auto" />
-                <p className="text-[#8297a3] text-base mt-2">Loading trades...</p>
+                <p className="text-[#8297a3] text-base mt-2">
+                  {geomiConfigured ? 'Loading trades from indexer...' : 'Loading trades...'}
+                </p>
               </div>
             ) : trades.length === 0 ? (
               <div className="text-center py-12">

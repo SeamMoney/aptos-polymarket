@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useGeomiTrades } from './useGeomiTrades';
+import { isGeomiConfigured } from '../config/geomi';
 
-const CONTRACT_ADDRESS = "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1";
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134";
 const TRADES_STORAGE_KEY = 'polymarket_live_trades';
 const MAX_STORED_TRADES = 100;
 const TRADE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -60,14 +62,23 @@ function saveStoredTrades(trades: LiveTrade[]): void {
   }
 }
 
+interface UseLiveTradesOptions {
+  marketAddress?: string;   // Filter trades by market (enables Geomi)
+  pollInterval?: number;    // Polling interval in ms (default: 5000)
+  maxTrades?: number;       // Max trades to keep (default: 100)
+  enabled?: boolean;        // Whether to fetch trades (default: true)
+}
+
 interface UseLiveTradesReturn {
   trades: LiveTrade[];
   isPolling: boolean;
+  isLoading: boolean;       // New: loading state from Geomi
   lastUpdate: number | null;
   loadMore: () => void;
   hasMore: boolean;
   addTrade: (trade: LiveTrade) => void;
   addTradeFromTx: (txHash: string) => Promise<void>;
+  source: 'geomi' | 'local' | 'hybrid';  // New: where trades are coming from
 }
 
 // Event types for buy/sell
@@ -143,13 +154,52 @@ export async function fetchTradeFromTx(txHash: string): Promise<LiveTrade | null
   }
 }
 
+/**
+ * useLiveTrades - Unified hook for live trade data
+ *
+ * Data sources (in priority order):
+ * 1. Geomi indexer (if configured and marketAddress provided)
+ * 2. HFT WebSocket (via event bus)
+ * 3. localStorage (for persistence/offline)
+ *
+ * @param optionsOrPollInterval - Configuration options object OR pollInterval for legacy support
+ * @param legacyMaxTrades - Max trades (legacy positional arg)
+ * @param legacyEnabled - Whether to fetch (legacy positional arg)
+ */
 export function useLiveTrades(
-  pollInterval: number = 5000,
-  maxTrades: number = 100,
-  enabled: boolean = true
+  optionsOrPollInterval: UseLiveTradesOptions | number = {},
+  legacyMaxTrades?: number,
+  legacyEnabled?: boolean
 ): UseLiveTradesReturn {
-  // Initialize trades from localStorage
-  const [trades, setTrades] = useState<LiveTrade[]>(() => loadStoredTrades());
+  // Support both object-based and legacy positional arguments
+  const options: UseLiveTradesOptions = typeof optionsOrPollInterval === 'number'
+    ? {
+        pollInterval: optionsOrPollInterval,
+        maxTrades: legacyMaxTrades ?? 100,
+        enabled: legacyEnabled ?? true,
+      }
+    : optionsOrPollInterval;
+
+  const {
+    marketAddress,
+    pollInterval = 5000,
+    maxTrades = 100,
+    enabled = true,
+  } = options;
+
+  // Geomi trades (primary source when configured)
+  const useGeomi = isGeomiConfigured() && !!marketAddress;
+  const {
+    trades: geomiTrades,
+    isLoading: geomiLoading,
+  } = useGeomiTrades(marketAddress, {
+    pollInterval,
+    limit: maxTrades,
+    enabled: enabled && useGeomi,
+  });
+
+  // Local trades from localStorage and HFT WebSocket
+  const [localTrades, setLocalTrades] = useState<LiveTrade[]>(() => loadStoredTrades());
   const [isPolling, _setIsPolling] = useState(false);
   void _setIsPolling; // Suppress unused warning - kept for future use
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
@@ -158,22 +208,22 @@ export function useLiveTrades(
 
   // Populate seenIds from loaded trades
   useEffect(() => {
-    trades.forEach(t => seenIdsRef.current.add(t.id));
+    localTrades.forEach(t => seenIdsRef.current.add(t.id));
   }, []); // Only on mount
 
-  // Persist trades to localStorage whenever they change
+  // Persist local trades to localStorage whenever they change
   useEffect(() => {
-    if (trades.length > 0) {
-      saveStoredTrades(trades);
+    if (localTrades.length > 0) {
+      saveStoredTrades(localTrades);
     }
-  }, [trades]);
+  }, [localTrades]);
 
-  // Add a trade directly (used when UI executes a trade)
+  // Add a trade directly (used when UI executes a trade or HFT broadcasts)
   const addTrade = useCallback((trade: LiveTrade) => {
     if (seenIdsRef.current.has(trade.id)) return;
     seenIdsRef.current.add(trade.id);
 
-    setTrades(prev => {
+    setLocalTrades(prev => {
       const combined = [trade, ...prev];
       const unique = combined.filter((t, idx, arr) =>
         arr.findIndex(x => x.id === t.id) === idx
@@ -191,43 +241,60 @@ export function useLiveTrades(
     }
   }, [addTrade]);
 
-  // Subscribe to global trade events
+  // Subscribe to global trade events (HFT WebSocket, UI trades)
   useEffect(() => {
     const unsubscribe = subscribeToTrades(addTrade);
     return unsubscribe;
   }, [addTrade]);
 
-  // NOTE: Indexer GraphQL doesn't support CORS from browser, so we rely on
-  // HFT WebSocket for live trades and localStorage for persistence.
-  // This is now a no-op but kept for API compatibility.
-  const fetchTrades = useCallback(async () => {
-    // No-op: trades come from HFT WebSocket via addTrade() or addTradeFromTx()
-  }, []);
-
   const loadMore = useCallback(() => {
-    setHasMore(false); // For now, disable load more since we can't paginate without indexer
+    // TODO: Implement cursor-based pagination with Geomi
+    setHasMore(false);
   }, []);
 
-  // Initial fetch and polling
-  useEffect(() => {
-    if (!enabled) return;
+  // Merge trades from all sources with deduplication
+  const mergedTrades = useCallback((): LiveTrade[] => {
+    const allTrades = [...geomiTrades, ...localTrades];
 
-    // Initial fetch
-    fetchTrades();
+    // Deduplicate by id
+    const seen = new Set<string>();
+    const unique: LiveTrade[] = [];
+    for (const trade of allTrades) {
+      if (!seen.has(trade.id)) {
+        seen.add(trade.id);
+        unique.push(trade);
+      }
+    }
 
-    // Set up polling
-    const interval = setInterval(fetchTrades, pollInterval);
+    // Filter by market if specified (for non-Geomi sources)
+    // Note: Geomi already filters by market, but local/HFT trades may not
+    // This is a best-effort filter since local trades don't have market info
 
-    return () => clearInterval(interval);
-  }, [enabled, pollInterval, fetchTrades]);
+    // Sort by timestamp descending and limit
+    return unique
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, maxTrades);
+  }, [geomiTrades, localTrades, maxTrades]);
+
+  // Determine source for debugging/UI
+  const source: 'geomi' | 'local' | 'hybrid' = useGeomi
+    ? geomiTrades.length > 0 && localTrades.length > 0
+      ? 'hybrid'
+      : geomiTrades.length > 0
+        ? 'geomi'
+        : 'local'
+    : 'local';
 
   return {
-    trades,
+    trades: mergedTrades(),
     isPolling,
+    isLoading: geomiLoading,
     lastUpdate,
     loadMore,
     hasMore,
     addTrade,
     addTradeFromTx,
+    source,
   };
 }
+

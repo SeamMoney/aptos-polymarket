@@ -7,7 +7,7 @@ import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { PolyChart } from "./PolyChart";
 import { TOP_CANDIDATES, CANDIDATE_COLORS } from "./priceData";
-import { REAL_PRICE_HISTORY, LATEST_REAL_PRICES } from "./realPriceData";
+import { REAL_PRICE_HISTORY, KHAMENEI_PRICE_HISTORY, LATEST_REAL_PRICES } from "./realPriceData";
 import { TradingSheet } from "./TradingSheet";
 import { LiveOrderBook } from "./LiveOrderBook";
 import { TPSChart } from "./TPSChart";
@@ -25,9 +25,16 @@ import type { Trade } from "../hooks/useHFTConnection";
 // Initialize Aptos client for TVL fetching
 const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
 
-// Contract addresses
-const CONTRACT_ADDRESS = "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1";
-const MARKET_ADDRESS = "0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96";
+// Contract address (from env vars)
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134";
+
+// Helper to extract market address from route id (e.g., "multi-0x3e690f..." -> "0x3e690f...")
+function extractMarketAddress(id: string | undefined): string {
+  if (!id) return "";
+  if (id.startsWith('multi-')) return id.replace('multi-', '');
+  if (id.startsWith('binary-')) return id.replace('binary-', '');
+  return id;
+}
 
 const timeRanges = ["1H", "6H", "1D", "1W", "1M", "ALL"];
 
@@ -47,23 +54,27 @@ export function MarketDetail() {
   const [highlightedOutcomeId, setHighlightedOutcomeId] = useState<string | null>(null);
   const [tvl, setTvl] = useState<number | null>(null);
 
+  // Extract market address from route id
+  const marketAddress = useMemo(() => extractMarketAddress(id), [id]);
+
   // Fetch TVL from contract
   const fetchTVL = useCallback(async () => {
+    if (!marketAddress) return;
     try {
       const result = await aptos.view({
         payload: {
           function: `${CONTRACT_ADDRESS}::multi_outcome_market::get_multi_market_info`,
           typeArguments: [],
-          functionArguments: [MARKET_ADDRESS],
+          functionArguments: [marketAddress],
         },
       });
       // Result: [question, description, category, outcome_count, end_time, resolved, winning_outcome, total_collateral]
       const totalCollateral = parseInt(result[7] as string);
-      setTvl(totalCollateral / 100_000_000); // Convert from octas to APT
+      setTvl(totalCollateral / 100_000_000); // Convert from octas to USD1
     } catch (error) {
       console.error("Error fetching TVL:", error);
     }
-  }, []);
+  }, [marketAddress]);
 
   // Fetch TVL on mount and periodically
   useEffect(() => {
@@ -103,7 +114,13 @@ export function MarketDetail() {
   } = useLivePrices(3000); // Poll every 3 seconds
 
   // Live trades from blockchain polling - always enabled to show all trades
-  const { trades: blockchainTrades, loadMore, hasMore } = useLiveTrades(5000, 100, true);
+  // Pass marketAddress to enable Geomi indexer for accurate trade data
+  const { trades: blockchainTrades, loadMore, hasMore } = useLiveTrades({
+    marketAddress: marketAddress,  // Use actual market being viewed
+    pollInterval: 5000,
+    maxTrades: 100,
+    enabled: !!marketAddress,  // Only fetch when we have a market address
+  });
 
   // Persist HFT trades to localStorage so they survive page navigation
   const lastHftTradeCountRef = useRef(0);
@@ -164,6 +181,12 @@ export function MarketDetail() {
     return mockMarkets.find((m) => m.id === id);
   }, [id, getMarket]);
 
+  // Detect if this is the Khamenei Iran market (for special chart handling)
+  const isKhameneiMarket = useMemo(() => {
+    return market?.question?.toLowerCase().includes('khamenei') ||
+           market?.question?.toLowerCase().includes('iran supreme leader');
+  }, [market?.question]);
+
   // Animate in on mount
   useEffect(() => {
     const timer = setTimeout(() => setIsLoaded(true), 50);
@@ -186,6 +209,20 @@ export function MarketDetail() {
   // Use REAL Polymarket price data for the chart + LIVE price updates during HFT demo
   // IMPORTANT: All prices in 0-1 decimal format
   const chartOutcomes = useMemo(() => {
+    // Debug: Log market state
+    console.log('[chartOutcomes] START - market:', market?.question?.slice(0, 50), 'hasOutcomes:', !!market?.outcomes, 'outcomeCount:', market?.outcomes?.length, 'yesPrice:', market?.yesPrice);
+
+    // Early exit if no market
+    if (!market) {
+      console.log('[chartOutcomes] No market - returning empty');
+      return [];
+    }
+
+    // Log outcome details
+    if (market.outcomes) {
+      console.log('[chartOutcomes] Outcome details:', market.outcomes.map(o => ({ name: o.name, price: o.price, color: o.color })));
+    }
+
     // Check if this is the VP nominee market (has matching candidates)
     const isVPMarket = market?.outcomes?.some(o =>
       TOP_CANDIDATES.includes(o.name)
@@ -319,19 +356,98 @@ export function MarketDetail() {
       });
     }
 
+    // Check if this is the Khamenei Iran market (by question text)
+    // Our on-chain market may have Yes/No outcomes, but we want to show real Polymarket data
+    const isKhamenei = market?.question?.toLowerCase().includes('khamenei') ||
+                       market?.question?.toLowerCase().includes('iran supreme leader');
+
+    if (isKhamenei) {
+      console.log('[chartOutcomes] KHAMENEI market detected! Using real historical data');
+
+      // Use the "Jan 31" outcome data as the primary "Yes" price since it's the most likely outcome
+      // This matches what Polymarket shows - the probability of Khamenei being out by a certain date
+      const realPrices = KHAMENEI_PRICE_HISTORY.map(point => point.prices["Jan 31"] || 0.35);
+      const currentPrice = LATEST_REAL_PRICES["Jan 31"] ?? 0.615;
+
+      // Select price range based on timeframe
+      let basePrices: number[];
+      if (timeRange === 'ALL') {
+        basePrices = [...realPrices];
+      } else {
+        const startIdx = Math.max(0, realPrices.length - pointsToShow);
+        basePrices = realPrices.slice(startIdx);
+      }
+
+      // Pad if needed to match pointsToShow
+      while (basePrices.length < pointsToShow) {
+        basePrices.push(basePrices[basePrices.length - 1] || currentPrice);
+      }
+      basePrices = basePrices.slice(-pointsToShow);
+
+      // Use the real data directly - NO added volatility (Polymarket charts are clean)
+      const yesPrices = basePrices.map((p, i) => {
+        // Force end to current price
+        if (i === basePrices.length - 1) return currentPrice;
+        return p;
+      });
+
+      // No price is complement of Yes
+      const noPrices = yesPrices.map(p => 1 - p);
+
+      console.log('[chartOutcomes] Khamenei data: start=', yesPrices[0]?.toFixed(3), 'end=', yesPrices[yesPrices.length-1]?.toFixed(3), 'points=', yesPrices.length);
+
+      return [
+        {
+          id: "yes",
+          name: "Yes",
+          color: "#22c55e",  // Green for Yes
+          prices: yesPrices,
+        },
+        {
+          id: "no",
+          name: "No",
+          color: "#5b9cf6",  // Blue for No
+          prices: noPrices,
+        },
+      ];
+    }
+
     // Fallback for other markets - use synthetic data with aggressive volatility
+    console.log('[chartOutcomes] Checking GENERIC handler: hasOutcomes=', !!market?.outcomes, 'length=', market?.outcomes?.length);
+
     if (market?.outcomes && market.outcomes.length > 0) {
+      console.log('[chartOutcomes] GENERIC handler MATCHED! Processing', market.outcomes.length, 'outcomes');
+      console.log('[chartOutcomes] Outcome data:', JSON.stringify(market.outcomes.slice(0, 3).map(o => ({
+        id: o.id,
+        name: o.name,
+        price: o.price,
+        color: o.color
+      }))));
+
+      // Better hash function for unique seeds per market+outcome
+      const hashString = (str: string): number => {
+        let hash = 5381;
+        for (let i = 0; i < str.length; i++) {
+          hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
+        }
+        return Math.abs(hash);
+      };
+
       // Seeded random for consistent charts
       const seededRandom = (seed: number) => {
         const x = Math.sin(seed * 12345.6789) * 43758.5453;
         return x - Math.floor(x);
       };
 
-      return market.outcomes.map((outcome, outcomeIdx) => {
+      // Create unique seed from market question + id for truly different charts
+      const marketHash = hashString(market.question + market.id);
+
+      const genericResult = market.outcomes.map((outcome, outcomeIdx) => {
         const numPoints = pointsToShow;
         const prices: number[] = [];
         const endPrice = outcome.price;
-        const seed = outcome.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) + outcomeIdx;
+        // Combine market hash with outcome name for unique per-outcome seed
+        const seed = marketHash + hashString(outcome.name) + outcomeIdx * 7919;
 
         // Start with variance from end price
         let currentPrice = endPrice + (seededRandom(seed) - 0.5) * 0.2;
@@ -385,21 +501,41 @@ export function MarketDetail() {
         }
         prices[numPoints - 1] = endPrice;
 
+        // Ensure all prices are valid numbers
+        const validPrices = prices.map(p => isNaN(p) ? 0.5 : p);
+
+        console.log('[chartOutcomes] Generated outcome:', outcome.name, 'pricesLength:', validPrices.length, 'endPrice:', endPrice);
+
         return {
-          id: outcome.id,
-          name: outcome.name,
-          color: outcome.color,
-          prices,
+          id: outcome.id || `outcome-${outcomeIdx}`,
+          name: outcome.name || `Outcome ${outcomeIdx}`,
+          color: outcome.color || ['#00c853', '#5b9cf6', '#f5a623', '#00bcd4', '#ef4444'][outcomeIdx % 5],
+          prices: validPrices,
         };
       });
+
+      console.log('[chartOutcomes] GENERIC handler returning:', genericResult.length, 'outcomes');
+      return genericResult;
     }
 
     // Handle binary markets with aggressive volatility
     if (market?.yesPrice !== undefined) {
+      // Better hash function for unique seeds
+      const hashString = (str: string): number => {
+        let hash = 5381;
+        for (let i = 0; i < str.length; i++) {
+          hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
+        }
+        return Math.abs(hash);
+      };
+
       const seededRandom = (seed: number) => {
         const x = Math.sin(seed * 12345.6789) * 43758.5453;
         return x - Math.floor(x);
       };
+
+      // Unique seed per market based on question
+      const marketSeed = hashString(market.question + market.id);
 
       const generateVolatilePrices = (endPrice: number, seed: number) => {
         const numPoints = pointsToShow;
@@ -453,19 +589,48 @@ export function MarketDetail() {
           id: "yes",
           name: "Yes",
           color: "#4abe7a",
-          prices: generateVolatilePrices(market.yesPrice, 12345),
+          prices: generateVolatilePrices(market.yesPrice, marketSeed),
         },
         {
           id: "no",
           name: "No",
           color: "#e5534b",
-          prices: generateVolatilePrices(market.noPrice || (1 - market.yesPrice), 67890),
+          prices: generateVolatilePrices(market.noPrice || (1 - market.yesPrice), marketSeed + 54321),
         },
       ];
     }
 
-    return [];
-  }, [market?.outcomes, market?.yesPrice, market?.noPrice, timeRange, livePriceHistory]);
+    // Final fallback - ALWAYS generate chart data if we have a market
+    // This ensures the chart is never empty
+    console.log('[chartOutcomes] FALLBACK - generating default chart. market exists:', !!market, 'yesPrice:', market?.yesPrice);
+
+    const numPoints = 220;
+    const yPrice = market?.yesPrice ?? 0.5;
+    const nPrice = market?.noPrice ?? (1 - yPrice);
+
+    const generateSimplePrices = (endPrice: number, seed: number) => {
+      const prices: number[] = [];
+      let price = Math.max(0.05, Math.min(0.95, endPrice + (Math.sin(seed) * 0.1)));
+      for (let i = 0; i < numPoints; i++) {
+        price += (Math.sin(seed * 1000 + i * 0.1) * 0.005);
+        price = Math.max(0.01, Math.min(0.99, price));
+        prices.push(price);
+      }
+      prices[prices.length - 1] = Math.max(0.01, Math.min(0.99, endPrice));
+      return prices;
+    };
+
+    const fallbackResult = [
+      { id: "yes", name: "Yes", color: "#4abe7a", prices: generateSimplePrices(yPrice, 12345) },
+      { id: "no", name: "No", color: "#e5534b", prices: generateSimplePrices(nPrice, 54321) },
+    ];
+
+    console.log('[chartOutcomes] FALLBACK result:', fallbackResult.length, 'outcomes with', fallbackResult[0]?.prices?.length, 'price points each');
+    return fallbackResult;
+  }, [market?.outcomes, market?.yesPrice, market?.noPrice, market?.question, timeRange, livePriceHistory]);
+
+  // Log final chartOutcomes result
+  console.log('[chartOutcomes] Final result:', chartOutcomes.length, 'outcomes', chartOutcomes.map(o => o.name));
 
   const handleBuyYes = (outcome: Outcome) => {
     setSelectedOutcome(outcome);
@@ -667,8 +832,8 @@ export function MarketDetail() {
             onIndexChange={setActiveIndex}
             width={Math.min(800, window.innerWidth - 80)}
             highlightedOutcomeId={highlightedOutcomeId}
-            timestamps={REAL_PRICE_HISTORY.map(p => p.timestamp)}
-            autoScale={timeRange === '1H' || timeRange === '6H' || timeRange === '1D'}
+            timestamps={isKhameneiMarket ? KHAMENEI_PRICE_HISTORY.map(p => p.timestamp) : REAL_PRICE_HISTORY.map(p => p.timestamp)}
+            autoScale={isKhameneiMarket || timeRange === '1H' || timeRange === '6H' || timeRange === '1D'}
             timeRange={timeRange}
           />
         </div>
@@ -883,7 +1048,7 @@ export function MarketDetail() {
             <Wallet size={20} color="#8297a3" strokeWidth={2.5} />
             <span className="text-[#8297a3] text-base flex-1">Total Liquidity (TVL)</span>
             <span className="text-white text-base font-semibold">
-              {tvl !== null ? `${tvl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} APT` : 'Loading...'}
+              {tvl !== null ? `${tvl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD1` : 'Loading...'}
             </span>
           </div>
 

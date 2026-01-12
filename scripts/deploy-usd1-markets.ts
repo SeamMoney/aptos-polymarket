@@ -24,8 +24,8 @@ import {
   Ed25519PrivateKey,
 } from '@aptos-labs/ts-sdk';
 
-// Contract address (update after fresh deployment)
-const DEFAULT_CONTRACT = process.env.CONTRACT_ADDRESS || '0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1';
+// Contract address - USD1 v2 with admin drainers (Jan 11, 2026)
+const DEFAULT_CONTRACT = process.env.CONTRACT_ADDRESS || '0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134';
 const MODULE = `${DEFAULT_CONTRACT}::multi_outcome_market` as const;
 const USD1_MODULE = `${DEFAULT_CONTRACT}::usd1` as const;
 
