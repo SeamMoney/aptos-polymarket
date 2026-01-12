@@ -1,10 +1,85 @@
 // Real Polymarket price data - parsed from CSV
-// Date range: Sep 30, 2025 - Dec 31, 2025
+// Date range: Sep 30, 2025 - Jan 10, 2026
 
 export interface RealPricePoint {
   timestamp: number;
   prices: Record<string, number>;
 }
+
+// Khamenei Iran Market - Real price data from Polymarket CSV export
+// Market: "When will Khamenei die?" with date-based outcomes
+// Date range: Nov 4, 2025 - Jan 11, 2026
+export const KHAMENEI_PRICE_HISTORY: RealPricePoint[] = [
+  { timestamp: 1762214410, prices: { "Jan 31": 0.345, "Mar 31": 0.18, "Jun 30": 0.15, "Dec 31": 0.12 } },
+  { timestamp: 1762300808, prices: { "Jan 31": 0.35, "Mar 31": 0.18, "Jun 30": 0.15, "Dec 31": 0.12 } },
+  { timestamp: 1762387206, prices: { "Jan 31": 0.355, "Mar 31": 0.18, "Jun 30": 0.15, "Dec 31": 0.12 } },
+  { timestamp: 1762473609, prices: { "Jan 31": 0.35, "Mar 31": 0.18, "Jun 30": 0.15, "Dec 31": 0.12 } },
+  { timestamp: 1762560008, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.16, "Dec 31": 0.12 } },
+  { timestamp: 1762646422, prices: { "Jan 31": 0.32, "Mar 31": 0.19, "Jun 30": 0.16, "Dec 31": 0.13 } },
+  { timestamp: 1762732807, prices: { "Jan 31": 0.32, "Mar 31": 0.19, "Jun 30": 0.16, "Dec 31": 0.13 } },
+  { timestamp: 1762819211, prices: { "Jan 31": 0.32, "Mar 31": 0.19, "Jun 30": 0.16, "Dec 31": 0.13 } },
+  { timestamp: 1762905611, prices: { "Jan 31": 0.32, "Mar 31": 0.19, "Jun 30": 0.16, "Dec 31": 0.13 } },
+  { timestamp: 1762992009, prices: { "Jan 31": 0.32, "Mar 31": 0.19, "Jun 30": 0.16, "Dec 31": 0.13 } },
+  { timestamp: 1763078409, prices: { "Jan 31": 0.33, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1763164810, prices: { "Jan 31": 0.33, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1763251208, prices: { "Jan 31": 0.33, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1763337609, prices: { "Jan 31": 0.33, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1763424008, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1763510411, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1763596808, prices: { "Jan 31": 0.33, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1763683211, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1763769609, prices: { "Jan 31": 0.33, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1763856009, prices: { "Jan 31": 0.335, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1763942411, prices: { "Jan 31": 0.335, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1764028810, prices: { "Jan 31": 0.335, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1764115210, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1764201611, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1764288011, prices: { "Jan 31": 0.32, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1764374413, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1764460811, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1764547211, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1764633608, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1764720012, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1764806410, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1764892810, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1764979211, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1765065623, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1765152022, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1765238420, prices: { "Jan 31": 0.33, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1765324810, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1765411210, prices: { "Jan 31": 0.325, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1765497610, prices: { "Jan 31": 0.32, "Mar 31": 0.19, "Jun 30": 0.16, "Dec 31": 0.14 } },
+  { timestamp: 1765584011, prices: { "Jan 31": 0.32, "Mar 31": 0.19, "Jun 30": 0.16, "Dec 31": 0.14 } },
+  { timestamp: 1765670411, prices: { "Jan 31": 0.32, "Mar 31": 0.19, "Jun 30": 0.16, "Dec 31": 0.14 } },
+  { timestamp: 1765756811, prices: { "Jan 31": 0.315, "Mar 31": 0.19, "Jun 30": 0.16, "Dec 31": 0.14 } },
+  { timestamp: 1765843209, prices: { "Jan 31": 0.305, "Mar 31": 0.20, "Jun 30": 0.16, "Dec 31": 0.14 } },
+  { timestamp: 1765929607, prices: { "Jan 31": 0.305, "Mar 31": 0.20, "Jun 30": 0.16, "Dec 31": 0.14 } },
+  { timestamp: 1766016020, prices: { "Jan 31": 0.305, "Mar 31": 0.20, "Jun 30": 0.16, "Dec 31": 0.14 } },
+  { timestamp: 1766102411, prices: { "Jan 31": 0.31, "Mar 31": 0.20, "Jun 30": 0.16, "Dec 31": 0.14 } },
+  { timestamp: 1766188810, prices: { "Jan 31": 0.31, "Mar 31": 0.20, "Jun 30": 0.16, "Dec 31": 0.14 } },
+  { timestamp: 1766275210, prices: { "Jan 31": 0.32, "Mar 31": 0.20, "Jun 30": 0.16, "Dec 31": 0.14 } },
+  { timestamp: 1766361610, prices: { "Jan 31": 0.325, "Mar 31": 0.20, "Jun 30": 0.15, "Dec 31": 0.14 } },
+  { timestamp: 1766448011, prices: { "Jan 31": 0.34, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1766534411, prices: { "Jan 31": 0.335, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1766620821, prices: { "Jan 31": 0.335, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1766707209, prices: { "Jan 31": 0.335, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1766793612, prices: { "Jan 31": 0.335, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1766880012, prices: { "Jan 31": 0.34, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1766966428, prices: { "Jan 31": 0.34, "Mar 31": 0.19, "Jun 30": 0.15, "Dec 31": 0.13 } },
+  { timestamp: 1767052815, prices: { "Jan 31": 0.36, "Mar 31": 0.18, "Jun 30": 0.14, "Dec 31": 0.12 } },
+  { timestamp: 1767139211, prices: { "Jan 31": 0.39, "Mar 31": 0.17, "Jun 30": 0.13, "Dec 31": 0.11 } },
+  { timestamp: 1767225611, prices: { "Jan 31": 0.375, "Mar 31": 0.17, "Jun 30": 0.14, "Dec 31": 0.12 } },
+  { timestamp: 1767312011, prices: { "Jan 31": 0.365, "Mar 31": 0.18, "Jun 30": 0.14, "Dec 31": 0.12 } },
+  { timestamp: 1767398411, prices: { "Jan 31": 0.355, "Mar 31": 0.18, "Jun 30": 0.14, "Dec 31": 0.12 } },
+  { timestamp: 1767484812, prices: { "Jan 31": 0.385, "Mar 31": 0.17, "Jun 30": 0.13, "Dec 31": 0.11 } },
+  { timestamp: 1767571213, prices: { "Jan 31": 0.45, "Mar 31": 0.15, "Jun 30": 0.12, "Dec 31": 0.10 } },
+  { timestamp: 1767657615, prices: { "Jan 31": 0.44, "Mar 31": 0.15, "Jun 30": 0.12, "Dec 31": 0.10 } },
+  { timestamp: 1767744012, prices: { "Jan 31": 0.49, "Mar 31": 0.14, "Jun 30": 0.11, "Dec 31": 0.09 } },
+  { timestamp: 1767830428, prices: { "Jan 31": 0.475, "Mar 31": 0.14, "Jun 30": 0.11, "Dec 31": 0.09 } },
+  { timestamp: 1767916813, prices: { "Jan 31": 0.575, "Mar 31": 0.12, "Jun 30": 0.09, "Dec 31": 0.07 } },
+  { timestamp: 1768003213, prices: { "Jan 31": 0.605, "Mar 31": 0.11, "Jun 30": 0.08, "Dec 31": 0.06 } },
+  { timestamp: 1768089612, prices: { "Jan 31": 0.615, "Mar 31": 0.11, "Jun 30": 0.08, "Dec 31": 0.06 } },
+];
 
 // Parse CSV and export data
 export const REAL_PRICE_HISTORY: RealPricePoint[] = [
@@ -2441,9 +2516,10 @@ export const REAL_PRICE_HISTORY: RealPricePoint[] = [
   }
 ];
 
-// Latest real Polymarket prices (updated Jan 1, 2026)
+// Latest real Polymarket prices (updated Jan 10, 2026)
 // Used for chart display - real prices from Polymarket for visual accuracy
 export const LATEST_REAL_PRICES: Record<string, number> = {
+  // GOP 2028 Nominee Market
   "J.D. Vance": 0.54,
   "Marco Rubio": 0.097,
   "Donald Trump": 0.049,
@@ -2453,5 +2529,41 @@ export const LATEST_REAL_PRICES: Record<string, number> = {
   "Ted Cruz": 0.024,
   "Marjorie Taylor Greene": 0.021,
   "Nikki Haley": 0.014,
-  "Other": 0.17, // Sum of all other candidates
+  "Other": 0.17,
+
+  // Khamenei Iran Market - When will Khamenei die?
+  "Jan 31": 0.615,  // Major spike in early Jan 2026
+  "Mar 31": 0.11,
+  "Jun 30": 0.08,
+  "Dec 31": 0.06,
+
+  // Fed Chair Market - Who will Trump nominate?
+  "Kevin Warsh": 0.42,
+  "Kevin Hassett": 0.28,
+  "Jerome Powell": 0.08,
+  "Scott Bessent": 0.07,
+
+  // WLFI Banking Charter Market
+  "Yes": 0.35,
+  "No": 0.65,
+
+  // Trump Greenland Purchase Market
+  "Greenland Yes": 0.12,
+  "Greenland No": 0.88,
+
+  // China Taiwan Invasion 2026
+  "Taiwan Yes": 0.08,
+  "Taiwan No": 0.92,
+
+  // Russia-Ukraine Ceasefire 2026
+  "Ceasefire Yes": 0.45,
+  "Ceasefire No": 0.55,
+
+  // Fed Rate Cut January 2026
+  "Rate Cut Yes": 0.05,
+  "Rate Cut No": 0.95,
+
+  // BTC Price Markets
+  "BTC 150K Yes": 0.32,
+  "BTC 150K No": 0.68,
 };

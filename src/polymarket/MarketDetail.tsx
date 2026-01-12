@@ -366,7 +366,7 @@ export function MarketDetail() {
 
       // Use the "Jan 31" outcome data as the primary "Yes" price since it's the most likely outcome
       // This matches what Polymarket shows - the probability of Khamenei being out by a certain date
-      const realPrices = KHAMENEI_PRICE_HISTORY.map(point => point.prices["Jan 31"] || 0.35);
+      const realPrices = KHAMENEI_PRICE_HISTORY.map((point: { prices: Record<string, number> }) => point.prices["Jan 31"] || 0.35);
       const currentPrice = LATEST_REAL_PRICES["Jan 31"] ?? 0.615;
 
       // Select price range based on timeframe
@@ -832,7 +832,7 @@ export function MarketDetail() {
             onIndexChange={setActiveIndex}
             width={Math.min(800, window.innerWidth - 80)}
             highlightedOutcomeId={highlightedOutcomeId}
-            timestamps={isKhameneiMarket ? KHAMENEI_PRICE_HISTORY.map(p => p.timestamp) : REAL_PRICE_HISTORY.map(p => p.timestamp)}
+            timestamps={isKhameneiMarket ? KHAMENEI_PRICE_HISTORY.map((p: { timestamp: number }) => p.timestamp) : REAL_PRICE_HISTORY.map((p: { timestamp: number }) => p.timestamp)}
             autoScale={isKhameneiMarket || timeRange === '1H' || timeRange === '6H' || timeRange === '1D'}
             timeRange={timeRange}
           />
