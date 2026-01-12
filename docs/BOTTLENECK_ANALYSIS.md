@@ -1,34 +1,38 @@
 # Bottleneck Analysis: Why Our Contract Causes Validator Backpressure
 
+> **DATA ACCURACY NOTE (Jan 12, 2026):** The block 611854263 referenced below was queried and found to contain 377 transactions from a different DEX contract (`0x9f830083...`), not our prediction market. The contention ratios below are theoretical/hypothetical and need to be verified with actual data from our contract runs. See [USD1-PARALLELIZATION-ANALYSIS.md](./USD1-PARALLELIZATION-ANALYSIS.md) for updated analysis.
+
 ## Executive Summary
 
-Our prediction market contract achieves **3,774 TPS peak** but causes **100% execution backpressure** on validators because of **state contention**, not gas costs.
+Our prediction market contract achieves **~3,774 TPS peak** but may cause **execution backpressure** on validators because of **state contention**, not gas costs.
 
-**Key finding:** In a 356-txn block, we make ~7,600 state writes, but ~2,500 of those hit just 3 hot keys, forcing sequential execution.
+**Hypothesis:** In high-load blocks, transactions accessing shared state keys experience contention, forcing sequential execution via BlockSTM abort/retry.
 
 ---
 
-## The Data
+## The Data (NEEDS VERIFICATION)
 
-### Jan 6, 2026 Peak Block (611854263)
+### Jan 6, 2026 Peak Block (611854263) - DATA UNVERIFIED
 
-| Metric | Value |
-|--------|-------|
-| Our transactions | 356 |
-| Total state writes | 7,608 |
-| Gas per transaction | 17 (very low!) |
-| Unique state keys written | ~100 |
-| Hot keys (356:1 contention) | 3 |
+| Metric | Value | Status |
+|--------|-------|--------|
+| Our transactions | 356 | **UNVERIFIED** - Block contains different contract |
+| Total state writes | 7,608 | **UNVERIFIED** |
+| Gas per transaction | 17 (very low!) | Verified from actual txns |
+| Unique state keys written | ~100 | **UNVERIFIED** |
+| Hot keys (356:1 contention) | 3 | **UNVERIFIED** |
 
-### State Contention Analysis
+### State Contention Analysis (THEORETICAL)
 
 | Resource | Writes | Unique Keys | Contention Ratio | Problem |
 |----------|--------|-------------|------------------|---------|
-| `coin::PairedCoinType` | 356 | 1 | **356:1** | APT transfer |
-| `coin::PairedFungibleAssetRefs` | 356 | 1 | **356:1** | APT transfer |
-| `MultiMarket` | 356 | 1 | **356:1** | Our contract |
-| `fungible_asset::ConcurrentSupply` | 912 | 7 | 130:1 | Token minting |
-| `fungible_asset::Metadata` | 912 | 7 | 130:1 | Token minting |
+| `coin::PairedCoinType` | ? | 1 | **High** | APT transfer |
+| `coin::PairedFungibleAssetRefs` | ? | 1 | **High** | APT transfer |
+| `MultiMarket` | ? | 1 | **High** | Our contract |
+| `fungible_asset::ConcurrentSupply` | ? | ? | Medium | Token minting |
+| `fungible_asset::Metadata` | ? | ? | Medium | Token minting |
+
+**Note:** Verified that ALL Aptos transactions (including USD1) write to `PairedCoinType` and `PairedFungibleAssetRefs` at `0xa` due to gas payment in APT.
 
 ---
 

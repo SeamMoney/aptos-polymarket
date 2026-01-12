@@ -1,10 +1,103 @@
-# USD1 vs APT: Why Native Fungible Assets Achieve Higher TPS
+# USD1 vs APT: Parallelization Analysis (Revised)
 
-## Executive Summary
+## Status: Hypothesis Under Investigation
 
-Our prediction market achieves **~3,774 TPS with APT collateral** but can reach **10,000+ TPS with USD1 collateral**. The difference isn't gas costs (both are ~17 gas/txn) — it's **state contention** caused by APT's coin-to-FA pairing infrastructure.
+**Original hypothesis:** Native Fungible Assets (like USD1) achieve higher TPS than APT because they avoid coin-to-FA pairing overhead.
 
-**Key Finding:** APT is a "migrated coin" that accesses global singletons (`coin::PairedCoinType`, `coin::PairedFungibleAssetRefs`) on every transfer. USD1 is a native Fungible Asset that bypasses these entirely.
+**Current finding:** Transaction data shows **both APT and USD1 transactions write to the same global resources at `0xa`**. The original hypothesis needs revision.
+
+---
+
+## What We Verified (January 2026)
+
+### Transaction Analysis
+
+We analyzed actual on-chain transactions from our prediction market contracts:
+
+| Transaction Type | Contract | Hash |
+|------------------|----------|------|
+| APT sell_outcome | `0xa2e5...` (old) | `0x9bce0eee...` |
+| USD1 mint | `0xbdea1...` (new) | `0x1b814...` |
+| Simple APT transfer | N/A | `0xb6e50fda...` |
+
+### Key Finding: All Transactions Write to `0xa`
+
+**Both APT-collateral and USD1 transactions show `write_resource` for these at address `0xa`:**
+
+```
+0x1::coin::PairedCoinType
+0x1::coin::PairedFungibleAssetRefs
+0x1::fungible_asset::ConcurrentSupply
+0x1::fungible_asset::Metadata
+0x1::object::ObjectCore
+0x1::primary_fungible_store::DeriveRefPod
+```
+
+This happens because **all Aptos transactions pay gas in APT**, which triggers the coin-FA pairing layer.
+
+### State Changes Comparison
+
+| Metric | APT sell_outcome | USD1 mint | Simple APT transfer |
+|--------|------------------|-----------|---------------------|
+| Total state changes | 18 | 15 | 12 |
+| Unique addresses touched | 7 | 5 | 5 |
+| Writes at `0xa` | 6 | 6 | 6 |
+| Gas used | 16 | 544 | 16 |
+
+**Observation:** The number of writes at `0xa` is identical across all transaction types.
+
+---
+
+## Previous Claims (Now Questioned)
+
+### Block 611854263 Data Issue
+
+The BOTTLENECK_ANALYSIS.md referenced block 611854263 with "356 of our transactions".
+
+**When we queried this block, it contained 377 transactions from a different DEX contract** (`0x9f830083...`), not our prediction market.
+
+The claimed contention ratios (356:1 for `coin::PairedCoinType`) cannot be verified from this data.
+
+### "USD1 Bypasses Coin Module" Claim
+
+The original claim stated:
+> USD1 never accesses `CoinConversionMap`, `PairedCoinType`, or `PairedFungibleAssetRefs`
+
+**This is incorrect.** Even USD1 transactions show writes to these resources because:
+1. Gas is paid in APT
+2. APT gas payment goes through the coin-FA pairing layer
+3. The pairing resources are written regardless of collateral type
+
+---
+
+## What We Still Don't Know
+
+### Open Questions
+
+1. **Are these true writes or read-tracking?**
+   - The Aptos API returns `write_resource` in the changes array
+   - In BlockSTM, only write-write conflicts cause serialization
+   - We need to understand if these are actual mutations or read-set tracking
+
+2. **Is `ConcurrentSupply` truly parallel-safe?**
+   - Uses aggregator pattern for parallel add/sub
+   - The metadata address `0xa` is shared, but values might use distributed aggregators
+
+3. **What causes actual TPS differences?**
+   - If USD1 does achieve higher TPS, it may be due to:
+     - Fewer collateral store writes (not at `0xa`)
+     - Different code paths
+     - Reduced total state changes (15 vs 18)
+   - This needs to be tested empirically
+
+### Tests Needed
+
+To properly compare APT vs USD1 parallelization:
+
+1. **Run identical workloads** with both collateral types
+2. **Measure actual TPS** over 60+ seconds
+3. **Query transaction versions** to determine actual block distribution
+4. **Analyze validator metrics** (if available) for backpressure data
 
 ---
 
@@ -12,249 +105,100 @@ Our prediction market achieves **~3,774 TPS with APT collateral** but can reach 
 
 ### Legacy Coin Standard (`coin::Coin<T>`)
 
-The original Aptos token standard, where:
+The original Aptos token standard:
 - Balances stored in `CoinStore<CoinType>` resources per account
 - Transfers via `coin::transfer()` and related functions
 - Global `CoinInfo<CoinType>` tracks supply and metadata
 
 ### Modern Fungible Asset Standard (FA)
 
-The newer, more flexible standard ([AIP-21](https://github.com/aptos-foundation/AIPs/blob/main/aips/aip-21.md)):
+The newer standard ([AIP-21](https://github.com/aptos-foundation/AIPs/blob/main/aips/aip-21.md)):
 - Balances stored in `FungibleStore` objects (one per user per asset)
 - Primary store address deterministically derived from user + metadata
-- No global state per transfer — only touches sender and recipient stores
 - Supports concurrent supply via aggregators
 
 ### APT's Dual Compatibility (Migrated Coin)
 
-APT was originally a Coin (`coin::Coin<AptosCoin>`) and later migrated to support the FA standard via [AIP-63](https://github.com/aptos-foundation/AIPs/blob/main/aips/aip-63.md). This migration created a **pairing layer**:
+APT supports both standards via [AIP-63](https://github.com/aptos-foundation/AIPs/blob/main/aips/aip-63.md):
 
 ```
-APT = coin::Coin<AptosCoin> ←→ Fungible Asset (paired)
+APT = coin::Coin<AptosCoin> <--> Fungible Asset (paired)
 ```
 
-This backward compatibility is necessary but creates overhead.
+This pairing creates the resources at `0xa` that all transactions access.
 
 ---
 
-## The Pairing Problem
+## Theoretical Parallelization Benefit
 
-### What Happens During an APT Transfer
+### Where USD1 Might Help (Hypothesis)
 
-When your code calls:
-```move
-primary_fungible_store::withdraw(user, apt_metadata, amount);
-```
+Even though both transaction types write to `0xa`, USD1 as collateral might reduce contention in other ways:
 
-The framework must:
+1. **Collateral store isolation**: User's USD1 stores and market collateral stores are at unique addresses, not `0xa`
 
-1. **Verify APT metadata** — Check that `apt_metadata` is valid
-2. **Access `CoinConversionMap`** — Global table mapping coin types to FA metadata
-3. **Access `PairedCoinType`** — Stored at APT's FA metadata address
-4. **Access `PairedFungibleAssetRefs`** — MintRef/TransferRef/BurnRef for the paired FA
-5. **Perform the actual transfer** — Update sender and recipient stores
+2. **Fewer total state changes**: USD1 transactions had 15 changes vs 18 for APT
 
-Steps 2-4 touch **global singleton state** that every APT operation must access.
+3. **Different contention patterns**: The collateral transfer doesn't add to `0xa` contention beyond gas payment
 
-### Global State Dependencies in Coin Module
+### FungibleStore Write Locations (Verified)
 
-From [aptos-core/coin.move](https://github.com/aptos-labs/aptos-core/blob/main/aptos-move/framework/aptos-framework/sources/coin.move):
+APT sell_outcome FungibleStore writes:
+- `0x33a3a5...` (user's APT store)
+- `0x91307e...` (outcome token store)
+- `0xcc1fa7...` (market collateral store)
 
-```move
-#[resource_group_member(group = aptos_framework::object::ObjectGroup)]
-/// The paired coin type info stored in fungible asset metadata object.
-struct PairedCoinType has key {
-    type: TypeInfo,
-}
+USD1 mint FungibleStore writes:
+- `0x8395bf...` (destination USD1 store)
+- `0x8b3b45...` (another store)
 
-#[resource_group_member(group = aptos_framework::object::ObjectGroup)]
-/// The refs of the paired fungible asset.
-struct PairedFungibleAssetRefs has key {
-    mint_ref_opt: Option<MintRef>,
-    transfer_ref_opt: Option<TransferRef>,
-    burn_ref_opt: Option<BurnRef>,
-}
-```
-
-These resources are stored at APT's metadata address — a single location that **every APT transfer must access**.
-
-### How BlockSTM Handles Conflicts
-
-Aptos uses [Block-STM](https://medium.com/aptoslabs/block-stm-how-we-execute-over-160k-transactions-per-second-on-the-aptos-blockchain-3b003657571) for parallel execution:
-
-1. Transactions execute **optimistically in parallel**
-2. Each transaction records its read-set and write-set
-3. At commit time, if two transactions accessed the same key (where at least one wrote), **one aborts and re-executes**
-4. With 356 transactions all accessing the same keys: **355 abort and retry**
-
-Result: **Effectively sequential execution** despite parallel architecture.
+**None at `0xa`** - FungibleStores are per-user, not global.
 
 ---
 
-## USD1's Design: Zero Global State Access
+## Recommendations for Aptos Engineers
 
-### Pure Fungible Asset Implementation
+### Questions to Investigate
 
-USD1 is created directly as a native FA (from [usd1.move](../contracts/sources/usd1.move)):
+1. **Write semantics at `0xa`**: Does `write_resource` in transaction output mean actual mutation, or does it include read-set tracking?
 
-```move
-primary_fungible_store::create_primary_store_enabled_fungible_asset(
-    &constructor_ref,
-    option::none(), // No max supply
-    string::utf8(b"USD1 Stablecoin"),
-    string::utf8(b"USD1"),
-    8, // decimals
-    ...
-);
-```
+2. **Aggregator behavior**: Are `ConcurrentSupply` updates truly parallel via aggregators, or do they serialize?
 
-**No coin module involvement.** USD1 never:
-- Calls `coin::*` functions
-- Accesses `CoinConversionMap`
-- Accesses `PairedCoinType` or `PairedFungibleAssetRefs`
+3. **Gas payment overhead**: Is there a way to reduce the state changes at `0xa` for high-TPS applications?
 
-### Per-User Store Isolation
+4. **Read-only access**: Can `coin::PairedCoinType` be accessed without triggering a write-set entry?
 
-USD1 transfers only touch:
-1. **Sender's PrimaryFungibleStore** — Unique to sender + USD1 metadata
-2. **Recipient's PrimaryFungibleStore** — Unique to recipient + USD1 metadata
+### Suggested Analysis
 
-Different users = different addresses = **no conflicts** = **full parallelization**.
+To determine if USD1 provides parallelization benefits:
 
-### Transfer Code Path Comparison
+```bash
+# 1. Deploy identical markets with APT and USD1 collateral
+# 2. Run HFT demo with APT collateral
+./scripts/run-3-workers.sh quantum 60  # with APT
+npx tsx scripts/deep-tps-analysis.ts
 
-**APT Transfer (simplified):**
-```
-primary_fungible_store::withdraw(user, APT_metadata, amount)
-  → fungible_asset::withdraw(...)
-    → [Check coin pairing] coin::ensure_paired_metadata<AptosCoin>()
-      → READ CoinConversionMap (GLOBAL!)
-      → READ PairedCoinType (GLOBAL!)
-      → READ PairedFungibleAssetRefs (GLOBAL!)
-    → Update sender's FungibleStore
-  → Update recipient's FungibleStore
-```
+# 3. Run HFT demo with USD1 collateral
+./scripts/run-3-workers.sh quantum 60  # with USD1
+npx tsx scripts/deep-tps-analysis.ts
 
-**USD1 Transfer (simplified):**
-```
-primary_fungible_store::withdraw(user, USD1_metadata, amount)
-  → fungible_asset::withdraw(...)
-    → [No coin pairing check needed]
-    → Update sender's FungibleStore
-  → Update recipient's FungibleStore
+# 4. Compare results
 ```
 
 ---
 
-## Measured Results
+## Contract References
 
-### Contention Data from Actual Block
+### USD1 Contract (Current)
+- **Address:** `0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134`
+- **USD1 Metadata:** `0x4e977d5ee91d77d680972a44b38b9c7a2c5694439169eeae060a48324e5c4597`
 
-From a peak block (611854263) with 356 transactions:
+### Old APT-Based Contract
+- **Address:** `0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1`
 
-| Resource | Accesses | Unique Keys | Contention Ratio |
-|----------|----------|-------------|------------------|
-| `coin::PairedCoinType` | 356 | **1** | **356:1** |
-| `coin::PairedFungibleAssetRefs` | 356 | **1** | **356:1** |
-| `MultiMarket` | 356 | 1 | 356:1 |
-| `fungible_asset::ConcurrentSupply` | 912 | 7 | 130:1 |
-
-The first two rows show **every transaction hitting the same global keys**.
-
-### TPS Comparison
-
-| Collateral | Peak TPS | Validator Backpressure | Bottleneck |
-|------------|----------|------------------------|------------|
-| APT | 3,774 | 100% (saturated) | Global state contention |
-| USD1 | 10,000+ | ~40-60% | Multi-market serialization |
-
-With USD1, the remaining bottleneck is our `MultiMarket` resource, not the collateral token.
-
-### Grafana Evidence
-
-When using APT collateral, Grafana shows:
-- `execution_backpressure_on_proposal: 1.0` (100%)
-- Validators at max execution capacity
-- Not due to gas — due to state conflicts
-
----
-
-## Technical Deep Dive
-
-### State Access Patterns
-
-| Operation | APT | USD1 |
-|-----------|-----|------|
-| Look up token metadata | Via `CoinConversionMap` (global) | Direct object lookup |
-| Verify token type | Via `PairedCoinType` (global) | Type already known |
-| Access capabilities | Via `PairedFungibleAssetRefs` (global) | Stored at USD1 metadata (isolated) |
-| Update sender balance | Sender's `PrimaryFungibleStore` | Same |
-| Update recipient balance | Recipient's `PrimaryFungibleStore` | Same |
-
-The first 3 rows are the difference. APT touches 3 global singletons; USD1 touches none.
-
-### Why APT Can't Avoid This
-
-APT's pairing exists for **backward compatibility**:
-- Legacy code expects `coin::Coin<AptosCoin>`
-- New code expects FA-style `PrimaryFungibleStore`
-- The pairing layer bridges both
-
-This is intentional design, not a bug. But it has parallelization costs.
-
-### Our USD1 Contract Structure
-
-```move
-// Minimal global state
-struct TokenRegistry has key {
-    metadata_address: address,  // Read-only after init
-}
-
-struct TokenRefs has key {
-    mint_ref: MintRef,      // Read-only
-    burn_ref: BurnRef,      // Read-only
-    transfer_ref: TransferRef, // Read-only
-    extend_ref: ExtendRef,  // Read-only
-}
-```
-
-Both structures are **read-only after initialization** — no write contention.
-
----
-
-## Implications for High-TPS Applications
-
-### When to Use Native FA vs Migrated Coins
-
-| Use Case | Recommendation |
-|----------|----------------|
-| High-TPS trading/gaming | Native FA (like USD1) |
-| Interop with existing APT code | APT (accept lower TPS) |
-| New token launches | Native FA |
-| Stablecoin integration | Native FA version if available |
-
-### Design Recommendations
-
-1. **Avoid migrated coins for hot paths** — If you need 1000+ TPS, use native FAs
-2. **Create FA wrappers** — Let users wrap APT into a native FA for trading
-3. **Use aggregators** — For any counter/reserve that multiple txns update
-4. **Isolate per-user state** — Each user's data in separate objects
-
----
-
-## Questions for Aptos Team
-
-We'd like to understand if there are ways to optimize APT operations:
-
-1. **Is the pairing lookup cacheable?** Could `coin::PairedCoinType` be read once per block instead of per-transaction?
-
-2. **Are these reads or writes?** In BlockSTM, even reads can cause conflicts if the key is in another transaction's write-set. Are these purely read accesses?
-
-3. **Could APT use a "fast path"?** Since APT's pairing is immutable, could the framework skip the lookup for known pairings?
-
-4. **Is there a way to opt out?** For applications that only use APT as FA (never as Coin), could we bypass the pairing check?
-
-5. **What's the roadmap?** Is there planned work to reduce pairing overhead for high-TPS applications?
+### Source Code
+- [contracts/sources/usd1.move](../contracts/sources/usd1.move) - USD1 stablecoin
+- [contracts/sources/multi_outcome_market.move](../contracts/sources/multi_outcome_market.move) - Prediction market
 
 ---
 
@@ -262,23 +206,5 @@ We'd like to understand if there are ways to optimize APT operations:
 
 - [AIP-21: Fungible Asset Standard](https://github.com/aptos-foundation/AIPs/blob/main/aips/aip-21.md)
 - [AIP-63: Coin to FA Migration](https://github.com/aptos-foundation/AIPs/blob/main/aips/aip-63.md)
-- [Aptos coin.move source](https://github.com/aptos-labs/aptos-core/blob/main/aptos-move/framework/aptos-framework/sources/coin.move)
 - [Block-STM: Parallel Execution](https://medium.com/aptoslabs/block-stm-how-we-execute-over-160k-transactions-per-second-on-the-aptos-blockchain-3b003657571)
-- [Coin to FA Migration Announcement](https://medium.com/aptoslabs/live-on-aptos-mainnet-coin-to-fungible-asset-migration-58eacaeaf7f7)
-- [Aptos FA Standard Documentation](https://aptos.dev/build/smart-contracts/fungible-asset)
-
----
-
-## Appendix: USD1 Contract
-
-Our testnet USD1 stablecoin is deployed at:
-- **Contract:** `0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134`
-- **USD1 Metadata:** `0x4e977d5ee91d77d680972a44b38b9c7a2c5694439169eeae060a48324e5c4597`
-
-Key features:
-- 8 decimals (APT-compatible)
-- Open minting for demo purposes
-- No coin module dependencies
-- Uses `ConcurrentSupply` for parallel minting
-
-Full source: [contracts/sources/usd1.move](../contracts/sources/usd1.move)
+- [Aptos coin.move source](https://github.com/aptos-labs/aptos-core/blob/main/aptos-move/framework/aptos-framework/sources/coin.move)
