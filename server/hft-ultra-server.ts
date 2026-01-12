@@ -23,6 +23,7 @@ import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
+import fs from 'fs';
 import {
   Aptos,
   AptosConfig,
@@ -352,6 +353,8 @@ interface GlobalState {
   // Verification mode stats
   verifiedOnChain: number;
   verificationFailures: number;
+  // Transaction hash tracking for post-run analysis
+  submittedTxHashes: Array<{ hash: string; timestamp: number; market: string; outcome: number; isBuy: boolean; sender: string }>;
 }
 
 const state: GlobalState = {
@@ -383,6 +386,8 @@ const state: GlobalState = {
   // Verification mode stats
   verifiedOnChain: 0,
   verificationFailures: 0,
+  // Transaction hash tracking
+  submittedTxHashes: [],
 };
 
 const clients = new Set<WebSocket>();
@@ -600,6 +605,34 @@ function calculateTps(): number {
   if (tps > state.peakTps) state.peakTps = tps;
 
   return tps;
+}
+
+// Save submitted transaction hashes to file for post-run analysis
+function saveSubmittedTxHashes(): void {
+  if (state.submittedTxHashes.length === 0) {
+    console.log('📝 No transactions to save.');
+    return;
+  }
+
+  const outputFile = '/tmp/hft-submitted-txns.json';
+  const data = {
+    contractAddress: CONTRACT_ADDRESS,
+    startTime: state.startTime,
+    endTime: Date.now(),
+    totalSubmitted: state.submittedTxHashes.length,
+    successfulTrades: state.successfulTrades,
+    failedTrades: state.failedTrades,
+    peakTps: state.peakTps,
+    transactions: state.submittedTxHashes,
+  };
+
+  try {
+    fs.writeFileSync(outputFile, JSON.stringify(data, null, 2));
+    console.log(`📝 Saved ${state.submittedTxHashes.length} transaction hashes to ${outputFile}`);
+    console.log(`   Run: npx tsx scripts/analyze-submitted-txns.ts`);
+  } catch (e) {
+    console.error(`Failed to save transaction hashes: ${(e as Error).message}`);
+  }
 }
 
 // ANSI color codes for beautiful logging
@@ -1089,12 +1122,13 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
   const startTime = Date.now();
   const baseSeq = accState.sequenceNumber;
 
-  // Build all payloads with buy/sell info and outcome index
+  // Build all payloads with buy/sell info, outcome index, and market address
   // MULTI-MARKET: Use round-robin market selection to reduce aggregator contention
-  const payloadsWithInfo: { payload: InputGenerateTransactionPayloadData; isBuy: boolean; outcomeIndex: number }[] = [];
+  const payloadsWithInfo: { payload: InputGenerateTransactionPayloadData; isBuy: boolean; outcomeIndex: number; market: string }[] = [];
   for (let i = 0; i < batchSize; i++) {
-    const targetMarket = state.marketAddresses.length > 0 ? getNextMarket() : state.marketAddress;
-    payloadsWithInfo.push(buildPayload(targetMarket));
+    const targetMarket = state.marketAddresses.length > 0 ? getNextMarket() : state.marketAddress!;
+    const info = buildPayload(targetMarket);
+    payloadsWithInfo.push({ ...info, market: targetMarket });
   }
 
   // 3-STAGE PIPELINE: Build → Sign → Submit (reduces latency variance)
@@ -1136,7 +1170,7 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
 
   // Stage 3: Submit transactions
   // PHASE 18: Use batch endpoint for single-request submission (150 txns in 1 HTTP call)
-  let results: { success: boolean; hash?: string; error?: string; isBuy: boolean; outcomeIndex: number }[];
+  let results: { success: boolean; hash?: string; error?: string; isBuy: boolean; outcomeIndex: number; market: string }[];
 
   if (CONFIG.USE_BATCH_SUBMIT) {
     // TRUE BATCH SUBMIT: Single HTTP call to /v1/transactions/batch with up to 10k txns
@@ -1174,13 +1208,13 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
 
         results = builtTxs.map((tx, i) => {
           if (!tx || !signedTxs[i]) {
-            return { success: false, error: 'Build/sign failed', isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex };
+            return { success: false, error: 'Build/sign failed', isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex, market: payloadsWithInfo[i].market };
           }
           const r = resultMap.get(i);
           if (r?.success) {
-            return { success: true, hash: r.hash, isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex };
+            return { success: true, hash: r.hash, isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex, market: payloadsWithInfo[i].market };
           } else {
-            return { success: false, error: r?.error || 'Unknown', isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex };
+            return { success: false, error: r?.error || 'Unknown', isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex, market: payloadsWithInfo[i].market };
           }
         });
       } else {
@@ -1189,6 +1223,7 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
           error: 'Build/sign failed',
           isBuy: payloadsWithInfo[i].isBuy,
           outcomeIndex: payloadsWithInfo[i].outcomeIndex,
+          market: payloadsWithInfo[i].market,
         }));
       }
     } catch (e: any) {
@@ -1198,26 +1233,27 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
         error: e.message || 'Batch submit failed',
         isBuy: payloadsWithInfo[i].isBuy,
         outcomeIndex: payloadsWithInfo[i].outcomeIndex,
+        market: payloadsWithInfo[i].market,
       }));
     }
   } else {
     // Legacy: Submit each transaction individually in parallel
     const submitPromises = builtTxs.map((tx, i) => {
       if (!tx || !signedTxs[i]) {
-        return Promise.resolve({ success: false, error: 'Build/sign failed', isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex });
+        return Promise.resolve({ success: false, error: 'Build/sign failed', isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex, market: payloadsWithInfo[i].market });
       }
       const client = getNextAptos(); // Round-robin RPC selection
       return client.transaction.submit.simple({
         transaction: tx,
         senderAuthenticator: signedTxs[i]!,
       })
-      .then(pending => ({ success: true, hash: pending.hash, isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex }))
+      .then(pending => ({ success: true, hash: pending.hash, isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex, market: payloadsWithInfo[i].market }))
       .catch((e: any) => {
         const errMsg = e.message || 'Unknown error';
         if (i === 0 && !errMsg.includes('INSUFFICIENT_BALANCE')) {
           console.error(`  [ERROR] ${errMsg.slice(0, 60)}`);
         }
-        return { success: false, error: errMsg, isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex };
+        return { success: false, error: errMsg, isBuy: payloadsWithInfo[i].isBuy, outcomeIndex: payloadsWithInfo[i].outcomeIndex, market: payloadsWithInfo[i].market };
       });
     });
 
@@ -1237,6 +1273,18 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
       successCount++;
       state.successfulTrades++;
       accState.successCount++;
+
+      // Track transaction hash for post-run analysis
+      if (result.hash) {
+        state.submittedTxHashes.push({
+          hash: result.hash,
+          timestamp: Date.now(),
+          market: result.market,
+          outcome: result.outcomeIndex,
+          isBuy: result.isBuy,
+          sender: accState.account.accountAddress.toString(),
+        });
+      }
 
       // Track latency - use actual batch time (not divided by batch size)
       // This is submission latency, not finality latency (which is ~470ms on Aptos)
@@ -1893,6 +1941,7 @@ async function startTrading(): Promise<void> {
   state.successfulTrades = 0;
   state.failedTrades = 0;
   state.startTime = Date.now();
+  state.submittedTxHashes = []; // Reset transaction tracking for new run
   state.peakTps = 0;
   state.recentTps = [];
   state.recentLatencies = [];
@@ -2046,6 +2095,7 @@ app.get('/status', async (req, res) => {
 app.post('/stop', (req, res) => {
   state.isRunning = false;
   state.accounts.forEach(a => a.isActive = false);
+  saveSubmittedTxHashes(); // Save transaction hashes for post-run analysis
   broadcast({ type: 'stopped' });
   res.json({ success: true });
 });
@@ -2115,6 +2165,7 @@ app.post('/start', async (req, res) => {
   state.successfulTrades = 0;
   state.failedTrades = 0;
   state.startTime = Date.now();
+  state.submittedTxHashes = []; // Reset transaction tracking for new run
   state.peakTps = 0;
   state.recentTps = [];
   state.recentLatencies = [];
@@ -2282,6 +2333,9 @@ server.listen(CONFIG.PORT, '0.0.0.0', async () => {
       setTimeout(async () => {
         console.log(`\n${duration}s completed. Stopping...`);
         state.isRunning = false;
+
+        // Save transaction hashes for post-run analysis
+        saveSubmittedTxHashes();
 
         // Grace period: wait for pending fire-and-forget transactions to complete
         // Fire-and-forget batches send HTTP requests without awaiting them.
