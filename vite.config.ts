@@ -1,9 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    basicSsl(), // Enable HTTPS for local dev (required for Google/Petra Web login)
+  ],
+  server: {
+    https: true,
+    port: 5174,
+  },
   define: {
     // Required for some wallet adapter dependencies
     'process.env': {},
