@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { ChevronDown, Wallet, LogOut, Copy, Check, Loader2, Plus, RefreshCw } from "lucide-react";
 import { WalletSelector, getWalletIcon } from "../components/WalletSelector";
-import { Aptos, AptosConfig, Network, Account, Ed25519PrivateKey } from "@aptos-labs/ts-sdk";
+import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 
 // Polymarket P logo without background (white version)
 function PolymarketLogo() {
@@ -39,11 +39,10 @@ function AptosKeylessIcon() {
   );
 }
 
-// Faucet deployer key for demo (testnet only)
-// Address: 0x20a30d83eec219a31e4d4a6aec1787bbaab089c99a8d263df03147782a0d490c
-// AIP-80 compliant format for ed25519 private key
-const FAUCET_KEY = "ed25519-priv-0x6ceeeb36800665f36af48c88ecd8afdc4d34cfbe3793202b6313f6741866ab50";
-const FUND_AMOUNT_APT = 50; // $50 worth of APT
+// USD1 Contract addresses
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134";
+const USD1_METADATA = "0x4e977d5ee91d77d680972a44b38b9c7a2c5694439169eeae060a48324e5c4597";
+const FUND_AMOUNT_USD1 = 1000; // $1000 worth of USD1 (8 decimals)
 
 export function PolyHeader() {
   const navigate = useNavigate();
@@ -57,7 +56,7 @@ export function PolyHeader() {
   const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
 
   // Use Aptos wallet adapter
-  const { account, connected, disconnect, wallet } = useWallet();
+  const { account, connected, disconnect, wallet, signAndSubmitTransaction } = useWallet();
 
   // Check if connected via X-Chain (derived wallet from EVM/Solana)
   const isXChainWallet = wallet?.name?.toLowerCase().includes('ethereum') ||
@@ -86,7 +85,7 @@ export function PolyHeader() {
     ? 'Aptos'
     : wallet?.name?.replace(' (Solana)', '').replace(' (Ethereum)', '') || 'Wallet';
 
-  // Fetch wallet balance (supports both legacy CoinStore and new Fungible Assets)
+  // Fetch USD1 balance from fungible asset
   const fetchBalance = useCallback(async () => {
     if (!connected || !account?.address) {
       setBalance(0);
@@ -97,28 +96,45 @@ export function PolyHeader() {
       const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
       const address = account.address.toString();
 
-      // Try new Fungible Asset balance first
+      // Fetch USD1 fungible asset balance
       try {
-        const faBalance = await aptos.getAccountAPTAmount({ accountAddress: address });
-        setBalance(faBalance / 100_000_000);
-        return;
-      } catch {
-        // Fall back to legacy CoinStore
+        const balances = await aptos.getCurrentFungibleAssetBalances({
+          options: {
+            where: {
+              owner_address: { _eq: address },
+              asset_type: { _eq: USD1_METADATA },
+            },
+          },
+        });
+
+        if (balances.length > 0 && balances[0].amount) {
+          // USD1 has 8 decimals
+          setBalance(Number(balances[0].amount) / 100_000_000);
+          return;
+        }
+      } catch (err) {
+        console.log("Fungible asset query failed, trying view function:", err);
       }
 
-      // Legacy CoinStore fallback
+      // Fallback: call view function directly
       try {
-        const resources = await aptos.getAccountResource({
-          accountAddress: address,
-          resourceType: "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>",
+        const result = await aptos.view({
+          payload: {
+            function: `${CONTRACT_ADDRESS}::usd1::balance`,
+            functionArguments: [address],
+          },
         });
-        const balanceOctas = (resources as any).coin?.value || 0;
-        setBalance(Number(balanceOctas) / 100_000_000);
+        if (result && result[0]) {
+          setBalance(Number(result[0]) / 100_000_000);
+          return;
+        }
       } catch {
-        setBalance(0);
+        // No USD1 balance
       }
+
+      setBalance(0);
     } catch (error) {
-      console.error("Error fetching balance:", error);
+      console.error("Error fetching USD1 balance:", error);
       setBalance(0);
     } finally {
       setIsRefreshingBalance(false);
@@ -176,7 +192,7 @@ export function PolyHeader() {
     }
   };
 
-  // Fund user with APT directly from our faucet account
+  // Mint USD1 tokens to user's wallet (open minting for demo)
   const handleFundWallet = async () => {
     if (!account?.address || isFunding) return;
 
@@ -185,42 +201,38 @@ export function PolyHeader() {
 
     try {
       const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
-      const faucetAccount = Account.fromPrivateKey({
-        privateKey: new Ed25519PrivateKey(FAUCET_KEY),
-      });
 
-      const amountOctas = Math.floor(FUND_AMOUNT_APT * 100_000_000);
-      const recipientAddress = account.address.toString();
+      // USD1 has 8 decimals, mint 1000 USD1
+      const amountUnits = Math.floor(FUND_AMOUNT_USD1 * 100_000_000);
 
-      const txn = await aptos.transaction.build.simple({
-        sender: faucetAccount.accountAddress,
+      // Call mint_to_self - anyone can mint in demo mode
+      const response = await signAndSubmitTransaction({
         data: {
-          function: "0x1::aptos_account::transfer_coins",
-          typeArguments: ["0x1::aptos_coin::AptosCoin"],
-          functionArguments: [recipientAddress, amountOctas],
+          function: `${CONTRACT_ADDRESS}::usd1::mint_to_self`,
+          functionArguments: [amountUnits],
         },
       });
 
-      const pending = await aptos.signAndSubmitTransaction({
-        signer: faucetAccount,
-        transaction: txn,
-      });
-
+      // Wait for transaction confirmation
       const result = await aptos.waitForTransaction({
-        transactionHash: pending.hash,
+        transactionHash: response.hash,
       });
 
       if (result.success) {
         setFundStatus("success");
         // Dispatch event for portfolio page to refresh balance
-        window.dispatchEvent(new CustomEvent('wallet-funded', { detail: { amount: FUND_AMOUNT_APT } }));
-        setTimeout(() => setFundStatus("idle"), 3000);
+        window.dispatchEvent(new CustomEvent('wallet-funded', { detail: { amount: FUND_AMOUNT_USD1 } }));
+        // Refresh balance after successful mint
+        setTimeout(() => {
+          fetchBalance();
+          setFundStatus("idle");
+        }, 2000);
       } else {
         setFundStatus("error");
         setTimeout(() => setFundStatus("idle"), 3000);
       }
     } catch (error) {
-      console.error("Funding error:", error);
+      console.error("USD1 minting error:", error);
       setFundStatus("error");
       setTimeout(() => setFundStatus("idle"), 3000);
     } finally {
@@ -347,11 +359,19 @@ export function PolyHeader() {
                 {/* Balance Display */}
                 <div className="p-3 bg-[#0d1a24] rounded-lg mb-3">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[#8297a3] text-xs mb-0.5">Cash Balance</p>
-                      <p className="text-white text-2xl font-bold">
-                        ${balance.toFixed(2)}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      {/* USD1 Logo */}
+                      <img
+                        src="/usd1.png"
+                        alt="USD1"
+                        className="w-10 h-10 rounded-full"
+                      />
+                      <div>
+                        <p className="text-[#8297a3] text-xs mb-0.5">USD1 Balance</p>
+                        <p className="text-white text-2xl font-bold">
+                          ${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
                     </div>
                     <button
                       onClick={(e) => {
@@ -388,15 +408,15 @@ export function PolyHeader() {
                   ) : fundStatus === "success" ? (
                     <Check size={16} />
                   ) : (
-                    <Plus size={16} />
+                    <img src="/usd1.png" alt="USD1" className="w-4 h-4 rounded-full" />
                   )}
                   {fundStatus === "success"
-                    ? "+$50 Added!"
+                    ? "+$1,000 USD1 Minted!"
                     : fundStatus === "error"
                     ? "Failed - Try Again"
                     : isFunding
-                    ? "Adding funds..."
-                    : "Add $50 Cash"}
+                    ? "Minting USD1..."
+                    : "Mint $1,000 USD1"}
                 </button>
               </div>
 
