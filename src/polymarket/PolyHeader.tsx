@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { ChevronDown, Wallet, LogOut, Copy, Check, Loader2, Plus, RefreshCw } from "lucide-react";
+import { ChevronDown, Wallet, LogOut, Copy, Check, Loader2, RefreshCw } from "lucide-react";
 import { WalletSelector, getWalletIcon } from "../components/WalletSelector";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 
