@@ -20,7 +20,7 @@ set -e
 # ============================================
 
 # Your infrastructure
-FULLNODE_IP="164.92.117.18"
+FULLNODE_IP="aptos.cash.trading"
 FULLNODE_URL="http://${FULLNODE_IP}:8080/v1"
 
 # All 3 Worker VMs (no local Mac needed!)

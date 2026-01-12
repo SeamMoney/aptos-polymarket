@@ -3,7 +3,7 @@ import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 async function main() {
   const aptos = new Aptos(new AptosConfig({
     network: Network.TESTNET,
-    fullnode: 'http://164.92.117.18:8080/v1'
+    fullnode: 'https://aptos.cash.trading/v1'
   }));
 
   const accounts = [

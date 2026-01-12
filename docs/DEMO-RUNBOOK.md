@@ -13,7 +13,7 @@ Run the automated pre-flight check:
 - [ ] 25 bot wallets funded (~121,000 APT total)
 - [ ] QuickNode RPC configured
 - [ ] All 3 cloud workers ready
-- [ ] Fullnode synced (164.92.117.18)
+- [ ] Fullnode synced (aptos.cash.trading)
 
 ---
 
@@ -109,7 +109,7 @@ Then in browser: ARM → LAUNCH
 | Worker 1 | 178.128.177.88 | 9 | **Coordinator** |
 | Worker 2 | 147.182.237.239 | 8 | Secondary |
 | Worker 3 | 161.35.231.0 | 8 | Secondary |
-| Fullnode | 164.92.117.18 | N/A | Aptos Fullnode |
+| Fullnode | aptos.cash.trading | N/A | Aptos Fullnode |
 | **Total** | | **25** | |
 
 **Worker Coordination:**

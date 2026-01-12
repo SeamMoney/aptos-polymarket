@@ -8,12 +8,29 @@ A fully functional prediction market platform demonstrating Polymarket-style tra
 
 ## 🚀 Demo Quick Start
 
-### Two Demo Modes
+### Recommended Workflow (Standby Mode)
 
-| Mode | Command | TPS | Duration | Cost | Use Case |
-|------|---------|-----|----------|------|----------|
-| **Dry Run** | `./scripts/orchestrator.sh dryrun` | ~10 | 5 sec | < 0.5 APT | Quick test, verify UI |
-| **Full Demo** | `./scripts/orchestrator.sh demo` | ~30K | 60 sec | ~5K APT | Production demo (QUANTUM mode) |
+```bash
+# Step 1: Deploy latest code to all workers
+./scripts/orchestrator.sh deploy
+
+# Step 2: Start all workers in STANDBY mode (no auto-trading)
+./scripts/orchestrator.sh standby
+
+# Step 3: Start frontend
+npm run dev
+
+# Step 4: Open browser → ARM → LAUNCH
+# http://localhost:5173/demo-day
+```
+
+### Demo Modes
+
+| Mode | Command | TPS | Duration | Use Case |
+|------|---------|-----|----------|----------|
+| **Standby** | `./scripts/orchestrator.sh standby` | - | - | Wait for UI launch (recommended) |
+| **Dry Run** | `./scripts/orchestrator.sh dryrun` | ~100 | 5 sec | Quick test |
+| **Full Demo** | `./scripts/orchestrator.sh demo` | ~30K | 60 sec | Auto-start demo |
 
 **Pre-flight check:** Run `./scripts/pre-demo-checklist.sh` before the demo!
 
@@ -125,7 +142,7 @@ Run `npx tsx scripts/audit-accounts.ts` for full breakdown.
 
 | Component | IP/URL | Purpose |
 |-----------|--------|---------|
-| Aptos Fullnode | 164.92.117.18:8080 | Low-latency RPC (unlimited) |
+| Aptos Fullnode | aptos.cash.trading:8080 | Low-latency RPC (unlimited) |
 | QuickNode | polished-evocative-borough... | Primary RPC (50 RPS) |
 | Aptos Labs | fullnode.testnet.aptoslabs.com | Fallback RPC |
 
@@ -177,7 +194,7 @@ The orchestrator uses **quantum mode** for `./scripts/orchestrator.sh demo`.
                                        ▼
                      ┌─────────────────────────────────┐
                      │    YOUR FULLNODE (Optional)     │
-                     │    164.92.117.18:8080           │
+                     │    aptos.cash.trading:8080           │
                      │    Low latency, no rate limits  │
                      └─────────────────┬───────────────┘
                                        │

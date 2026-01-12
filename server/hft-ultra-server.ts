@@ -30,15 +30,22 @@ import {
   Account,
   Ed25519PrivateKey,
   InputGenerateTransactionPayloadData,
+  generateSignedTransaction,
 } from '@aptos-labs/ts-sdk';
 
-// V3 Contract - Full Aggregator TPS (outcome.reserve is now Aggregator<u64>)
-const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1';
+// USD1 Contract with admin drainers (deployed Jan 11, 2026)
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134';
 const MODULE = `${CONTRACT_ADDRESS}::market`;
 const MULTI_MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
+const USD1_MODULE = `${CONTRACT_ADDRESS}::usd1`;
+
+// USD1 collateral support - eliminates APT global state contention for 10K+ TPS
+// Set USE_USD1=true and USD1_METADATA to enable
+const USE_USD1 = process.env.USE_USD1 === 'true';
+let USD1_METADATA: string | null = process.env.USD1_METADATA || null;
 
 // Available run modes with escalating TPS targets
-type RunMode = 'dryrun' | 'light' | 'normal' | 'turbo' | 'ultra' | 'quantum' | 'verify';
+type RunMode = 'dryrun' | 'light' | 'normal' | 'turbo' | 'ultra' | 'quantum' | 'dec28' | 'dec28_real' | 'verify';
 
 function resolveMode(): RunMode {
   const argMode = process.argv[2];
@@ -49,6 +56,8 @@ function resolveMode(): RunMode {
   if (argMode === 'turbo') return 'turbo';
   if (argMode === 'ultra') return 'ultra';
   if (argMode === 'quantum') return 'quantum';
+  if (argMode === 'dec28') return 'dec28';
+  if (argMode === 'dec28_real') return 'dec28_real';
   // Default to normal for backwards compatibility with 'prod'
   if (argMode === 'prod') return 'quantum';
   return 'dryrun';
@@ -128,6 +137,27 @@ const MODE_CONFIGS: Record<RunMode, {
     TARGET_TPS: 30000,
     MAX_PENDING: 300,
   },
+  // EXACT Dec 28 config that achieved 4,441 TPS
+  dec28: {
+    BATCH_SIZE: 100,
+    BATCH_DELAY_MS: 0,          // NO delay - max speed
+    USE_MULTI_RPC: true,
+    FIRE_AND_FORGET_RATIO: 0.95,
+    TRADE_SAMPLE_RATE: 0.03,
+    TARGET_TPS: 10000,
+    MAX_PENDING: 1000,          // High pending limit
+  },
+  // ACTUAL Dec 28 config from commit e4083b2 (the real 4K+ TPS achievement)
+  // Key differences: smaller batch, lower pending, NO fire-and-forget, single client
+  dec28_real: {
+    BATCH_SIZE: 30,             // Actual Dec 28 value (not 100!)
+    BATCH_DELAY_MS: 0,          // No delay - max speed
+    USE_MULTI_RPC: false,       // Single client (Dec 28 didn't have multi-RPC)
+    FIRE_AND_FORGET_RATIO: 0.0, // Dec 28 didn't have fire-and-forget! Wait for responses.
+    TRADE_SAMPLE_RATE: 0.03,
+    TARGET_TPS: 5000,
+    MAX_PENDING: 120,           // Actual Dec 28 value (not 1000!)
+  },
   // ~1 TPS - Full on-chain verification mode (verify each tx lands on-chain)
   verify: {
     BATCH_SIZE: 1,              // One transaction at a time
@@ -155,7 +185,7 @@ function getConfig(mode: RunMode) {
     FIRE_AND_FORGET_RATIO: modeConfig.FIRE_AND_FORGET_RATIO,
     USE_ORDERLESS: true,
     USE_MULTI_RPC: modeConfig.USE_MULTI_RPC,
-    USE_BATCH_SUBMIT: false,
+    USE_BATCH_SUBMIT: true,  // TRUE batch: 10k txns in 1 HTTP call
     IS_DRYRUN: mode === 'dryrun',
     TARGET_TPS: modeConfig.TARGET_TPS,
     MODE_LABEL: mode,
@@ -181,7 +211,7 @@ if (!API_KEY) {
 
 // PHASE 17: Multi-RPC load balancing - spread load across multiple endpoints
 // YOUR FULLNODE ONLY - NO RATE LIMITS! 🚀
-const CUSTOM_FULLNODE = process.env.FULLNODE_URL || 'http://164.92.117.18:8080/v1';
+const CUSTOM_FULLNODE = process.env.FULLNODE_URL || 'https://aptos.cash.trading/v1';
 
 // Use ONLY your custom fullnode - no public endpoints that will rate limit us!
 // For even more TPS, you can add multiple fullnodes via EXTRA_RPC_ENDPOINTS
@@ -215,6 +245,71 @@ function getNextAptos(): Aptos {
 // Default client for non-trading operations
 const aptos = aptosClients[0];
 
+// TRUE BATCH SUBMIT - Single HTTP call with up to 10k transactions
+// Uses POST /v1/transactions/batch endpoint
+async function submitBatchTransactions(
+  signedTxns: Uint8Array[]
+): Promise<{ success: boolean; hash?: string; error?: string }[]> {
+  if (signedTxns.length === 0) return [];
+
+  try {
+    const response = await fetch(`${CUSTOM_FULLNODE}/transactions/batch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x.aptos.signed_transaction+bcs',
+        ...(API_KEY ? { 'Authorization': `Bearer ${API_KEY}` } : {}),
+      },
+      body: Buffer.from(encodeBatchBCS(signedTxns)),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[BATCH] HTTP ${response.status}: ${errorText.slice(0, 100)}`);
+      return signedTxns.map(() => ({ success: false, error: `HTTP ${response.status}` }));
+    }
+
+    const results = await response.json();
+    // Response is array of { transaction_failures: [...] } or { hash: "0x..." }
+    return results.map((r: any) => {
+      if (r.hash) {
+        return { success: true, hash: r.hash };
+      } else {
+        return { success: false, error: r.error_code || r.message || 'Unknown error' };
+      }
+    });
+  } catch (e: any) {
+    console.error(`[BATCH] Error: ${e.message}`);
+    return signedTxns.map(() => ({ success: false, error: e.message }));
+  }
+}
+
+// Encode multiple BCS transactions into batch format
+function encodeBatchBCS(signedTxns: Uint8Array[]): Uint8Array {
+  // Batch format: [length as u32le][txn1][txn2]...
+  // Each txn is already BCS encoded, we just concatenate with length prefix
+  let totalLength = 4; // 4 bytes for count
+  for (const txn of signedTxns) {
+    totalLength += 4 + txn.length; // 4 bytes length + txn bytes
+  }
+
+  const buffer = new Uint8Array(totalLength);
+  const view = new DataView(buffer.buffer);
+
+  // Write count
+  view.setUint32(0, signedTxns.length, true);
+  let offset = 4;
+
+  // Write each transaction with length prefix
+  for (const txn of signedTxns) {
+    view.setUint32(offset, txn.length, true);
+    offset += 4;
+    buffer.set(txn, offset);
+    offset += txn.length;
+  }
+
+  return buffer;
+}
+
 // Account state
 interface AccountState {
   account: Account;
@@ -230,6 +325,8 @@ interface GlobalState {
   isRunning: boolean;
   accounts: AccountState[];
   marketAddress: string | null;
+  marketAddresses: string[]; // Multi-market round-robin support
+  marketIndex: number; // Current index for round-robin
   isMultiOutcome: boolean;
   outcomeCount: number;
   totalTrades: number;
@@ -261,6 +358,8 @@ const state: GlobalState = {
   isRunning: false,
   accounts: [],
   marketAddress: null,
+  marketAddresses: [],
+  marketIndex: 0,
   isMultiOutcome: false,
   outcomeCount: 2,
   totalTrades: 0,
@@ -363,6 +462,86 @@ function broadcast(data: object) {
       ws.send(message);
     }
   });
+}
+
+// ============================================
+// USD1 COLLATERAL SUPPORT
+// ============================================
+
+// Initialize USD1 metadata if enabled
+async function initializeUSD1() {
+  if (!USE_USD1) return;
+
+  if (!USD1_METADATA) {
+    try {
+      const result = await aptos.view({
+        payload: {
+          function: `${USD1_MODULE}::get_metadata_address`,
+          functionArguments: [],
+        },
+      });
+      USD1_METADATA = result[0] as string;
+      console.log(`✓ USD1 detected: ${USD1_METADATA.slice(0, 30)}...`);
+    } catch (e) {
+      console.warn('⚠ USD1 not initialized on chain. Using APT for balances.');
+    }
+  } else {
+    console.log(`✓ USD1 configured: ${USD1_METADATA.slice(0, 30)}...`);
+  }
+}
+
+// Get USD1 balance for an address
+async function getUSD1Balance(address: string): Promise<number> {
+  if (!USD1_METADATA) return 0;
+
+  try {
+    const result = await aptos.view({
+      payload: {
+        function: `${USD1_MODULE}::balance`,
+        functionArguments: [address],
+      },
+    });
+    return Number(result[0]);
+  } catch {
+    return 0;
+  }
+}
+
+// Get account balance (USD1 if enabled, otherwise APT)
+async function getAccountBalance(address: string): Promise<{ balance: number; symbol: string }> {
+  if (USE_USD1 && USD1_METADATA) {
+    const balance = await getUSD1Balance(address);
+    return { balance, symbol: 'USD1' };
+  } else {
+    const balance = await aptos.getAccountAPTAmount({ accountAddress: address });
+    return { balance, symbol: 'APT' };
+  }
+}
+
+// Mint USD1 to an account (for auto-funding)
+async function mintUSD1(signer: Account, recipient: string, amount: number): Promise<boolean> {
+  if (!USD1_METADATA) return false;
+
+  try {
+    const tx = await aptos.transaction.build.simple({
+      sender: signer.accountAddress,
+      data: {
+        function: `${USD1_MODULE}::mint`,
+        functionArguments: [recipient, amount],
+      },
+    });
+
+    const pendingTx = await aptos.signAndSubmitTransaction({
+      signer,
+      transaction: tx,
+    });
+
+    await aptos.waitForTransaction({ transactionHash: pendingTx.hash });
+    return true;
+  } catch (e) {
+    console.error(`USD1 mint failed: ${(e as Error).message}`);
+    return false;
+  }
 }
 
 // Get random amount - DEMO MODE: Small trades for live demo
@@ -597,11 +776,11 @@ function getFullUIData() {
 // Fetch combined balance and market data periodically
 async function refreshUIData(): Promise<void> {
   try {
-    // Get combined balance of all accounts
+    // Get combined balance of all accounts (USD1 if enabled, otherwise APT)
     let totalBalance = 0;
     for (const accState of state.accounts) {
       try {
-        const balance = await aptos.getAccountAPTAmount({ accountAddress: accState.account.accountAddress });
+        const { balance } = await getAccountBalance(accState.account.accountAddress.toString());
         totalBalance += balance / 100_000_000;
       } catch (e) {
         // Skip failed balance checks
@@ -911,9 +1090,11 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
   const baseSeq = accState.sequenceNumber;
 
   // Build all payloads with buy/sell info and outcome index
+  // MULTI-MARKET: Use round-robin market selection to reduce aggregator contention
   const payloadsWithInfo: { payload: InputGenerateTransactionPayloadData; isBuy: boolean; outcomeIndex: number }[] = [];
   for (let i = 0; i < batchSize; i++) {
-    payloadsWithInfo.push(buildPayload(state.marketAddress));
+    const targetMarket = state.marketAddresses.length > 0 ? getNextMarket() : state.marketAddress;
+    payloadsWithInfo.push(buildPayload(targetMarket));
   }
 
   // 3-STAGE PIPELINE: Build → Sign → Submit (reduces latency variance)
@@ -958,36 +1139,38 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
   let results: { success: boolean; hash?: string; error?: string; isBuy: boolean; outcomeIndex: number }[];
 
   if (CONFIG.USE_BATCH_SUBMIT) {
-    // TRUE batch submit: use aptos.transaction.batch.forSingleAccount
-    // This submits all transactions in optimized batches internally
+    // TRUE BATCH SUBMIT: Single HTTP call to /v1/transactions/batch with up to 10k txns
     try {
-      // Filter valid payloads
-      const validPayloads = payloadsWithInfo
-        .map((p, i) => ({ ...p, index: i }))
-        .filter((_, i) => builtTxs[i] && signedTxs[i]);
+      // Convert signed transactions to BCS bytes
+      const signedTxnBytes: Uint8Array[] = [];
+      const validIndices: number[] = [];
 
-      if (validPayloads.length > 0) {
-        // Use Promise.allSettled for parallel submission with better error handling
-        const submitPromises = validPayloads.map(({ index }) => {
-          const tx = builtTxs[index]!;
-          const signed = signedTxs[index]!;
-          const client = getNextAptos();
-          return client.transaction.submit.simple({
-            transaction: tx,
-            senderAuthenticator: signed,
-          }).then(pending => ({
-            index,
-            success: true,
-            hash: pending.hash,
-          })).catch((e: any) => ({
-            index,
-            success: false,
-            error: e.message || 'Submit failed',
-          }));
+      for (let i = 0; i < builtTxs.length; i++) {
+        const tx = builtTxs[i];
+        const signed = signedTxs[i];
+        if (tx && signed) {
+          try {
+            const bcsBytes = generateSignedTransaction({
+              transaction: tx,
+              senderAuthenticator: signed,
+            });
+            signedTxnBytes.push(bcsBytes);
+            validIndices.push(i);
+          } catch {
+            // Skip failed serialization
+          }
+        }
+      }
+
+      if (signedTxnBytes.length > 0) {
+        // Single HTTP call with all transactions!
+        const batchResults = await submitBatchTransactions(signedTxnBytes);
+
+        // Map results back to original indices
+        const resultMap = new Map<number, { success: boolean; hash?: string; error?: string }>();
+        validIndices.forEach((origIndex, batchIndex) => {
+          resultMap.set(origIndex, batchResults[batchIndex] || { success: false, error: 'No result' });
         });
-
-        const batchResults = await Promise.all(submitPromises);
-        const resultMap = new Map(batchResults.map(r => [r.index, r]));
 
         results = builtTxs.map((tx, i) => {
           if (!tx || !signedTxs[i]) {
@@ -1194,10 +1377,10 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
 // Check balance and pause if too low
 async function checkAndPauseIfLowBalance(accState: AccountState): Promise<boolean> {
   try {
-    const balance = await aptos.getAccountAPTAmount({ accountAddress: accState.account.accountAddress });
-    const balanceAPT = balance / 100_000_000;
-    if (balanceAPT < 0.5) {
-      console.warn(`[${accState.account.accountAddress.toString().slice(0, 8)}] LOW BALANCE: ${balanceAPT.toFixed(2)} APT - pausing`);
+    const { balance, symbol } = await getAccountBalance(accState.account.accountAddress.toString());
+    const balanceDecimal = balance / 100_000_000;
+    if (balanceDecimal < 0.5) {
+      console.warn(`[${accState.account.accountAddress.toString().slice(0, 8)}] LOW BALANCE: ${balanceDecimal.toFixed(2)} ${symbol} - pausing`);
       accState.isActive = false;
       return true;
     }
@@ -1221,8 +1404,10 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
   }
 
   // Build and submit without waiting
+  // MULTI-MARKET: Use round-robin market selection
   for (let i = 0; i < batchSize; i++) {
-    const { payload, isBuy, outcomeIndex } = buildPayload(state.marketAddress);
+    const targetMarket = state.marketAddresses.length > 0 ? getNextMarket() : state.marketAddress;
+    const { payload, isBuy, outcomeIndex } = buildPayload(targetMarket);
 
     // PHASE 10: Orderless uses random nonces, legacy uses sequence numbers
     const options: any = CONFIG.USE_ORDERLESS
@@ -1315,7 +1500,9 @@ async function executeVerifiedTransaction(accState: AccountState): Promise<void>
   if (!state.marketAddress || !accState.isActive) return;
 
   const startTime = Date.now();
-  const { payload, isBuy, outcomeIndex } = buildPayload(state.marketAddress);
+  // MULTI-MARKET: Use round-robin market selection
+  const targetMarket = state.marketAddresses.length > 0 ? getNextMarket() : state.marketAddress;
+  const { payload, isBuy, outcomeIndex } = buildPayload(targetMarket);
   const tradeAmount = getRandomAmount();
 
   try {
@@ -1529,9 +1716,41 @@ async function accountTradingLoop(accState: AccountState, accountIndex: number):
   console.log(`[Account ${accountIndex + 1}] Trading loop stopped`);
 }
 
+// Get next market address for round-robin trading (reduces aggregator contention)
+function getNextMarket(): string {
+  if (state.marketAddresses.length === 0) {
+    return state.marketAddress || '';
+  }
+  const market = state.marketAddresses[state.marketIndex];
+  state.marketIndex = (state.marketIndex + 1) % state.marketAddresses.length;
+  return market;
+}
+
 // Get market info
 async function getMarketInfo(): Promise<{ address: string; isMultiOutcome: boolean; outcomeCount: number }> {
-  // Check for explicit market address via env var
+  // Check for multi-market mode (comma-separated list for round-robin)
+  const envMarkets = process.env.MULTI_MARKETS;
+  if (envMarkets) {
+    const markets = envMarkets.split(',').map(m => m.trim()).filter(m => m);
+    if (markets.length > 0) {
+      console.log(`[MULTI-MARKET] Round-robin mode with ${markets.length} markets`);
+      state.marketAddresses = markets;
+      // Return first market's info (all should be multi-outcome)
+      const infoResult = await aptos.view({
+        payload: {
+          function: `${MULTI_MODULE}::get_multi_market_info`,
+          functionArguments: [markets[0]],
+        },
+      });
+      return {
+        address: markets[0], // Primary market for display
+        isMultiOutcome: true,
+        outcomeCount: Number(infoResult[3]),
+      };
+    }
+  }
+
+  // Check for single explicit market address via env var
   const envMarket = process.env.MULTI_MARKET;
 
   // Try multi-outcome first
@@ -1645,13 +1864,13 @@ async function startTrading(): Promise<void> {
 
     await refreshSequenceNumber(accState);
 
-    // Check balance
+    // Check balance (USD1 if enabled, otherwise APT)
     try {
-      const balance = await aptos.getAccountAPTAmount({ accountAddress: account.accountAddress });
-      const balanceAPT = balance / 100_000_000;
-      console.log(`  ${account.accountAddress.toString().slice(0, 12)}... | ${balanceAPT.toFixed(2)} APT | Seq: ${accState.sequenceNumber}`);
+      const { balance, symbol } = await getAccountBalance(account.accountAddress.toString());
+      const balanceDecimal = balance / 100_000_000;
+      console.log(`  ${account.accountAddress.toString().slice(0, 12)}... | ${balanceDecimal.toFixed(2)} ${symbol} | Seq: ${accState.sequenceNumber}`);
 
-      if (balanceAPT < 1) {
+      if (balanceDecimal < 1) {
         console.warn(`    WARNING: Low balance, skipping this account`);
         accState.isActive = false;
       }
@@ -1794,10 +2013,10 @@ app.get('/status', async (req, res) => {
     activeAccounts = 0;
     for (const account of accounts) {
       try {
-        const balance = await aptos.getAccountAPTAmount({ accountAddress: account.accountAddress });
-        const balanceApt = balance / 100_000_000;
-        combinedBalance += balanceApt;
-        if (balanceApt >= 0.5) activeAccounts++;
+        const { balance } = await getAccountBalance(account.accountAddress.toString());
+        const balanceDecimal = balance / 100_000_000;
+        combinedBalance += balanceDecimal;
+        if (balanceDecimal >= 0.5) activeAccounts++;
       } catch {
         // Ignore individual balance errors
       }
@@ -1957,6 +2176,8 @@ const MODE_INFO: Record<RunMode, { emoji: string; desc: string }> = {
   turbo:   { emoji: '⚡', desc: 'Medium-high intensity (~3K TPS)' },
   ultra:   { emoji: '🔥', desc: 'High intensity (~10K TPS)' },
   quantum: { emoji: '🚀', desc: 'MAXIMUM POWER (~30K+ TPS)' },
+  dec28:   { emoji: '🎯', desc: 'Dec 28 config (4K+ TPS achieved)' },
+  dec28_real: { emoji: '✅', desc: 'ACTUAL Dec 28 config from e4083b2 (no port exhaustion)' },
   verify:  { emoji: '🔍', desc: 'Full on-chain verification (~1 TPS)' },
 };
 
@@ -1999,12 +2220,12 @@ async function initializeServerState(): Promise<void> {
 
     try {
       await refreshSequenceNumber(accState);
-      const balance = await aptos.getAccountAPTAmount({ accountAddress: account.accountAddress });
-      const balanceAPT = balance / 100_000_000;
-      totalBalance += balanceAPT;
-      console.log(`  ${account.accountAddress.toString().slice(0, 12)}... | ${balanceAPT.toFixed(2)} APT`);
+      const { balance, symbol } = await getAccountBalance(account.accountAddress.toString());
+      const balanceDecimal = balance / 100_000_000;
+      totalBalance += balanceDecimal;
+      console.log(`  ${account.accountAddress.toString().slice(0, 12)}... | ${balanceDecimal.toFixed(2)} ${symbol}`);
 
-      if (balanceAPT >= 0.5) {
+      if (balanceDecimal >= 0.5) {
         accState.isActive = true; // Mark as ready (but not trading yet)
       }
     } catch (e) {
@@ -2015,7 +2236,8 @@ async function initializeServerState(): Promise<void> {
   }
 
   state.combinedBalance = totalBalance;
-  console.log(`\n✓ Total balance: ${totalBalance.toFixed(2)} APT across ${accounts.length} accounts`);
+  const balanceSymbol = USE_USD1 && USD1_METADATA ? 'USD1' : 'APT';
+  console.log(`\n✓ Total balance: ${totalBalance.toFixed(2)} ${balanceSymbol} across ${accounts.length} accounts`);
   console.log('✓ Server ready. Use UI to ARM and LAUNCH, or auto-start with mode arg.\n');
 }
 
@@ -2040,8 +2262,12 @@ server.listen(CONFIG.PORT, '0.0.0.0', async () => {
   console.log(`  BATCH_DELAY_MS: ${CONFIG.BATCH_DELAY_MS}`);
   console.log(`  USE_MULTI_RPC:  ${CONFIG.USE_MULTI_RPC}`);
   console.log(`  MAX_PENDING:    ${CONFIG.MAX_PENDING}`);
+  console.log(`  USE_USD1:       ${USE_USD1}`);
   console.log(`\n${modeInfo.emoji} Target: ${CONFIG.TARGET_TPS.toLocaleString()} TPS`);
   console.log('\n' + '='.repeat(70));
+
+  // Initialize USD1 if enabled
+  await initializeUSD1();
 
   // ALWAYS initialize accounts and market on startup (for pre-flight checks)
   await initializeServerState();
@@ -2049,7 +2275,7 @@ server.listen(CONFIG.PORT, '0.0.0.0', async () => {
   // Auto-start trading ONLY if mode is passed as command line arg
   const mode = process.argv[2];
   const duration = parseInt(process.argv[3]) || 60;
-  if (mode === 'dryrun' || mode === 'light' || mode === 'normal' || mode === 'turbo' || mode === 'ultra' || mode === 'quantum' || mode === 'verify' || mode === 'prod') {
+  if (mode === 'dryrun' || mode === 'light' || mode === 'normal' || mode === 'turbo' || mode === 'ultra' || mode === 'quantum' || mode === 'dec28' || mode === 'dec28_real' || mode === 'verify' || mode === 'prod') {
     console.log(`\n${modeInfo.emoji} AUTO-START: ${RUN_MODE} mode for ${duration}s...`);
     await startTrading();
     if (duration > 0) {

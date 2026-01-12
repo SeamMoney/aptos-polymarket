@@ -7,10 +7,10 @@
 | Worker 1 | 178.128.177.88 | **MASTER** (UI connects here) | 7 |
 | Worker 2 | 147.182.237.239 | Secondary | 7 |
 | Worker 3 | 161.35.231.0 | Secondary | 6 |
-| Fullnode | 164.92.117.18 | Aptos Fullnode | - |
+| Fullnode | aptos.cash.trading | Aptos Fullnode | - |
 
 **RPC Endpoints:**
-- Your Fullnode: http://164.92.117.18:8080/v1
+- Your Fullnode: http://aptos.cash.trading:8080/v1
 - QuickNode: https://polished-evocative-borough.aptos-testnet.quiknode.pro/...
 
 ---
@@ -198,13 +198,13 @@ kill -9 $(lsof -ti:3001)
 
 ### Low success rate
 - Fullnode might be overloaded - try `turbo` instead of `quantum`
-- Check fullnode is synced: `curl http://164.92.117.18:8080/v1`
+- Check fullnode is synced: `curl http://aptos.cash.trading:8080/v1`
 
 ---
 
 ## Infrastructure
 
-- **Fullnode**: 164.92.117.18:8080 (Digital Ocean, 8 vCPU, 32GB RAM)
+- **Fullnode**: aptos.cash.trading:8080 (Digital Ocean, 8 vCPU, 32GB RAM)
 - **Contract**: 0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1
 - **Market**: 0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96
 - **Accounts**: 20 accounts, ~24,800 APT each

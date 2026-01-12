@@ -53,7 +53,7 @@
 ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
 │   QuickNode     │   │  Aptos Labs     │   │  Your Fullnode  │
 │   (50 RPS)      │   │  (20-30 RPS)    │   │  (Unlimited)    │
-│ polished-...    │   │ api.testnet...  │   │ 164.92.117.18   │
+│ polished-...    │   │ api.testnet...  │   │ aptos.cash.trading   │
 └────────┬────────┘   └────────┬────────┘   └────────┬────────┘
          │                     │                     │
          └─────────────────────┴─────────────────────┘
@@ -95,7 +95,7 @@
 | Worker 1 | 178.128.177.88 | 9 | **Coordinator** | ~13K |
 | Worker 2 | 147.182.237.239 | 8 | Secondary | ~12K |
 | Worker 3 | 161.35.231.0 | 8 | Secondary | ~12K |
-| Fullnode | 164.92.117.18 | N/A | Aptos Fullnode (32GB) | - |
+| Fullnode | aptos.cash.trading | N/A | Aptos Fullnode (32GB) | - |
 | **Total** | | **25** | | **~37K** |
 
 **Worker Coordination:**
@@ -109,7 +109,7 @@
 |----------|------------|-------|
 | QuickNode | 50 RPS (Build plan) | Primary for frontend |
 | Aptos Labs API | 20-30 RPS | Fallback |
-| Your Fullnode (164.92.117.18:8080) | Unlimited | HFT transactions |
+| Your Fullnode (aptos.cash.trading:8080) | Unlimited | HFT transactions |
 
 ```
 QuickNode URL: https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1

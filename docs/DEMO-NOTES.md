@@ -22,7 +22,7 @@
   - Worker 1: `178.128.177.88` (9 accounts)
   - Worker 2: `147.182.237.239` (8 accounts)
   - Worker 3: `161.35.231.0` (8 accounts)
-  - Fullnode: `164.92.117.18:8080`
+  - Fullnode: `aptos.cash.trading:8080`
 - On-chain outcome labels:
   - `["J.D. Vance","Marco Rubio","Donald Trump","Ron DeSantis","Tucker Carlson","Other"]`
 - Faucet address (frontend):

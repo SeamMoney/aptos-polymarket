@@ -13,7 +13,7 @@
 set -e
 
 # Configuration
-SERVER_IP="164.92.117.18"  # Your fullnode VM
+SERVER_IP="aptos.cash.trading"  # Your fullnode VM
 SERVER_PORT="3001"
 DEMO_URL="https://aptos-polymarket.vercel.app/demo-day"
 

@@ -10,7 +10,7 @@ import { Aptos, AptosConfig, Network, Account, Ed25519PrivateKey } from '@aptos-
 
 const CONTRACT_ADDRESS = "0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1";
 const MARKET_ADDRESS = "0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96";
-const FULLNODE_URL = process.env.FULLNODE_URL || 'http://164.92.117.18:8080/v1';
+const FULLNODE_URL = process.env.FULLNODE_URL || 'https://aptos.cash.trading/v1';
 
 // All 20 private keys (first 4 secp256k1, rest ed25519)
 const ALL_PRIVATE_KEYS = [

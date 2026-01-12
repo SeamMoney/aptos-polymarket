@@ -132,7 +132,7 @@ npm run dev
 |----------|------------|-------|
 | QuickNode | 50 RPS | Primary for frontend |
 | Aptos Labs | 20-30 RPS | Fallback |
-| Your Fullnode (164.92.117.18:8080) | Unlimited | HFT transactions |
+| Your Fullnode (aptos.cash.trading:8080) | Unlimited | HFT transactions |
 
 ---
 
@@ -197,7 +197,7 @@ To eliminate rate limits entirely, run your own Aptos fullnode:
 
 ### Current Fullnode
 
-- IP: 164.92.117.18:8080
+- IP: aptos.cash.trading:8080
 - Type: DigitalOcean General Purpose 32GB
 
 ---

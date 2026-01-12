@@ -14,7 +14,7 @@ set -e
 WORKER1="178.128.177.88"   # 7 accounts - UI connected (master)
 WORKER2="147.182.237.239"  # 7 accounts
 WORKER3="161.35.231.0"     # 6 accounts
-FULLNODE="164.92.117.18"   # Your fullnode
+FULLNODE="aptos.cash.trading"   # Your fullnode
 
 # Colors
 RED='\033[0;31m'

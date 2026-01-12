@@ -11,7 +11,7 @@
 # Usage: ./scripts/demo-monitor.sh
 #
 
-SERVER_IP="164.92.117.18"
+SERVER_IP="aptos.cash.trading"
 SERVER_PORT="3001"
 
 # Colors
