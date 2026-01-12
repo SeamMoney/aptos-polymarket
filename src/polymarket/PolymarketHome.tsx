@@ -30,17 +30,6 @@ export function PolymarketHome() {
     }
   }, [loading, initialLoadDone]);
 
-  // Normalize question text for deduplication (handles punctuation, whitespace, case)
-  const normalizeQuestion = (q: string): string => {
-    return q
-      .toLowerCase()
-      .trim()
-      .replace(/[?!.,;:'"]/g, '')  // Remove punctuation
-      .replace(/\s+/g, ' ')        // Normalize whitespace
-      .replace(/\$/g, '')          // Remove $ symbols
-      .substring(0, 50);           // First 50 chars for matching (handles slight variations)
-  };
-
   // Combine on-chain markets with mock markets (on-chain first, deduplicated)
   // Wait for initial load to prevent visual swap
   const allMarkets: Market[] = useMemo(() => {
@@ -48,19 +37,16 @@ export function PolymarketHome() {
     if (!initialLoadDone && loading) {
       return [];
     }
-    if (showRealMarkets && onChainMarkets.length > 0) {
-      // Deduplicate: filter out mock markets that have same question as on-chain
-      // Use normalized comparison to handle punctuation/whitespace differences
-      const onChainQuestions = new Set(
-        onChainMarkets.map(m => normalizeQuestion(m.question))
-      );
-      const filteredMockMarkets = mockMarkets.filter(
-        m => !onChainQuestions.has(normalizeQuestion(m.question))
-      );
-      // Debug: log which mock markets are being filtered
-      console.log('[Dedup] On-chain markets:', onChainMarkets.length, 'Mock filtered out:', mockMarkets.length - filteredMockMarkets.length);
-      return [...onChainMarkets, ...filteredMockMarkets];
+    if (showRealMarkets) {
+      // In Live mode, ONLY show on-chain markets (no mock mixing to prevent flickering)
+      // This prevents showing mock data that gets replaced by on-chain data
+      if (onChainMarkets.length > 0) {
+        return onChainMarkets;
+      }
+      // If no on-chain markets loaded yet, show empty (will show skeleton if still loading)
+      return [];
     }
+    // In Demo mode, show mock markets
     return mockMarkets;
   }, [onChainMarkets, showRealMarkets, initialLoadDone, loading]);
 

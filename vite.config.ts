@@ -9,7 +9,6 @@ export default defineConfig({
     basicSsl(), // Enable HTTPS for local dev (required for Google/Petra Web login)
   ],
   server: {
-    https: true,
     port: 5174,
   },
   define: {
