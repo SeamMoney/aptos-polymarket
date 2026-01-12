@@ -23,8 +23,8 @@ export const GEOMI_CONFIG = {
   graphqlUrl: import.meta.env.VITE_GEOMI_GRAPHQL_URL as string | undefined,
   apiKey: import.meta.env.VITE_GEOMI_API_KEY as string | undefined,
 
-  // Processor instance ID (for reference)
-  processorId: 'cmk83k7ov0003s6017cgn7stm',
+  // Processor instance ID (aptos-polymarket-processor-02 for USD1 contract)
+  processorId: 'cmkbsbsva002os601tlhj0kv9',
 
   // Default query settings
   defaults: {
