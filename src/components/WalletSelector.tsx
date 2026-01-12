@@ -28,10 +28,13 @@ const isIOSSafari = () => {
 };
 
 // Generate Petra deep link to open this dApp in Petra mobile browser
+// Note: The URL should NOT be encoded per Petra docs
+// Example: https://petra.app/explore?link=https://app.example.com
 const getPetraDeepLink = () => {
   if (typeof window === 'undefined') return '';
-  const currentUrl = encodeURIComponent(window.location.href);
-  return `https://petra.app/explore?link=${currentUrl}`;
+  // Use the base URL without query params for cleaner deep link
+  const baseUrl = `${window.location.origin}${window.location.pathname}`;
+  return `https://petra.app/explore?link=${baseUrl}`;
 };
 
 // Custom wallet icons (override outdated icons from adapters)
