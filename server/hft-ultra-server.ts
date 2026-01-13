@@ -46,7 +46,7 @@ const USE_USD1 = process.env.USE_USD1 === 'true';
 let USD1_METADATA: string | null = process.env.USD1_METADATA || null;
 
 // Available run modes with escalating TPS targets
-type RunMode = 'dryrun' | 'light' | 'normal' | 'turbo' | 'ultra' | 'quantum' | 'dec28' | 'dec28_real' | 'verify';
+type RunMode = 'dryrun' | 'light' | 'normal' | 'turbo' | 'ultra' | 'quantum' | 'beast' | 'dec28' | 'dec28_real' | 'verify';
 
 function resolveMode(): RunMode {
   const argMode = process.argv[2];
@@ -57,6 +57,7 @@ function resolveMode(): RunMode {
   if (argMode === 'turbo') return 'turbo';
   if (argMode === 'ultra') return 'ultra';
   if (argMode === 'quantum') return 'quantum';
+  if (argMode === 'beast') return 'beast';
   if (argMode === 'dec28') return 'dec28';
   if (argMode === 'dec28_real') return 'dec28_real';
   // Default to normal for backwards compatibility with 'prod'
@@ -137,6 +138,17 @@ const MODE_CONFIGS: Record<RunMode, {
     TRADE_SAMPLE_RATE: 0.05,    // 5% = ~1500 trades/sec shown - busy but manageable
     TARGET_TPS: 30000,
     MAX_PENDING: 300,
+  },
+  // 🦾 BEAST MODE - Optimized for M1 Max / High-end local machines
+  // Faster than turbo but avoids macOS port exhaustion (EADDRNOTAVAIL)
+  beast: {
+    BATCH_SIZE: 50,             // Moderate batches - M1 CPU isn't the bottleneck
+    BATCH_DELAY_MS: 25,         // Enough delay for TCP port recycling
+    USE_MULTI_RPC: true,
+    FIRE_AND_FORGET_RATIO: 0.88,// High but sustainable
+    TRADE_SAMPLE_RATE: 0.06,
+    TARGET_TPS: 5000,           // Realistic target for single machine
+    MAX_PENDING: 200,           // Same as ultra
   },
   // EXACT Dec 28 config that achieved 4,441 TPS
   dec28: {
@@ -2227,6 +2239,7 @@ const MODE_INFO: Record<RunMode, { emoji: string; desc: string }> = {
   turbo:   { emoji: '⚡', desc: 'Medium-high intensity (~3K TPS)' },
   ultra:   { emoji: '🔥', desc: 'High intensity (~10K TPS)' },
   quantum: { emoji: '🚀', desc: 'MAXIMUM POWER (~30K+ TPS)' },
+  beast:   { emoji: '🦾', desc: 'M1 Max optimized (~5K TPS)' },
   dec28:   { emoji: '🎯', desc: 'Dec 28 config (4K+ TPS achieved)' },
   dec28_real: { emoji: '✅', desc: 'ACTUAL Dec 28 config from e4083b2 (no port exhaustion)' },
   verify:  { emoji: '🔍', desc: 'Full on-chain verification (~1 TPS)' },
@@ -2326,7 +2339,7 @@ server.listen(CONFIG.PORT, '0.0.0.0', async () => {
   // Auto-start trading ONLY if mode is passed as command line arg
   const mode = process.argv[2];
   const duration = parseInt(process.argv[3]) || 60;
-  if (mode === 'dryrun' || mode === 'light' || mode === 'normal' || mode === 'turbo' || mode === 'ultra' || mode === 'quantum' || mode === 'dec28' || mode === 'dec28_real' || mode === 'verify' || mode === 'prod') {
+  if (mode === 'dryrun' || mode === 'light' || mode === 'normal' || mode === 'turbo' || mode === 'ultra' || mode === 'quantum' || mode === 'beast' || mode === 'dec28' || mode === 'dec28_real' || mode === 'verify' || mode === 'prod') {
     console.log(`\n${modeInfo.emoji} AUTO-START: ${RUN_MODE} mode for ${duration}s...`);
     await startTrading();
     if (duration > 0) {
