@@ -2,12 +2,12 @@
 
 ## Verified Peak Performance
 
-### January 12, 2026 - 3,371 TPS (USD1 Contract, 3 Workers)
+### January 12, 2026 - 3,371 TPS (3 Workers, Turbo Mode)
 
 **Time:** 7:12 PM - 7:15 PM PST
-**Infrastructure:** 3 DigitalOcean droplets running turbo mode
-**Contract:** USD1 v2 (`0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134`)
-**Collateral:** USD1 Stablecoin
+**Contract Address:** `0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134`
+**Module:** `multi_outcome_market` (Prediction Market with LMSR pricing)
+**Collateral:** USD1 Stablecoin (Fungible Asset, avoids APT global state contention)
 
 #### On-Chain Proof
 
@@ -23,12 +23,12 @@
 
 #### Server-Reported Results (All 3 Workers)
 
-| Worker | Total Trades | Success | Failed | Success Rate |
-|--------|-------------|---------|--------|--------------|
-| Worker 1 | 13,786 | 13,702 | 84 | 99.4% |
-| Worker 2 | 7,016 | 2,768 | 4,248 | 39.5% |
-| Worker 3 | 15,330 | 12,073 | 3,257 | 78.8% |
-| **Total** | **36,132** | **28,543** | **7,589** | **79.0%** |
+| Worker | IP Address | Total Trades | Success | Failed | Success Rate | Notes |
+|--------|------------|-------------|---------|--------|--------------|-------|
+| Worker 1 | 178.128.177.88 | 13,786 | 13,702 | 84 | 99.4% | Primary coordinator, stable |
+| Worker 2 | 147.182.237.239 | 7,016 | 2,768 | 4,248 | 39.5% | Fullnode connectivity issues |
+| Worker 3 | 161.35.231.0 | 15,330 | 12,073 | 3,257 | 78.8% | Good throughput |
+| **Total** | - | **36,132** | **28,543** | **7,589** | **79.0%** | - |
 
 #### Full On-Chain Metrics
 
@@ -46,35 +46,91 @@
 | Total State Changes | 90,565 |
 | Total Events | 20,383 |
 
-#### Configuration Used (turbo mode, 3 workers)
+#### Worker Infrastructure Details
+
+| Property | Worker 1 | Worker 2 | Worker 3 |
+|----------|----------|----------|----------|
+| **IP Address** | 178.128.177.88 | 147.182.237.239 | 161.35.231.0 |
+| **Provider** | DigitalOcean | DigitalOcean | DigitalOcean |
+| **Region** | SFO3 | SFO3 | SFO3 |
+| **Droplet Size** | 2 vCPU / 4GB RAM | 2 vCPU / 4GB RAM | 2 vCPU / 4GB RAM |
+| **OS** | Ubuntu 22.04 | Ubuntu 22.04 | Ubuntu 22.04 |
+| **Node.js** | v20.x | v20.x | v20.x |
+| **Script** | `hft-ultra-server.ts` | `hft-ultra-server.ts` | `hft-ultra-server.ts` |
+| **Run Mode** | turbo | turbo | turbo |
+| **Run Duration** | 120 seconds | 120 seconds | 120 seconds |
+| **Trading Accounts** | 20 (from ULTRA_PRIVATE_KEYS) | 20 (from ULTRA_PRIVATE_KEYS) | 20 (from ULTRA_PRIVATE_KEYS) |
+
+#### Worker Launch Commands
+
+```bash
+# Worker 1 (launched first as coordinator)
+ssh root@178.128.177.88 "cd /opt/aptos-hft && source .env.usd1 && \
+  export USE_BATCH_SUBMIT=false && \
+  nohup npx tsx server/hft-ultra-server.ts turbo 120 > /tmp/hft-w1.log 2>&1 &"
+
+# Worker 2 (launched 2 seconds after Worker 1)
+ssh root@147.182.237.239 "cd /opt/aptos-hft && source .env.usd1 && \
+  export USE_BATCH_SUBMIT=false && \
+  nohup npx tsx server/hft-ultra-server.ts turbo 120 > /tmp/hft-w2.log 2>&1 &"
+
+# Worker 3 (launched 2 seconds after Worker 2)
+ssh root@161.35.231.0 "cd /opt/aptos-hft && source .env.usd1 && \
+  export USE_BATCH_SUBMIT=false && \
+  nohup npx tsx server/hft-ultra-server.ts turbo 120 > /tmp/hft-w3.log 2>&1 &"
+```
+
+#### Environment Variables (`.env.usd1`)
+
+```bash
+# Contract configuration
+CONTRACT_ADDRESS=0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134
+USE_USD1=true
+USD1_METADATA=0x69091fbab5f7d635ee7ac5098cf0c1efbe31d68fec0f2cd565e8d168daf52832
+
+# 12 multi-outcome markets (USD1 collateral)
+MULTI_MARKETS=0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052,0xf3256638cad294e47c8cc6bb1a6a0fdd85b29ef427b3118028c34b9f061aa50d,...
+
+# RPC endpoints
+FULLNODE_URL=http://aptos.cash.trading:8080/v1
+APTOS_API_KEY=<quicknode_api_key>
+
+# 20 trading accounts (each worker has same 20 accounts, orderless txns prevent conflicts)
+ULTRA_PRIVATE_KEYS=0x...,0x...,0x...  # 20 Ed25519 private keys
+```
+
+#### Configuration Used (turbo mode)
 
 ```typescript
 turbo: {
-  BATCH_SIZE: 30,
-  BATCH_DELAY_MS: 40,
-  USE_MULTI_RPC: true,
-  FIRE_AND_FORGET_RATIO: 0.85,
-  TARGET_TPS: 3000,
-  MAX_PENDING: 150,
-  USE_BATCH_SUBMIT: false,  // Disabled due to BCS encoding issues
+  BATCH_SIZE: 30,              // 30 transactions per batch
+  BATCH_DELAY_MS: 40,          // 40ms delay between batches
+  USE_MULTI_RPC: true,         // Distribute across RPC endpoints
+  FIRE_AND_FORGET_RATIO: 0.85, // 85% don't wait for response
+  TARGET_TPS: 3000,            // Target throughput
+  MAX_PENDING: 100,            // Max pending transactions
+  USE_BATCH_SUBMIT: false,     // Disabled due to BCS encoding issues
+  USE_ORDERLESS: true,         // AIP-123 orderless transactions (no sequence numbers)
 }
 ```
 
-#### Infrastructure
+#### RPC Endpoints Used
 
-- **Worker 1:** 178.128.177.88
-- **Worker 2:** 147.182.237.239
-- **Worker 3:** 161.35.231.0
-- **Fullnode:** aptos.cash.trading:8080 (with QuickNode fallback)
+| Endpoint | URL | Purpose | Rate Limit |
+|----------|-----|---------|------------|
+| **Primary Fullnode** | `http://aptos.cash.trading:8080/v1` | Transaction submission | Unlimited (self-hosted) |
+| **QuickNode Fallback** | `https://polished-evocative-borough.aptos-testnet.quiknode.pro/.../v1` | Fallback & analysis | 25 RPS |
+| **Public API** | `https://api.testnet.aptoslabs.com/v1` | Backup | Rate limited |
 
 ---
 
-### January 12, 2026 - 2,194 TPS (USD1 Contract)
+### January 12, 2026 - 2,194 TPS (Single Worker, Turbo Mode)
 
 **Time:** 6:39 PM - 6:45 PM PST
-**Infrastructure:** Single worker (Worker 1) running turbo mode
-**Contract:** USD1 v2 (`0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134`)
-**Collateral:** USD1 Stablecoin (not APT)
+**Contract Address:** `0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134`
+**Module:** `multi_outcome_market` (Prediction Market with LMSR pricing)
+**Collateral:** USD1 Stablecoin (Fungible Asset)
+**Infrastructure:** Single worker (Worker 1: 178.128.177.88) running turbo mode
 
 #### On-Chain Proof
 

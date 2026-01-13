@@ -257,45 +257,118 @@ A typical `buy_outcome` transaction modifies:
 
 ## Infrastructure Configuration
 
-### Worker Deployment
+### Worker Deployment Summary
 
-| Worker | IP Address | Location | Status |
-|--------|------------|----------|--------|
-| Worker 1 | 178.128.177.88 | DigitalOcean | 13,702 success / 84 failed (99.4%) |
-| Worker 2 | 147.182.237.239 | DigitalOcean | 2,768 success / 4,248 failed (39.5%) |
-| Worker 3 | 161.35.231.0 | DigitalOcean | 12,073 success / 3,257 failed (78.8%) |
+| Worker | IP Address | Total Trades | Success | Failed | Success Rate | Notes |
+|--------|------------|--------------|---------|--------|--------------|-------|
+| Worker 1 | 178.128.177.88 | 13,786 | 13,702 | 84 | 99.4% | Primary coordinator, stable throughout |
+| Worker 2 | 147.182.237.239 | 7,016 | 2,768 | 4,248 | 39.5% | Fullnode connectivity issues (TRANSACTION_EXPIRED) |
+| Worker 3 | 161.35.231.0 | 15,330 | 12,073 | 3,257 | 78.8% | Good throughput, some E_INVALID_OUTCOME errors |
+| **Total** | - | **36,132** | **28,543** | **7,589** | **79.0%** | - |
 
-**Note:** Worker 2 had connectivity issues with the fullnode, causing TRANSACTION_EXPIRED errors.
+### Detailed Worker Specifications
+
+| Property | Worker 1 | Worker 2 | Worker 3 |
+|----------|----------|----------|----------|
+| **IP Address** | 178.128.177.88 | 147.182.237.239 | 161.35.231.0 |
+| **Provider** | DigitalOcean | DigitalOcean | DigitalOcean |
+| **Region** | SFO3 (San Francisco) | SFO3 (San Francisco) | SFO3 (San Francisco) |
+| **Droplet Size** | 2 vCPU / 4GB RAM | 2 vCPU / 4GB RAM | 2 vCPU / 4GB RAM |
+| **OS** | Ubuntu 22.04 LTS | Ubuntu 22.04 LTS | Ubuntu 22.04 LTS |
+| **Node.js Version** | v20.x (via nvm) | v20.x (via nvm) | v20.x (via nvm) |
+| **Working Directory** | `/opt/aptos-hft` | `/opt/aptos-hft` | `/opt/aptos-hft` |
+| **Script** | `server/hft-ultra-server.ts` | `server/hft-ultra-server.ts` | `server/hft-ultra-server.ts` |
+| **Run Mode** | turbo | turbo | turbo |
+| **Run Duration** | 120 seconds | 120 seconds | 120 seconds |
+| **Trading Accounts** | 20 (shared across workers) | 20 (shared across workers) | 20 (shared across workers) |
+| **Log File** | `/tmp/hft-w1.log` | `/tmp/hft-w2.log` | `/tmp/hft-w3.log` |
+
+### Worker Launch Sequence
+
+Workers were launched with 2-second delays to avoid overwhelming the fullnode at startup:
+
+```bash
+# Step 1: Kill any existing processes on all workers
+ssh root@178.128.177.88 "pkill -9 -f tsx; pkill -9 node"
+ssh root@147.182.237.239 "pkill -9 -f tsx; pkill -9 node"
+ssh root@161.35.231.0 "pkill -9 -f tsx; pkill -9 node"
+
+# Step 2: Launch Worker 1 (primary coordinator)
+ssh root@178.128.177.88 "cd /opt/aptos-hft && source .env.usd1 && \
+  export USE_BATCH_SUBMIT=false && \
+  nohup npx tsx server/hft-ultra-server.ts turbo 120 > /tmp/hft-w1.log 2>&1 &"
+
+sleep 2  # Wait before launching next worker
+
+# Step 3: Launch Worker 2
+ssh root@147.182.237.239 "cd /opt/aptos-hft && source .env.usd1 && \
+  export USE_BATCH_SUBMIT=false && \
+  nohup npx tsx server/hft-ultra-server.ts turbo 120 > /tmp/hft-w2.log 2>&1 &"
+
+sleep 2
+
+# Step 4: Launch Worker 3
+ssh root@161.35.231.0 "cd /opt/aptos-hft && source .env.usd1 && \
+  export USE_BATCH_SUBMIT=false && \
+  nohup npx tsx server/hft-ultra-server.ts turbo 120 > /tmp/hft-w3.log 2>&1 &"
+```
+
+### Environment Configuration (`.env.usd1`)
+
+Each worker loads the same environment file with these key variables:
+
+```bash
+# Contract Configuration
+CONTRACT_ADDRESS=0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134
+USE_USD1=true
+USD1_METADATA=0x69091fbab5f7d635ee7ac5098cf0c1efbe31d68fec0f2cd565e8d168daf52832
+
+# 12 Multi-Outcome Markets (USD1 Collateral)
+MULTI_MARKETS=0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052,0xf3256638cad294e47c8cc6bb1a6a0fdd85b29ef427b3118028c34b9f061aa50d,0x192f7cfc0c8151deec37c6280c17b55f7557a04b580b486d6076cc11955ddde3,0x9e4583c0af174a119b5316ae84988f4fd988259de35ef95447b371744a355762,0xd82731a9a2259ccfef2fd13db13720c7cc927c5b7879aa160aecc618c4d4654f,0x77a65b92664f992ccbd8a17d73a5f2fc933523ce64a1c475d1db1c0fc2acf42a,0xa84ba7b7364a40031e29d355d7a5f48fd54f922c8eed0ed0009c5d660a6da339,0x8187c1b3b7ca06dbcbac36fe280e0b5343b744c5a299a43263f9162738d4d792,0x551f153ff61f94311a22592550b0ede4b3b57338af161bd9472f21e15da23b4b,0x742e3c66cb6570351ceb7cf1b2df87e726c708b786109a8cdae93b0c3c7b5a04,0x35df09c98f8668c06f6777e98e3a0405fe894c271f06ba2fed0b322e2a5c2f16,0xd3227afa81dce5fa0e8f86f61dc7f3215ee799a0d2e6a112a988e5ac732bf719
+
+# RPC Endpoints
+FULLNODE_URL=http://aptos.cash.trading:8080/v1
+APTOS_API_KEY=<quicknode_api_key_redacted>
+
+# 20 Trading Accounts (Ed25519 private keys)
+# Each account is pre-funded with USD1 tokens
+# Orderless transactions (AIP-123) allow same accounts on multiple workers without sequence conflicts
+ULTRA_PRIVATE_KEYS=0x...,0x...,0x...  # 20 keys (redacted)
+```
 
 ### RPC Endpoints Used
 
-| Endpoint | Purpose |
-|----------|---------|
-| `aptos.cash.trading:8080` | Primary fullnode (custom, unlimited RPS) |
-| `polished-evocative-borough.aptos-testnet.quiknode.pro` | QuickNode fallback |
+| Endpoint | URL | Purpose | Rate Limit |
+|----------|-----|---------|------------|
+| **Primary Fullnode** | `http://aptos.cash.trading:8080/v1` | Transaction submission | Unlimited (self-hosted Aptos fullnode) |
+| **QuickNode** | `https://polished-evocative-borough.aptos-testnet.quiknode.pro/.../v1` | Fallback & post-test analysis | 25 RPS |
+| **Public API** | `https://api.testnet.aptoslabs.com/v1` | Backup endpoint | Rate limited |
 
 ### HFT Server Configuration (Turbo Mode)
 
 ```typescript
 turbo: {
-  BATCH_SIZE: 30,           // Transactions per batch
-  BATCH_DELAY_MS: 40,       // Delay between batches
-  USE_MULTI_RPC: true,      // Distribute across RPCs
-  FIRE_AND_FORGET_RATIO: 0.85,  // 85% don't wait for response
-  TARGET_TPS: 3000,
-  MAX_PENDING: 100,
-  USE_BATCH_SUBMIT: false,  // Disabled (BCS encoding issues)
-  USE_ORDERLESS: true,      // AIP-123 orderless transactions
+  BATCH_SIZE: 30,              // 30 transactions per batch per account
+  BATCH_DELAY_MS: 40,          // 40ms delay between batches
+  USE_MULTI_RPC: true,         // Distribute requests across RPC endpoints
+  FIRE_AND_FORGET_RATIO: 0.85, // 85% of txns don't wait for confirmation
+  TARGET_TPS: 3000,            // Target throughput (theoretical max)
+  MAX_PENDING: 100,            // Max pending unconfirmed transactions
+  USE_BATCH_SUBMIT: false,     // Disabled due to BCS ULEB128 encoding issues
+  USE_ORDERLESS: true,         // AIP-123 orderless transactions enabled
+  SEQUENCE_PIPELINE: 10,       // Sequence number pipeline depth (unused with orderless)
 }
 ```
 
 ### Key Optimizations Used
 
-1. **Orderless Transactions (AIP-123):** Eliminates sequence number bottleneck
-2. **20 Trading Accounts:** Parallel submission without sequence conflicts
-3. **Fire-and-Forget:** 85% of transactions don't wait for confirmation
-4. **USD1 Collateral:** Avoids APT global state contention
-5. **Multi-RPC:** Distributes load across endpoints
+1. **Orderless Transactions (AIP-123):** Eliminates sequence number bottleneck - transactions don't need sequential nonces, enabling true parallelism across workers
+2. **20 Trading Accounts per Worker:** Each account can submit independently; with orderless, same accounts can be used across workers
+3. **Fire-and-Forget (85%):** Most transactions are submitted without waiting for confirmation, maximizing throughput
+4. **USD1 Stablecoin Collateral:** Uses Fungible Asset standard instead of APT, avoiding global state contention on APT balance resources
+5. **Multi-RPC Load Distribution:** Spreads requests across multiple endpoints to avoid rate limiting
+6. **Self-Hosted Fullnode:** `aptos.cash.trading` provides unlimited RPS for transaction submission
+7. **Batch Submission:** Groups 30 transactions per batch with 40ms delays for optimal network utilization
 
 ---
 
