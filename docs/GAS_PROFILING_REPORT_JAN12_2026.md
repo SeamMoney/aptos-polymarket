@@ -372,6 +372,184 @@ turbo: {
 
 ---
 
+## Multi-Market TPS Scaling: Thesis, Assumptions & Results
+
+### The Original Thesis
+
+The prediction market contract was designed with **Aggregator V2 (AIP-47)** for parallel-safe reserve updates. The thesis was:
+
+> **By distributing trades across multiple independent markets, we can reduce aggregator contention and "stack" TPS linearly.**
+
+### Theoretical TPS Scaling Model
+
+| Configuration | Markets | Expected Contention | Theoretical TPS |
+|---------------|---------|--------------------|-----------------|
+| Baseline | 1 market | ~53% aggregator contention | ~30,000 |
+| Sharded | 3 markets (1 per worker) | ~35% contention | ~60,000 |
+| Full Distribution | 10+ markets (round-robin) | ~18% contention | ~90,000+ |
+
+**Rationale:** Each market has its own `MultiMarket` resource with separate aggregators:
+- `base_reserve: Aggregator<u64>`
+- `total_collateral: Aggregator<u64>`
+- `accumulated_fees: Aggregator<u64>`
+- Per-outcome `reserve: Aggregator<u64>`
+
+Transactions hitting different markets should execute in parallel without contention.
+
+### Contract Design for Parallelization
+
+The `multi_outcome_market.move` contract uses aggregators for all frequently-updated state:
+
+```move
+struct MultiMarket has key {
+    total_collateral: Aggregator<u64>,  // Parallel-safe
+    base_reserve: Aggregator<u64>,       // Parallel-safe
+    accumulated_fees: Aggregator<u64>,   // Parallel-safe
+    // ...
+}
+
+struct OutcomeToken has store {
+    reserve: Aggregator<u64>,  // Per-outcome, parallel-safe
+    // ...
+}
+```
+
+Trading functions use commutative operations:
+
+```move
+// Buy: parallel-safe delta operations
+aggregator_v2::add(&mut market.base_reserve, amount_after_fee);
+aggregator_v2::sub(&mut outcome.reserve, tokens_out);
+aggregator_v2::add(&mut market.total_collateral, collateral_in);
+
+// Sell: parallel-safe delta operations
+aggregator_v2::add(&mut outcome.reserve, tokens_in);
+aggregator_v2::sub(&mut market.base_reserve, collateral_out);
+aggregator_v2::sub(&mut market.total_collateral, collateral_out);
+```
+
+### What Actually Happened
+
+| Date | Markets | Configuration | Peak TPS | Notes |
+|------|---------|---------------|----------|-------|
+| Dec 28, 2025 | 1 | Single market, APT | ~4,000 | Grafana observed |
+| Jan 6, 2026 | 1 | Single market, APT | 3,773 | Verified on-chain |
+| Jan 12, 2026 | 12 | Multi-market, USD1 | 3,371 | Verified on-chain |
+
+**Observation:** Adding 12 markets did NOT significantly increase TPS beyond the single-market baseline.
+
+### Analysis: Why Multi-Market Didn't Scale as Expected
+
+#### 1. Global State Contention (Unavoidable)
+
+All Aptos transactions write to global resources at address `0xa` for gas payment:
+
+| Resource | Address | Writes Per Txn |
+|----------|---------|----------------|
+| `coin::PairedCoinType` | `0xa` | 1 |
+| `coin::PairedFungibleAssetRefs` | `0xa` | 1 |
+| `fungible_asset::ConcurrentSupply` | `0xa` | 1 |
+| `fungible_asset::Metadata` | `0xa` | 1 |
+| `object::ObjectCore` | `0xa` | 1 |
+| `primary_fungible_store::DeriveRefPod` | `0xa` | 1 |
+
+**Impact:** Even with separate markets, all transactions serialize on APT gas payment writes at `0xa`. This creates a ~356:1 contention ratio regardless of market distribution.
+
+#### 2. borrow_global_mut Serialization
+
+The contract uses `borrow_global_mut<MultiMarket>` which may force write-set inclusion:
+
+```move
+let market = borrow_global_mut<MultiMarket>(market_addr);  // Exclusive lock on entire resource
+```
+
+Even though individual aggregator operations are parallel-safe, the mutable borrow might serialize transactions within the same market.
+
+#### 3. Fungible Asset Operations
+
+Each trade performs fungible asset deposits/withdrawals that touch user stores:
+
+```move
+// Withdraw collateral from user
+primary_fungible_store::withdraw(buyer, collateral_metadata, collateral_in);
+
+// Deposit to market
+fungible_asset::deposit(market.collateral_store, payment);
+
+// Mint outcome tokens
+let tokens = fungible_asset::mint(&outcome.mint_ref, tokens_out);
+primary_fungible_store::deposit(buyer_addr, tokens);
+```
+
+These operations have their own contention patterns separate from the market aggregators.
+
+### USD1 vs APT Collateral Investigation
+
+**Original Hypothesis:** Using USD1 (native Fungible Asset) instead of APT would avoid coin-FA pairing overhead and improve parallelization.
+
+**Finding:** Both APT and USD1 transactions show identical writes to `0xa` because:
+1. Gas is always paid in APT
+2. APT gas payment triggers coin-FA pairing layer
+3. The pairing resources are written regardless of collateral type
+
+| Metric | APT Collateral | USD1 Collateral |
+|--------|----------------|-----------------|
+| Writes at `0xa` | 6 | 6 |
+| Total state changes | 18 | 15 |
+| Peak TPS observed | 3,773 | 3,371 |
+
+**Conclusion:** USD1 may reduce total state changes slightly (15 vs 18) but doesn't eliminate `0xa` contention.
+
+### Benchmark Scripts (Not Yet Run Conclusively)
+
+Scripts were created to A/B test single vs multi-market:
+
+```bash
+# Single market baseline
+./scripts/benchmark-multi-market.sh  # Compares 1 market vs 5 markets
+
+# Multi-market with sharding
+./scripts/multi-market-tps.sh 300 sharded  # 1 market per worker
+./scripts/multi-market-tps.sh 300 all      # All 10 markets round-robin
+```
+
+**Status:** These benchmarks have not been run with controlled conditions to produce conclusive results.
+
+### Open Questions for Aptos Team
+
+1. **Aggregator Contention:** Does `borrow_global_mut` force serialization even when only aggregators are mutated?
+
+2. **Gas Payment Overhead:** Can high-TPS applications avoid the `coin::PairedCoinType` writes at `0xa`?
+
+3. **ConcurrentSupply:** Are `fungible_asset::mint` operations truly parallel via aggregators?
+
+4. **Object Sharding:** Would storing outcomes as separate objects (instead of a vector) improve parallelism?
+
+### Theoretical Maximum TPS
+
+Based on observed data, the practical TPS ceiling appears to be:
+
+| Bottleneck | Estimated Limit |
+|------------|-----------------|
+| APT gas payment (`0xa` writes) | ~4,000 TPS |
+| Single market aggregator | ~4,000 TPS |
+| Multi-market (current) | ~4,000 TPS |
+| Theoretical (no contention) | 100,000+ TPS |
+
+**Key Insight:** The limiting factor is NOT market aggregator contention, but global APT state contention from gas payments. Multi-market distribution doesn't help because all transactions still serialize on gas payment writes.
+
+### Recommendations
+
+1. **Investigate gas payment optimization** - Can APT gas writes be batched or use aggregators?
+
+2. **Profile actual contention** - Use Aptos internal tools to identify true hot keys
+
+3. **Test with sponsored transactions** - Remove gas payment from user transactions
+
+4. **Consider aggregator alternatives** - Are there more parallel-friendly patterns?
+
+---
+
 ## How to Verify On-Chain
 
 ### Verify Peak Block
