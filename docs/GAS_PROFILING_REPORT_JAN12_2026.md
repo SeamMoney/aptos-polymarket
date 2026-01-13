@@ -483,22 +483,78 @@ primary_fungible_store::deposit(buyer_addr, tokens);
 
 These operations have their own contention patterns separate from the market aggregators.
 
-### USD1 vs APT Collateral Investigation
+### USD1 vs APT Collateral: The Hypothesis That Was Wrong
 
-**Original Hypothesis:** Using USD1 (native Fungible Asset) instead of APT would avoid coin-FA pairing overhead and improve parallelization.
+#### The Original Hypothesis (Now Disproven)
 
-**Finding:** Both APT and USD1 transactions show identical writes to `0xa` because:
-1. Gas is always paid in APT
-2. APT gas payment triggers coin-FA pairing layer
-3. The pairing resources are written regardless of collateral type
+We hypothesized that using **USD1 (a native Fungible Asset)** instead of APT as collateral would achieve higher TPS because:
 
-| Metric | APT Collateral | USD1 Collateral |
-|--------|----------------|-----------------|
-| Writes at `0xa` | 6 | 6 |
-| Total state changes | 18 | 15 |
-| Peak TPS observed | 3,773 | 3,371 |
+> "Native Fungible Assets (like USD1) achieve higher TPS than APT because they avoid coin-to-FA pairing overhead. USD1 never accesses `CoinConversionMap`, `PairedCoinType`, or `PairedFungibleAssetRefs`."
 
-**Conclusion:** USD1 may reduce total state changes slightly (15 vs 18) but doesn't eliminate `0xa` contention.
+**This turned out to be incorrect.**
+
+#### Why We Thought This Would Work
+
+Aptos has two token standards:
+1. **Legacy Coin Standard** (`coin::Coin<T>`) - original, uses global `CoinInfo`
+2. **Modern Fungible Asset Standard** (AIP-21) - newer, uses per-user `FungibleStore` objects
+
+APT is a "migrated coin" that supports both standards via AIP-63, creating a pairing layer:
+```
+APT = coin::Coin<AptosCoin> <--> Fungible Asset (paired)
+```
+
+We thought: if we use USD1 (pure Fungible Asset, no coin pairing), we'd avoid the global state at `0xa`.
+
+#### What We Actually Found
+
+When we analyzed actual on-chain transactions, **both APT and USD1 transactions write to the same global resources at `0xa`**:
+
+```
+0x1::coin::PairedCoinType
+0x1::coin::PairedFungibleAssetRefs
+0x1::fungible_asset::ConcurrentSupply
+0x1::fungible_asset::Metadata
+0x1::object::ObjectCore
+0x1::primary_fungible_store::DeriveRefPod
+```
+
+**Why?** Because **all Aptos transactions pay gas in APT**, which triggers the coin-FA pairing layer regardless of what collateral the transaction uses.
+
+#### Transaction Analysis Data
+
+| Metric | APT sell_outcome | USD1 mint | Simple APT transfer |
+|--------|------------------|-----------|---------------------|
+| Total state changes | 18 | 15 | 12 |
+| Unique addresses touched | 7 | 5 | 5 |
+| **Writes at `0xa`** | **6** | **6** | **6** |
+| Gas used | 16 | 544 | 16 |
+
+**Key Observation:** The number of writes at `0xa` is **identical** across all transaction types.
+
+#### TPS Comparison
+
+| Contract | Collateral | Peak TPS | Date |
+|----------|------------|----------|------|
+| `0xa2e5...` (old) | APT | 3,773 | Jan 6, 2026 |
+| `0xbdea1...` (new) | USD1 | 3,371 | Jan 12, 2026 |
+
+**Result:** USD1 did NOT improve TPS. In fact, it was slightly lower (though this could be due to other factors like network conditions).
+
+#### Why USD1 Doesn't Help
+
+1. **Gas is always paid in APT** - Every transaction writes to APT's global state at `0xa`
+2. **Pairing layer is unavoidable** - Even if collateral is USD1, gas payment triggers `PairedCoinType` writes
+3. **The bottleneck is gas, not collateral** - Collateral transfers use per-user FungibleStores (good), but gas uses global state (bad)
+
+#### What Might Actually Help
+
+Based on this analysis, the only ways to avoid `0xa` contention would be:
+1. **Sponsored/gasless transactions** - If someone else pays gas, user's txn might avoid the write
+2. **Gas payment optimization by Aptos** - Use aggregators for gas accounting
+3. **Different gas token** - Hypothetically, if gas could be paid in a non-paired FA
+
+See: [USD1-PARALLELIZATION-ANALYSIS.md](./USD1-PARALLELIZATION-ANALYSIS.md) for full investigation details.
 
 ### Benchmark Scripts (Not Yet Run Conclusively)
 
