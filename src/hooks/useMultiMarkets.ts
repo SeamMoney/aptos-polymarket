@@ -145,9 +145,25 @@ export function useMultiMarkets() {
         }
       };
 
-      // Fetch ALL markets in parallel
-      const results = await Promise.all(marketAddresses.map(fetchSingleMarket));
-      const fetchedMarkets = results.filter((m): m is MultiMarket => m !== null);
+      // Fetch markets in batches to avoid QuickNode rate limit (50 req/sec)
+      // Each market makes 4 RPC calls, so batch size of 4 = 16 calls per batch
+      const BATCH_SIZE = 4;
+      const BATCH_DELAY_MS = 250; // 250ms delay between batches
+
+      const fetchedMarkets: MultiMarket[] = [];
+      for (let i = 0; i < marketAddresses.length; i += BATCH_SIZE) {
+        const batch = marketAddresses.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.all(batch.map(fetchSingleMarket));
+        fetchedMarkets.push(...batchResults.filter((m): m is MultiMarket => m !== null));
+
+        // Update state incrementally so UI shows markets as they load
+        setMarkets([...fetchedMarkets]);
+
+        // Add delay between batches to stay under rate limit
+        if (i + BATCH_SIZE < marketAddresses.length) {
+          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+        }
+      }
 
       setMarkets(fetchedMarkets);
       setError(null);

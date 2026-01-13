@@ -19,9 +19,27 @@ import {
 import http from 'http';
 import https from 'https';
 
-const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1';
+// USD1 v2 Contract with admin drainers (Jan 11, 2026)
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134';
 const MULTI_MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
-const MARKET_ADDRESS = process.env.MULTI_MARKET || '0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96';
+
+// 12 USD1-backed markets
+const USD1_MARKETS = [
+  '0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052',
+  '0xf3256638cad294e47c8cc6bb1a6a0fdd85b29ef427b3118028c34b9f061aa50d',
+  '0x192f7cfc0c8151deec37c6280c17b55f7557a04b580b486d6076cc11955ddde3',
+  '0x9e4583c0af174a119b5316ae84988f4fd988259de35ef95447b371744a355762',
+  '0xd82731a9a2259ccfef2fd13db13720c7cc927c5b7879aa160aecc618c4d4654f',
+  '0x77a65b92664f992ccbd8a17d73a5f2fc933523ce64a1c475d1db1c0fc2acf42a',
+  '0xa84ba7b7364a40031e29d355d7a5f48fd54f922c8eed0ed0009c5d660a6da339',
+  '0x8187c1b3b7ca06dbcbac36fe280e0b5343b744c5a299a43263f9162738d4d792',
+  '0x551f153ff61f94311a22592550b0ede4b3b57338af161bd9472f21e15da23b4b',
+  '0x742e3c66cb6570351ceb7cf1b2df87e726c708b786109a8cdae93b0c3c7b5a04',
+  '0x35df09c98f8668c06f6777e98e3a0405fe894c271f06ba2fed0b322e2a5c2f16',
+  '0xd3227afa81dce5fa0e8f86f61dc7f3215ee799a0d2e6a112a988e5ac732bf719',
+];
+const MARKET_ADDRESS = process.env.MULTI_MARKET || USD1_MARKETS[0];
+let marketIndex = 0;
 
 const ALL_PRIVATE_KEYS = [
   '0x6e2fca34586261b6f22a973c20024b78ddb370d87f7c974315fb97ba56716a7f',
@@ -89,13 +107,17 @@ const tpsHistory: number[] = [];
 
 async function submitTxn(account: Account): Promise<boolean> {
   try {
+    // Round-robin across 12 markets for parallel execution
+    const currentMarket = USD1_MARKETS[marketIndex % USD1_MARKETS.length];
+    marketIndex++;
+
     const outcomeIndex = Math.floor(Math.random() * 6);
     const isBuy = Math.random() > 0.5;
     const amount = Math.floor(1_000_000 + Math.random() * 50_000_000);
 
     const payload = isBuy
-      ? { function: `${MULTI_MODULE}::buy_outcome` as const, functionArguments: [MARKET_ADDRESS, outcomeIndex, amount, 0] }
-      : { function: `${MULTI_MODULE}::sell_outcome` as const, functionArguments: [MARKET_ADDRESS, outcomeIndex, amount, 0] };
+      ? { function: `${MULTI_MODULE}::buy_outcome` as const, functionArguments: [currentMarket, outcomeIndex, amount, 0] }
+      : { function: `${MULTI_MODULE}::sell_outcome` as const, functionArguments: [currentMarket, outcomeIndex, amount, 0] };
 
     const transaction = await aptos.transaction.build.simple({
       sender: account.accountAddress,

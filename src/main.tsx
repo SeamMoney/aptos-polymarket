@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './index.css';
 import App from './App';
 import { DemoMode } from './components';
@@ -27,6 +27,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/portfolio" element={<><PortfolioPage /><BottomNav /></>} />
             <Route path="/portfolio/:userId" element={<><PortfolioPage /><BottomNav /></>} />
             <Route path="/login" element={<LoginPage />} />
+            {/* Catch-all route - redirect unknown paths to home */}
+            <Route path="*" element={<Navigate to="/polymarket" replace />} />
           </Routes>
         </WalletProvider>
       </NetworkProvider>

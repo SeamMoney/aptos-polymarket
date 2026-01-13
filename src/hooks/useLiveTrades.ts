@@ -31,11 +31,12 @@ export interface LiveTrade {
   id: string;
   type: 'buy' | 'sell';
   outcomeIndex: number;
-  amount: number;      // In APT
+  amount: number;      // In APT/USD1
   price: number;       // Price at time of trade (0-1)
   timestamp: number;
   txHash: string;
   trader: string;
+  marketAddress?: string;  // Market address for filtering
 }
 
 // LocalStorage helpers for trade persistence
@@ -45,8 +46,9 @@ function loadStoredTrades(): LiveTrade[] {
     if (!stored) return [];
     const trades: LiveTrade[] = JSON.parse(stored);
     // Filter out expired trades (older than 24 hours)
+    // Also filter out trades without marketAddress (old format - can't be filtered properly)
     const now = Date.now();
-    return trades.filter(t => now - t.timestamp < TRADE_EXPIRY_MS);
+    return trades.filter(t => now - t.timestamp < TRADE_EXPIRY_MS && t.marketAddress);
   } catch {
     return [];
   }
@@ -118,6 +120,7 @@ export async function fetchTradeFromTx(txHash: string): Promise<LiveTrade | null
     let outcomeIndex = 0;
     let amountAPT = 0;
     let trader = tx.sender || '';
+    let marketAddress = '';
 
     const tradeEvent = tx.events?.find((e: { type: string }) =>
       e.type === BUY_EVENT_TYPE || e.type === SELL_EVENT_TYPE
@@ -128,7 +131,15 @@ export async function fetchTradeFromTx(txHash: string): Promise<LiveTrade | null
       const collateral = tradeEvent.data.collateral_in || tradeEvent.data.collateral_out || '0';
       amountAPT = parseInt(collateral) / 100_000_000;
       trader = tradeEvent.data.buyer || tradeEvent.data.seller || trader;
-    } else if (tx.payload?.arguments) {
+      marketAddress = tradeEvent.data.market || '';
+    }
+
+    // Also try to extract market address from function arguments (first arg is market address)
+    if (!marketAddress && tx.payload?.arguments?.length >= 1) {
+      marketAddress = tx.payload.arguments[0] || '';
+    }
+
+    if (tx.payload?.arguments) {
       const args = tx.payload.arguments;
       if (args.length >= 3) {
         outcomeIndex = parseInt(args[1]) || 0;
@@ -147,6 +158,7 @@ export async function fetchTradeFromTx(txHash: string): Promise<LiveTrade | null
       timestamp,
       txHash,
       trader,
+      marketAddress,
     };
   } catch (error) {
     console.error('Error fetching trade from tx:', error);
@@ -218,6 +230,32 @@ export function useLiveTrades(
     }
   }, [localTrades]);
 
+  // Persist Geomi/API trades to localStorage for offline access
+  useEffect(() => {
+    if (geomiTrades.length > 0) {
+      // Merge with existing localStorage trades
+      const existingTrades = loadStoredTrades();
+      const allTrades = [...geomiTrades, ...existingTrades];
+
+      // Deduplicate by id
+      const seen = new Set<string>();
+      const unique: LiveTrade[] = [];
+      for (const trade of allTrades) {
+        if (!seen.has(trade.id)) {
+          seen.add(trade.id);
+          unique.push(trade);
+        }
+      }
+
+      // Sort and limit
+      const sorted = unique
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, MAX_STORED_TRADES);
+
+      saveStoredTrades(sorted);
+    }
+  }, [geomiTrades]);
+
   // Add a trade directly (used when UI executes a trade or HFT broadcasts)
   const addTrade = useCallback((trade: LiveTrade) => {
     if (seenIdsRef.current.has(trade.id)) return;
@@ -252,7 +290,7 @@ export function useLiveTrades(
     setHasMore(false);
   }, []);
 
-  // Merge trades from all sources with deduplication
+  // Merge trades from all sources with deduplication and market filtering
   const mergedTrades = useCallback((): LiveTrade[] => {
     const allTrades = [...geomiTrades, ...localTrades];
 
@@ -266,15 +304,23 @@ export function useLiveTrades(
       }
     }
 
-    // Filter by market if specified (for non-Geomi sources)
-    // Note: Geomi already filters by market, but local/HFT trades may not
-    // This is a best-effort filter since local trades don't have market info
+    // Filter by market address if specified
+    // This ensures trades only show on the correct market's trade stream
+    let filtered = unique;
+    if (marketAddress) {
+      const normalizedMarket = marketAddress.toLowerCase();
+      filtered = unique.filter(trade => {
+        // If trade has no market address, don't show it (can't verify it belongs here)
+        if (!trade.marketAddress) return false;
+        return trade.marketAddress.toLowerCase() === normalizedMarket;
+      });
+    }
 
     // Sort by timestamp descending and limit
-    return unique
+    return filtered
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, maxTrades);
-  }, [geomiTrades, localTrades, maxTrades]);
+  }, [geomiTrades, localTrades, maxTrades, marketAddress]);
 
   // Determine source for debugging/UI
   const source: 'geomi' | 'local' | 'hybrid' = useGeomi

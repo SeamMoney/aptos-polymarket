@@ -593,6 +593,16 @@ module aptos_framework::stake {
         }
     }
 
+    public fun set_transaction_fee_limit_per_epoch_per_pool(framework: &signer, limit_octa: u64) {
+        system_addresses::assert_aptos_framework(framework);
+
+        let config = TransactionFeeConfig::V0 {
+            max_fee_octa_allowed_per_epoch_per_pool: limit_octa,
+        };
+
+        set_transaction_fee_config(framework, config);
+    }
+
     public fun set_transaction_fee_config(framework: &signer, config: TransactionFeeConfig) acquires TransactionFeeConfig {
         system_addresses::assert_aptos_framework(framework);
 
@@ -1301,7 +1311,7 @@ module aptos_framework::stake {
         while ({
             spec {
                 invariant len(validator_perf.validators) == validator_len;
-                invariant (option::spec_is_some(ghost_proposer_idx) && option::spec_borrow(
+                invariant (option::is_some(ghost_proposer_idx) && option::spec_borrow(
                     ghost_proposer_idx
                 ) < validator_len) ==>
                     (validator_perf.validators[option::spec_borrow(ghost_proposer_idx)].successful_proposals ==

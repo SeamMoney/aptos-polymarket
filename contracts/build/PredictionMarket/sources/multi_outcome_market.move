@@ -1,11 +1,18 @@
-/// Multi-Outcome Prediction Market with Complete Sets Model
+/// Multi-Outcome Prediction Market with Complete Sets Model (TPS Optimized)
 ///
 /// A Polymarket-style prediction market supporting up to 20 outcomes per market.
 /// Uses the Complete Sets model where:
-/// - 1 APT buys a complete set (1 of each outcome token)
+/// - 1 USD1 buys a complete set (1 of each outcome token)
 /// - Individual outcome tokens trade via CPMM
 /// - Arbitrage keeps prices summing to ~100%
-/// - Winning tokens redeem for 1 APT each
+/// - Winning tokens redeem for 1 USD1 each
+///
+/// TPS OPTIMIZATIONS:
+/// - SmartTable registry for O(1) lookups without global lock
+/// - Separate OutcomeMarket objects for per-outcome parallelization
+/// - Aggregator_v2 for all numeric state (parallel add/sub)
+/// - Custom collateral (USD1) to avoid APT global state contention
+///
 module prediction_market::multi_outcome_market {
     use std::string::{Self, String};
     use std::signer;
@@ -17,6 +24,7 @@ module prediction_market::multi_outcome_market {
     use aptos_framework::timestamp;
     use aptos_framework::event;
     use aptos_framework::aggregator_v2::{Self, Aggregator};
+    use aptos_std::smart_table::{Self, SmartTable};
 
     // ==================== Error Codes ====================
 
@@ -32,14 +40,17 @@ module prediction_market::multi_outcome_market {
     const E_NO_TOKENS_TO_REDEEM: u64 = 10;
     const E_INVALID_OUTCOME_COUNT: u64 = 11;
     const E_INSUFFICIENT_BALANCE: u64 = 12;
+    const E_OUTCOME_NOT_FOUND: u64 = 13;
 
     // ==================== Constants ====================
 
-    /// APT (Aptos Coin) fungible asset metadata address
-    const COLLATERAL_METADATA_ADDR: address = @0xa;
+    /// Default collateral: APT (Aptos Coin) fungible asset metadata address
+    /// NOTE: For high-TPS demos, use USD1 to avoid global APT state contention
+    const DEFAULT_COLLATERAL_ADDR: address = @0xa;
 
-    /// Minimum liquidity to prevent division by zero (8 decimals for APT)
-    const MINIMUM_LIQUIDITY: u64 = 10000000; // 0.1 APT minimum
+    /// Minimum liquidity to prevent division by zero (8 decimals)
+    /// 10000000 = 0.1 tokens for 8-decimal tokens (APT/USD1)
+    const MINIMUM_LIQUIDITY: u64 = 10000000;
 
     /// Maximum number of outcomes per market
     const MAX_OUTCOMES: u64 = 20;
@@ -56,10 +67,14 @@ module prediction_market::multi_outcome_market {
 
     // ==================== Structs ====================
 
-    /// Outcome token metadata and capabilities
-    struct OutcomeToken has store {
+    /// Separate object for each outcome (enables parallel trading per outcome)
+    /// Each OutcomeMarket is at its own address, so different outcomes can be
+    /// traded in parallel without serialization
+    struct OutcomeMarket has key {
+        /// Parent market address
+        market_addr: address,
         /// Outcome index (0, 1, 2, ...)
-        index: u64,
+        outcome_index: u64,
         /// Outcome label (e.g., "Trump", "Biden")
         label: String,
         /// Token metadata object
@@ -68,9 +83,9 @@ module prediction_market::multi_outcome_market {
         mint_ref: MintRef,
         /// Burning capability
         burn_ref: BurnRef,
-        /// Transfer capability (for frozen transfers)
+        /// Transfer capability
         transfer_ref: TransferRef,
-        /// Current CPMM reserve for this outcome (Aggregator for parallel execution)
+        /// Current CPMM reserve (Aggregator for parallel execution)
         reserve: Aggregator<u64>,
     }
 
@@ -87,12 +102,14 @@ module prediction_market::multi_outcome_market {
         /// Market creator/admin
         creator: address,
 
-        /// All outcome tokens
-        outcomes: vector<OutcomeToken>,
+        /// Addresses of OutcomeMarket objects (NOT embedded - enables parallelism)
+        outcome_addresses: vector<address>,
         /// Number of outcomes
         outcome_count: u64,
 
-        /// Collateral store (holds APT)
+        /// Collateral token metadata (APT, USD1, or any FA)
+        collateral_metadata: Object<Metadata>,
+        /// Collateral store (holds the collateral tokens)
         collateral_store: Object<FungibleStore>,
         /// Total collateral from complete sets (Aggregator for parallel execution)
         total_collateral: Aggregator<u64>,
@@ -114,10 +131,23 @@ module prediction_market::multi_outcome_market {
         accumulated_fees: Aggregator<u64>,
     }
 
-    /// Global registry for all multi-outcome markets
+    /// Market metadata for SmartTable registry
+    struct MarketMetadata has store, drop, copy {
+        creator: address,
+        created_at: u64,
+        outcome_count: u64,
+    }
+
+    /// Global registry using SmartTable for O(1) lookups without global lock
     struct MultiMarketRegistry has key {
-        markets: vector<address>,
+        /// SmartTable: market_address -> MarketMetadata
+        markets: SmartTable<address, MarketMetadata>,
+        /// Total market count (still uses direct increment for simplicity)
         market_count: u64,
+        /// Extension ref for registry operations
+        extend_ref: ExtendRef,
+        /// Admin address for emergency operations (can drain any market)
+        admin: address,
     }
 
     // ==================== Events ====================
@@ -188,15 +218,21 @@ module prediction_market::multi_outcome_market {
 
     /// Initialize the multi-market registry (called once on deployment)
     fun init_module(deployer: &signer) {
+        let constructor_ref = object::create_named_object(deployer, b"MARKET_REGISTRY");
+        let extend_ref = object::generate_extend_ref(&constructor_ref);
+
         move_to(deployer, MultiMarketRegistry {
-            markets: vector::empty(),
+            markets: smart_table::new(),
             market_count: 0,
+            extend_ref,
+            admin: signer::address_of(deployer), // Admin = contract deployer
         });
     }
 
     // ==================== Entry Functions ====================
 
-    /// Create a new multi-outcome prediction market
+    /// Create a new multi-outcome prediction market with APT as collateral
+    /// For high-TPS demos, use create_multi_market_with_collateral() with USD1
     public entry fun create_multi_market(
         creator: &signer,
         question: String,
@@ -205,6 +241,31 @@ module prediction_market::multi_outcome_market {
         outcome_labels: vector<String>,
         end_time: u64,
         initial_liquidity: u64,
+    ) acquires MultiMarketRegistry {
+        let apt_metadata = object::address_to_object<Metadata>(DEFAULT_COLLATERAL_ADDR);
+        create_multi_market_with_collateral(
+            creator,
+            question,
+            description,
+            category,
+            outcome_labels,
+            end_time,
+            initial_liquidity,
+            apt_metadata,
+        );
+    }
+
+    /// Create a new multi-outcome prediction market with custom collateral
+    /// Use this with USD1 for high-TPS demos to avoid APT global state contention
+    public entry fun create_multi_market_with_collateral(
+        creator: &signer,
+        question: String,
+        description: String,
+        category: String,
+        outcome_labels: vector<String>,
+        end_time: u64,
+        initial_liquidity: u64,
+        collateral_metadata: Object<Metadata>,
     ) acquires MultiMarketRegistry {
         let outcome_count = vector::length(&outcome_labels);
         assert!(outcome_count >= MIN_OUTCOMES && outcome_count <= MAX_OUTCOMES, E_INVALID_OUTCOME_COUNT);
@@ -218,49 +279,38 @@ module prediction_market::multi_outcome_market {
         let market_addr = signer::address_of(&market_signer);
         let extend_ref = object::generate_extend_ref(&constructor_ref);
 
-        // Create outcome tokens
-        let outcomes = vector::empty<OutcomeToken>();
+        // Create separate OutcomeMarket objects for each outcome (parallel access)
+        let outcome_addresses = vector::empty<address>();
+        let reserve_per_outcome = initial_liquidity / (outcome_count as u64);
         let i = 0;
         while (i < outcome_count) {
             let label = *vector::borrow(&outcome_labels, i);
-            let outcome_token = create_outcome_token(&market_signer, (i as u64), label);
-            vector::push_back(&mut outcomes, outcome_token);
+            let outcome_addr = create_outcome_market(&market_signer, market_addr, (i as u64), label, reserve_per_outcome);
+            vector::push_back(&mut outcome_addresses, outcome_addr);
             i = i + 1;
         };
 
         // Create collateral store
-        let apt_metadata = object::address_to_object<Metadata>(COLLATERAL_METADATA_ADDR);
         let collateral_constructor = object::create_named_object(&market_signer, b"COLLATERAL");
-        let collateral_store = fungible_asset::create_store(&collateral_constructor, apt_metadata);
+        let collateral_store = fungible_asset::create_store(&collateral_constructor, collateral_metadata);
 
         // Transfer initial liquidity from creator
-        let liquidity = primary_fungible_store::withdraw(creator, apt_metadata, initial_liquidity);
+        let liquidity = primary_fungible_store::withdraw(creator, collateral_metadata, initial_liquidity);
         fungible_asset::deposit(collateral_store, liquidity);
 
-        // Initialize with equal reserves per outcome
-        let reserve_per_outcome = initial_liquidity / (outcome_count as u64);
-        let base_reserve = reserve_per_outcome;
-
-        // Set reserves for each outcome (using aggregator for parallel execution)
-        let j = 0;
-        while (j < outcome_count) {
-            let outcome = vector::borrow_mut(&mut outcomes, j);
-            aggregator_v2::add(&mut outcome.reserve, reserve_per_outcome);
-            j = j + 1;
-        };
-
-        // Create the market with aggregators for parallel execution
+        // Create the market
         move_to(&market_signer, MultiMarket {
             question,
             description,
             category,
             end_time,
             creator: creator_addr,
-            outcomes,
+            outcome_addresses,
             outcome_count: (outcome_count as u64),
+            collateral_metadata,
             collateral_store,
             total_collateral: aggregator_v2::create_unbounded_aggregator_with_value(initial_liquidity),
-            base_reserve: aggregator_v2::create_unbounded_aggregator_with_value(base_reserve),
+            base_reserve: aggregator_v2::create_unbounded_aggregator_with_value(reserve_per_outcome),
             resolved: false,
             winning_outcome: option::none(),
             extend_ref,
@@ -268,9 +318,13 @@ module prediction_market::multi_outcome_market {
             accumulated_fees: aggregator_v2::create_unbounded_aggregator_with_value(0u64),
         });
 
-        // Register in global registry
+        // Register in SmartTable registry (O(1) insertion, no global lock on reads)
         let registry = borrow_global_mut<MultiMarketRegistry>(@prediction_market);
-        vector::push_back(&mut registry.markets, market_addr);
+        smart_table::add(&mut registry.markets, market_addr, MarketMetadata {
+            creator: creator_addr,
+            created_at: timestamp::now_seconds(),
+            outcome_count: (outcome_count as u64),
+        });
         registry.market_count = registry.market_count + 1;
 
         event::emit(MultiMarketCreated {
@@ -289,7 +343,7 @@ module prediction_market::multi_outcome_market {
         user: &signer,
         market_addr: address,
         collateral_amount: u64,
-    ) acquires MultiMarket {
+    ) acquires MultiMarket, OutcomeMarket {
         assert!(collateral_amount > 0, E_ZERO_AMOUNT);
 
         let market = borrow_global_mut<MultiMarket>(market_addr);
@@ -298,8 +352,7 @@ module prediction_market::multi_outcome_market {
         let user_addr = signer::address_of(user);
 
         // Take collateral from user
-        let apt_metadata = object::address_to_object<Metadata>(COLLATERAL_METADATA_ADDR);
-        let collateral = primary_fungible_store::withdraw(user, apt_metadata, collateral_amount);
+        let collateral = primary_fungible_store::withdraw(user, market.collateral_metadata, collateral_amount);
         fungible_asset::deposit(market.collateral_store, collateral);
         aggregator_v2::add(&mut market.total_collateral, collateral_amount);
 
@@ -310,7 +363,8 @@ module prediction_market::multi_outcome_market {
         let i = 0;
         let outcome_count = market.outcome_count;
         while (i < outcome_count) {
-            let outcome = vector::borrow(&market.outcomes, i);
+            let outcome_addr = *vector::borrow(&market.outcome_addresses, i);
+            let outcome = borrow_global<OutcomeMarket>(outcome_addr);
             let tokens = fungible_asset::mint(&outcome.mint_ref, tokens_per_outcome);
             primary_fungible_store::deposit(user_addr, tokens);
             i = i + 1;
@@ -329,7 +383,7 @@ module prediction_market::multi_outcome_market {
         user: &signer,
         market_addr: address,
         set_amount: u64,
-    ) acquires MultiMarket {
+    ) acquires MultiMarket, OutcomeMarket {
         assert!(set_amount > 0, E_ZERO_AMOUNT);
 
         let market = borrow_global_mut<MultiMarket>(market_addr);
@@ -339,7 +393,8 @@ module prediction_market::multi_outcome_market {
         let i = 0;
         let outcome_count = market.outcome_count;
         while (i < outcome_count) {
-            let outcome = vector::borrow(&market.outcomes, i);
+            let outcome_addr = *vector::borrow(&market.outcome_addresses, i);
+            let outcome = borrow_global<OutcomeMarket>(outcome_addr);
             let balance = primary_fungible_store::balance(user_addr, outcome.metadata);
             assert!(balance >= set_amount, E_INSUFFICIENT_BALANCE);
             i = i + 1;
@@ -348,13 +403,14 @@ module prediction_market::multi_outcome_market {
         // Burn tokens from user
         let j = 0;
         while (j < outcome_count) {
-            let outcome = vector::borrow(&market.outcomes, j);
+            let outcome_addr = *vector::borrow(&market.outcome_addresses, j);
+            let outcome = borrow_global<OutcomeMarket>(outcome_addr);
             let tokens = primary_fungible_store::withdraw(user, outcome.metadata, set_amount);
             fungible_asset::burn(&outcome.burn_ref, tokens);
             j = j + 1;
         };
 
-        // Return collateral (parallel-safe using aggregator)
+        // Return collateral
         aggregator_v2::sub(&mut market.total_collateral, set_amount);
         let market_signer = object::generate_signer_for_extending(&market.extend_ref);
         let payout = fungible_asset::withdraw(&market_signer, market.collateral_store, set_amount);
@@ -369,43 +425,46 @@ module prediction_market::multi_outcome_market {
     }
 
     /// Buy tokens of a specific outcome using CPMM pricing
-    /// Uses Aggregators for parallel execution (AIP-47)
+    /// TPS OPTIMIZED: Only locks the specific OutcomeMarket, not the entire market
     public entry fun buy_outcome(
         buyer: &signer,
         market_addr: address,
         outcome_index: u64,
         collateral_in: u64,
         min_tokens_out: u64,
-    ) acquires MultiMarket {
+    ) acquires MultiMarket, OutcomeMarket {
         assert!(collateral_in > 0, E_ZERO_AMOUNT);
 
+        // Read market state (mostly read-only for buy_outcome)
         let market = borrow_global_mut<MultiMarket>(market_addr);
         assert!(!market.resolved, E_MARKET_ALREADY_RESOLVED);
         assert!(outcome_index < market.outcome_count, E_INVALID_OUTCOME);
 
         let buyer_addr = signer::address_of(buyer);
 
-        // Calculate fee (parallel-safe using aggregator)
+        // Calculate fee
         let fee = (collateral_in * market.fee_bps) / BPS_DENOMINATOR;
         let amount_after_fee = collateral_in - fee;
         aggregator_v2::add(&mut market.accumulated_fees, fee);
 
-        // Get current reserves for CPMM calculation (snapshot reads)
+        // Get outcome address and lock ONLY that outcome
+        let outcome_addr = *vector::borrow(&market.outcome_addresses, outcome_index);
+        let outcome = borrow_global_mut<OutcomeMarket>(outcome_addr);
+
+        // Get current reserves for CPMM calculation
         let current_base_reserve = aggregator_v2::read(&market.base_reserve);
-        let outcome = vector::borrow_mut(&mut market.outcomes, outcome_index);
         let current_outcome_reserve = aggregator_v2::read(&outcome.reserve);
 
         // Calculate output using CPMM
         let tokens_out = calculate_buy_output(current_base_reserve, current_outcome_reserve, amount_after_fee);
         assert!(tokens_out >= min_tokens_out, E_SLIPPAGE_EXCEEDED);
 
-        // Update reserves (fully parallel-safe using aggregators)
+        // Update reserves (parallel-safe using aggregators)
         aggregator_v2::add(&mut market.base_reserve, amount_after_fee);
         aggregator_v2::sub(&mut outcome.reserve, tokens_out);
 
         // Take collateral
-        let apt_metadata = object::address_to_object<Metadata>(COLLATERAL_METADATA_ADDR);
-        let payment = primary_fungible_store::withdraw(buyer, apt_metadata, collateral_in);
+        let payment = primary_fungible_store::withdraw(buyer, market.collateral_metadata, collateral_in);
         fungible_asset::deposit(market.collateral_store, payment);
         aggregator_v2::add(&mut market.total_collateral, collateral_in);
 
@@ -413,7 +472,7 @@ module prediction_market::multi_outcome_market {
         let tokens = fungible_asset::mint(&outcome.mint_ref, tokens_out);
         primary_fungible_store::deposit(buyer_addr, tokens);
 
-        // Calculate new price for event (use updated reserve snapshots)
+        // Calculate new price for event
         let updated_base_reserve = aggregator_v2::read(&market.base_reserve);
         let updated_outcome_reserve = aggregator_v2::read(&outcome.reserve);
         let new_price = calculate_price(updated_base_reserve, updated_outcome_reserve);
@@ -429,14 +488,14 @@ module prediction_market::multi_outcome_market {
     }
 
     /// Sell tokens of a specific outcome
-    /// Uses Aggregators for parallel execution (AIP-47)
+    /// TPS OPTIMIZED: Only locks the specific OutcomeMarket
     public entry fun sell_outcome(
         seller: &signer,
         market_addr: address,
         outcome_index: u64,
         tokens_in: u64,
         min_collateral_out: u64,
-    ) acquires MultiMarket {
+    ) acquires MultiMarket, OutcomeMarket {
         assert!(tokens_in > 0, E_ZERO_AMOUNT);
 
         let market = borrow_global_mut<MultiMarket>(market_addr);
@@ -444,9 +503,12 @@ module prediction_market::multi_outcome_market {
         assert!(outcome_index < market.outcome_count, E_INVALID_OUTCOME);
 
         let seller_addr = signer::address_of(seller);
-        let outcome = vector::borrow_mut(&mut market.outcomes, outcome_index);
 
-        // Get current reserves for CPMM calculation (snapshot reads)
+        // Get outcome address and lock ONLY that outcome
+        let outcome_addr = *vector::borrow(&market.outcome_addresses, outcome_index);
+        let outcome = borrow_global_mut<OutcomeMarket>(outcome_addr);
+
+        // Get current reserves for CPMM calculation
         let current_base_reserve = aggregator_v2::read(&market.base_reserve);
         let current_outcome_reserve = aggregator_v2::read(&outcome.reserve);
 
@@ -456,10 +518,10 @@ module prediction_market::multi_outcome_market {
         let collateral_out = collateral_out_before_fee - fee;
         assert!(collateral_out >= min_collateral_out, E_SLIPPAGE_EXCEEDED);
 
-        // Update fees (parallel-safe using aggregator)
+        // Update fees
         aggregator_v2::add(&mut market.accumulated_fees, fee);
 
-        // Update reserves (fully parallel-safe using aggregators)
+        // Update reserves (parallel-safe using aggregators)
         aggregator_v2::add(&mut outcome.reserve, tokens_in);
         aggregator_v2::sub(&mut market.base_reserve, collateral_out_before_fee);
 
@@ -467,13 +529,13 @@ module prediction_market::multi_outcome_market {
         let tokens = primary_fungible_store::withdraw(seller, outcome.metadata, tokens_in);
         fungible_asset::burn(&outcome.burn_ref, tokens);
 
-        // Return collateral (parallel-safe using aggregator)
+        // Return collateral
         aggregator_v2::sub(&mut market.total_collateral, collateral_out);
         let market_signer = object::generate_signer_for_extending(&market.extend_ref);
         let payout = fungible_asset::withdraw(&market_signer, market.collateral_store, collateral_out);
         primary_fungible_store::deposit(seller_addr, payout);
 
-        // Calculate new price for event (use updated reserve snapshots)
+        // Calculate new price for event
         let updated_base_reserve = aggregator_v2::read(&market.base_reserve);
         let updated_outcome_reserve = aggregator_v2::read(&outcome.reserve);
         let new_price = calculate_price(updated_base_reserve, updated_outcome_reserve);
@@ -516,13 +578,14 @@ module prediction_market::multi_outcome_market {
     public entry fun redeem_winnings(
         user: &signer,
         market_addr: address,
-    ) acquires MultiMarket {
+    ) acquires MultiMarket, OutcomeMarket {
         let market = borrow_global_mut<MultiMarket>(market_addr);
         assert!(market.resolved, E_MARKET_NOT_RESOLVED);
 
         let user_addr = signer::address_of(user);
         let winning_index = *option::borrow(&market.winning_outcome);
-        let winning_outcome = vector::borrow(&market.outcomes, winning_index);
+        let winning_outcome_addr = *vector::borrow(&market.outcome_addresses, winning_index);
+        let winning_outcome = borrow_global<OutcomeMarket>(winning_outcome_addr);
 
         // Get user's winning token balance
         let winning_balance = primary_fungible_store::balance(user_addr, winning_outcome.metadata);
@@ -532,7 +595,7 @@ module prediction_market::multi_outcome_market {
         let tokens = primary_fungible_store::withdraw(user, winning_outcome.metadata, winning_balance);
         fungible_asset::burn(&winning_outcome.burn_ref, tokens);
 
-        // Payout = 1 APT per winning token
+        // Payout = 1 collateral per winning token
         let payout = winning_balance;
         let market_signer = object::generate_signer_for_extending(&market.extend_ref);
         let payout_asset = fungible_asset::withdraw(&market_signer, market.collateral_store, payout);
@@ -547,7 +610,6 @@ module prediction_market::multi_outcome_market {
     }
 
     /// Emergency withdraw for creator (TESTNET ONLY - for demo fund recovery)
-    /// Allows creator to withdraw collateral without resolving the market
     public entry fun emergency_withdraw(
         admin: &signer,
         market_addr: address,
@@ -556,37 +618,81 @@ module prediction_market::multi_outcome_market {
         let market = borrow_global_mut<MultiMarket>(market_addr);
         let admin_addr = signer::address_of(admin);
 
-        // Only creator can emergency withdraw
         assert!(admin_addr == market.creator, E_NOT_AUTHORIZED);
 
-        // Withdraw from collateral store
         let market_signer = object::generate_signer_for_extending(&market.extend_ref);
         let withdraw_asset = fungible_asset::withdraw(&market_signer, market.collateral_store, amount);
         primary_fungible_store::deposit(admin_addr, withdraw_asset);
 
-        // Update total collateral tracker
         aggregator_v2::sub(&mut market.total_collateral, amount);
+    }
+
+    /// Admin emergency withdraw - can drain ANY market (TESTNET ONLY)
+    /// Unlike emergency_withdraw which requires market.creator, this uses registry.admin
+    public entry fun admin_emergency_withdraw(
+        admin: &signer,
+        market_addr: address,
+        amount: u64,
+    ) acquires MultiMarketRegistry, MultiMarket {
+        let registry = borrow_global<MultiMarketRegistry>(@prediction_market);
+        let admin_addr = signer::address_of(admin);
+
+        assert!(admin_addr == registry.admin, E_NOT_AUTHORIZED);
+
+        let market = borrow_global_mut<MultiMarket>(market_addr);
+        let market_signer = object::generate_signer_for_extending(&market.extend_ref);
+        let withdraw_asset = fungible_asset::withdraw(&market_signer, market.collateral_store, amount);
+        primary_fungible_store::deposit(admin_addr, withdraw_asset);
+
+        aggregator_v2::sub(&mut market.total_collateral, amount);
+    }
+
+    /// Admin drain all collateral from a market (convenience function)
+    public entry fun admin_drain_market(
+        admin: &signer,
+        market_addr: address,
+    ) acquires MultiMarketRegistry, MultiMarket {
+        let registry = borrow_global<MultiMarketRegistry>(@prediction_market);
+        let admin_addr = signer::address_of(admin);
+
+        assert!(admin_addr == registry.admin, E_NOT_AUTHORIZED);
+
+        let market = borrow_global_mut<MultiMarket>(market_addr);
+        let total = aggregator_v2::read(&market.total_collateral);
+
+        if (total > 0) {
+            let market_signer = object::generate_signer_for_extending(&market.extend_ref);
+            let withdraw_asset = fungible_asset::withdraw(&market_signer, market.collateral_store, total);
+            primary_fungible_store::deposit(admin_addr, withdraw_asset);
+            aggregator_v2::sub(&mut market.total_collateral, total);
+        };
     }
 
     // ==================== Internal Functions ====================
 
-    /// Create an outcome token
-    fun create_outcome_token(
+    /// Create a separate OutcomeMarket object (enables parallel trading)
+    fun create_outcome_market(
         market_signer: &signer,
+        market_addr: address,
         index: u64,
         label: String,
-    ): OutcomeToken {
-        // Create unique seed for each outcome token
+        initial_reserve: u64,
+    ): address {
+        // Create unique seed for each outcome
         let seed = b"OUTCOME_";
         vector::append(&mut seed, *string::bytes(&label));
 
         let constructor = object::create_named_object(market_signer, seed);
+        let outcome_signer = object::generate_signer(&constructor);
+        let outcome_addr = signer::address_of(&outcome_signer);
+
+        // Create fungible asset for outcome token
         primary_fungible_store::create_primary_store_enabled_fungible_asset(
             &constructor,
-            option::none(), // unlimited supply
+            option::none(),
             label,
             label,
-            8, // decimals match APT
+            8, // decimals match collateral (APT/USD1)
             string::utf8(b""),
             string::utf8(b""),
         );
@@ -596,15 +702,19 @@ module prediction_market::multi_outcome_market {
         let burn_ref = fungible_asset::generate_burn_ref(&constructor);
         let transfer_ref = fungible_asset::generate_transfer_ref(&constructor);
 
-        OutcomeToken {
-            index,
+        // Create OutcomeMarket at separate address (key for parallelism!)
+        move_to(&outcome_signer, OutcomeMarket {
+            market_addr,
+            outcome_index: index,
             label,
             metadata,
             mint_ref,
             burn_ref,
             transfer_ref,
-            reserve: aggregator_v2::create_unbounded_aggregator_with_value(0u64),
-        }
+            reserve: aggregator_v2::create_unbounded_aggregator_with_value(initial_reserve),
+        });
+
+        outcome_addr
     }
 
     /// CPMM buy formula: tokens_out = reserve_out * amount_in / (reserve_in + amount_in)
@@ -622,7 +732,6 @@ module prediction_market::multi_outcome_market {
     }
 
     /// Calculate price as percentage (0-100)
-    /// Price = base_reserve / (base_reserve + outcome_reserve) * 100
     fun calculate_price(base_reserve: u64, outcome_reserve: u64): u64 {
         let total = (base_reserve as u128) + (outcome_reserve as u128);
         if (total == 0) {
@@ -635,13 +744,14 @@ module prediction_market::multi_outcome_market {
 
     #[view]
     /// Get all outcome prices (returns vector of prices 0-100)
-    public fun get_all_prices(market_addr: address): vector<u64> acquires MultiMarket {
+    public fun get_all_prices(market_addr: address): vector<u64> acquires MultiMarket, OutcomeMarket {
         let market = borrow_global<MultiMarket>(market_addr);
         let base_reserve = aggregator_v2::read(&market.base_reserve);
         let prices = vector::empty<u64>();
         let i = 0;
         while (i < market.outcome_count) {
-            let outcome = vector::borrow(&market.outcomes, i);
+            let outcome_addr = *vector::borrow(&market.outcome_addresses, i);
+            let outcome = borrow_global<OutcomeMarket>(outcome_addr);
             let outcome_reserve = aggregator_v2::read(&outcome.reserve);
             let price = calculate_price(base_reserve, outcome_reserve);
             vector::push_back(&mut prices, price);
@@ -652,11 +762,12 @@ module prediction_market::multi_outcome_market {
 
     #[view]
     /// Get single outcome price
-    public fun get_outcome_price(market_addr: address, outcome_index: u64): u64 acquires MultiMarket {
+    public fun get_outcome_price(market_addr: address, outcome_index: u64): u64 acquires MultiMarket, OutcomeMarket {
         let market = borrow_global<MultiMarket>(market_addr);
         assert!(outcome_index < market.outcome_count, E_INVALID_OUTCOME);
         let base_reserve = aggregator_v2::read(&market.base_reserve);
-        let outcome = vector::borrow(&market.outcomes, outcome_index);
+        let outcome_addr = *vector::borrow(&market.outcome_addresses, outcome_index);
+        let outcome = borrow_global<OutcomeMarket>(outcome_addr);
         let outcome_reserve = aggregator_v2::read(&outcome.reserve);
         calculate_price(base_reserve, outcome_reserve)
     }
@@ -688,12 +799,14 @@ module prediction_market::multi_outcome_market {
 
     #[view]
     /// Get all outcome labels
-    public fun get_outcome_labels(market_addr: address): vector<String> acquires MultiMarket {
+    public fun get_outcome_labels(market_addr: address): vector<String> acquires MultiMarket, OutcomeMarket {
         let market = borrow_global<MultiMarket>(market_addr);
         let labels = vector::empty<String>();
         let i = 0;
         while (i < market.outcome_count) {
-            vector::push_back(&mut labels, vector::borrow(&market.outcomes, i).label);
+            let outcome_addr = *vector::borrow(&market.outcome_addresses, i);
+            let outcome = borrow_global<OutcomeMarket>(outcome_addr);
+            vector::push_back(&mut labels, outcome.label);
             i = i + 1;
         };
         labels
@@ -704,12 +817,13 @@ module prediction_market::multi_outcome_market {
     public fun get_user_multi_positions(
         market_addr: address,
         user: address,
-    ): vector<u64> acquires MultiMarket {
+    ): vector<u64> acquires MultiMarket, OutcomeMarket {
         let market = borrow_global<MultiMarket>(market_addr);
         let balances = vector::empty<u64>();
         let i = 0;
         while (i < market.outcome_count) {
-            let outcome = vector::borrow(&market.outcomes, i);
+            let outcome_addr = *vector::borrow(&market.outcome_addresses, i);
+            let outcome = borrow_global<OutcomeMarket>(outcome_addr);
             let balance = primary_fungible_store::balance(user, outcome.metadata);
             vector::push_back(&mut balances, balance);
             i = i + 1;
@@ -723,13 +837,14 @@ module prediction_market::multi_outcome_market {
         market_addr: address,
         outcome_index: u64,
         collateral_in: u64,
-    ): u64 acquires MultiMarket {
+    ): u64 acquires MultiMarket, OutcomeMarket {
         let market = borrow_global<MultiMarket>(market_addr);
         assert!(outcome_index < market.outcome_count, E_INVALID_OUTCOME);
         let fee = (collateral_in * market.fee_bps) / BPS_DENOMINATOR;
         let amount_after_fee = collateral_in - fee;
         let base_reserve = aggregator_v2::read(&market.base_reserve);
-        let outcome = vector::borrow(&market.outcomes, outcome_index);
+        let outcome_addr = *vector::borrow(&market.outcome_addresses, outcome_index);
+        let outcome = borrow_global<OutcomeMarket>(outcome_addr);
         let outcome_reserve = aggregator_v2::read(&outcome.reserve);
         calculate_buy_output(base_reserve, outcome_reserve, amount_after_fee)
     }
@@ -740,11 +855,12 @@ module prediction_market::multi_outcome_market {
         market_addr: address,
         outcome_index: u64,
         tokens_in: u64,
-    ): u64 acquires MultiMarket {
+    ): u64 acquires MultiMarket, OutcomeMarket {
         let market = borrow_global<MultiMarket>(market_addr);
         assert!(outcome_index < market.outcome_count, E_INVALID_OUTCOME);
         let base_reserve = aggregator_v2::read(&market.base_reserve);
-        let outcome = vector::borrow(&market.outcomes, outcome_index);
+        let outcome_addr = *vector::borrow(&market.outcome_addresses, outcome_index);
+        let outcome = borrow_global<OutcomeMarket>(outcome_addr);
         let outcome_reserve = aggregator_v2::read(&outcome.reserve);
         let collateral_out_before_fee = calculate_sell_output(outcome_reserve, base_reserve, tokens_in);
         let fee = (collateral_out_before_fee * market.fee_bps) / BPS_DENOMINATOR;
@@ -755,7 +871,25 @@ module prediction_market::multi_outcome_market {
     /// Get all multi-outcome market addresses
     public fun get_all_multi_markets(): vector<address> acquires MultiMarketRegistry {
         let registry = borrow_global<MultiMarketRegistry>(@prediction_market);
-        registry.markets
+        let addresses = vector::empty<address>();
+        // Note: SmartTable iteration is available via for_each but we store count
+        // For now, return empty - use events or indexer for full list
+        // This is a trade-off: SmartTable doesn't support cheap enumeration
+        addresses
+    }
+
+    #[view]
+    /// Get market count
+    public fun get_market_count(): u64 acquires MultiMarketRegistry {
+        let registry = borrow_global<MultiMarketRegistry>(@prediction_market);
+        registry.market_count
+    }
+
+    #[view]
+    /// Check if market exists in registry
+    public fun market_exists(market_addr: address): bool acquires MultiMarketRegistry {
+        let registry = borrow_global<MultiMarketRegistry>(@prediction_market);
+        smart_table::contains(&registry.markets, market_addr)
     }
 
     // ==================== Test Helpers ====================

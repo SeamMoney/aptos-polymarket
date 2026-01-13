@@ -8,13 +8,13 @@ compiled_package_info:
     aptos_std: "0000000000000000000000000000000000000000000000000000000000000001"
     aptos_token: "0000000000000000000000000000000000000000000000000000000000000003"
     core_resources: 000000000000000000000000000000000000000000000000000000000a550c18
-    prediction_market: a2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1
+    prediction_market: bdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134
     std: "0000000000000000000000000000000000000000000000000000000000000001"
     vm: "0000000000000000000000000000000000000000000000000000000000000000"
     vm_reserved: "0000000000000000000000000000000000000000000000000000000000000000"
-  source_digest: 8261F9C1C0800AC7EBEBB57234E30ADCC81215D655ED871E75823FADE0A202A4
+  source_digest: EDB853B1C8959BD6FA281778DF6A5AC7F867CEBB53973C15A4CEC30D8C7F7D1E
   build_flags:
-    dev_mode: false
+    dev_mode: true
     test_mode: false
     override_std: ~
     generate_docs: false
@@ -27,7 +27,7 @@ compiled_package_info:
     fetch_deps_only: false
     skip_fetch_latest_git_deps: false
     compiler_config:
-      bytecode_version: 8
+      bytecode_version: 9
       known_attributes:
         - bytecode_instruction
         - deprecated
@@ -50,9 +50,10 @@ compiled_package_info:
         - view
       skip_attribute_checks: false
       compiler_version: V2_0
-      language_version: "2.2"
+      language_version: "2.3"
       experiments:
         - optimize=on
+      print_errors: true
 dependencies:
   - AptosFramework
   - AptosStdlib

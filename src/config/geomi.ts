@@ -23,8 +23,9 @@ export const GEOMI_CONFIG = {
   graphqlUrl: import.meta.env.VITE_GEOMI_GRAPHQL_URL as string | undefined,
   apiKey: import.meta.env.VITE_GEOMI_API_KEY as string | undefined,
 
-  // Processor instance ID (aptos-polymarket-processor-02 for USD1 contract)
-  processorId: 'cmkbsbsva002os601tlhj0kv9',
+  // Processor instance ID (aptos-polymarket-processor-03 for USD1 contract)
+  // Note: Using tx_hash + event_index as primary keys (Move v2 events have sequence_number=0)
+  processorId: 'cmkbufr4k002ss601snf5s23z',
 
   // Default query settings
   defaults: {

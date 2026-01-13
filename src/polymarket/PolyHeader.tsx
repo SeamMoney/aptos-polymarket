@@ -407,16 +407,14 @@ export function PolyHeader() {
                     <Loader2 size={16} className="animate-spin" />
                   ) : fundStatus === "success" ? (
                     <Check size={16} />
-                  ) : (
-                    <img src="/usd1.png" alt="USD1" className="w-4 h-4 rounded-full" />
-                  )}
+                  ) : null}
                   {fundStatus === "success"
                     ? "+$1,000 USD1 Minted!"
                     : fundStatus === "error"
                     ? "Failed - Try Again"
                     : isFunding
                     ? "Minting USD1..."
-                    : "Mint $1,000 USD1"}
+                    : "Mint $1,000"}
                 </button>
               </div>
 

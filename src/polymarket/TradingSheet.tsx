@@ -194,6 +194,8 @@ export function TradingSheet({
         saveTradeRecord(tradeRecord);
 
         // Emit trade to live trade stream immediately
+        // Extract market address from market.id (format: "multi-0x..." or "binary-0x...")
+        const marketAddr = market.id.replace('multi-', '').replace('binary-', '');
         const liveTrade: LiveTrade = {
           id: `${Date.now()}-${hash}`,
           type: direction,
@@ -203,6 +205,7 @@ export function TradingSheet({
           timestamp: Date.now(),
           txHash: hash,
           trader: account?.address?.toString() || '',
+          marketAddress: marketAddr,
         };
         emitTrade(liveTrade);
       }

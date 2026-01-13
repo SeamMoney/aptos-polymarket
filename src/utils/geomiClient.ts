@@ -275,3 +275,157 @@ export async function checkGeomiHealth(): Promise<boolean> {
     return false;
   }
 }
+
+// ============================================
+// Aptos Events API Fallback
+// ============================================
+
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134";
+const BUY_EVENT_TYPE = `${CONTRACT_ADDRESS}::multi_outcome_market::OutcomeTokenBought`;
+const SELL_EVENT_TYPE = `${CONTRACT_ADDRESS}::multi_outcome_market::OutcomeTokenSold`;
+
+const RPC_ENDPOINTS = [
+  import.meta.env.VITE_RPC_URL || "https://api.testnet.aptoslabs.com/v1",
+  "https://api.testnet.aptoslabs.com/v1",
+];
+
+/**
+ * Fetch from RPC with failover
+ */
+async function fetchRpcWithFailover(path: string): Promise<Response> {
+  for (const baseUrl of RPC_ENDPOINTS) {
+    try {
+      const res = await fetch(`${baseUrl}${path}`);
+      if (res.ok) return res;
+      if (res.status === 429) continue;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error('All RPC endpoints failed');
+}
+
+/**
+ * Convert Aptos event to GeomiTrade format
+ */
+function aptosEventToGeomiTrade(event: {
+  type: string;
+  data: {
+    buyer?: string;
+    seller?: string;
+    market_address: string;
+    outcome_index: string;
+    collateral_in?: string;
+    collateral_out?: string;
+    tokens_out?: string;
+    tokens_in?: string;
+    new_price: string;
+  };
+  sequence_number: string;
+  guid: { account_address: string };
+}, txHash: string, eventIndex: number, timestamp: string): GeomiTrade {
+  const isBuy = event.type.includes('OutcomeTokenBought');
+  return {
+    tx_hash: txHash,
+    event_index: eventIndex,
+    sequence_number: event.sequence_number,
+    event_type: event.type,
+    market_address: event.data.market_address,
+    trader: isBuy ? (event.data.buyer || '') : (event.data.seller || ''),
+    outcome_index: parseInt(event.data.outcome_index) || 0,
+    collateral_amount: isBuy ? (event.data.collateral_in || '0') : (event.data.collateral_out || '0'),
+    token_amount: isBuy ? (event.data.tokens_out || '0') : (event.data.tokens_in || '0'),
+    new_price: parseInt(event.data.new_price) || 50,
+    timestamp,
+  };
+}
+
+/**
+ * Fetch recent trades from Aptos Events API (fallback when Geomi unavailable)
+ * Queries account events for the contract module
+ */
+export async function fetchTradesFromAptosApi(
+  marketAddress?: string,
+  limit: number = 50
+): Promise<GeomiTrade[]> {
+  try {
+    // Fetch recent transactions that might contain trade events
+    // We query the account's transactions and look for trade events
+    const response = await fetchRpcWithFailover(
+      `/accounts/${CONTRACT_ADDRESS}/transactions?limit=${Math.min(limit * 2, 100)}`
+    );
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const txns = await response.json();
+    const trades: GeomiTrade[] = [];
+
+    for (const tx of txns) {
+      if (!tx.success) continue;
+
+      // Check if this transaction has trade events
+      const tradeEvents = (tx.events || []).filter((e: { type: string }) =>
+        e.type === BUY_EVENT_TYPE || e.type === SELL_EVENT_TYPE
+      );
+
+      for (let i = 0; i < tradeEvents.length; i++) {
+        const event = tradeEvents[i];
+
+        // Filter by market if specified
+        if (marketAddress && event.data.market_address !== marketAddress) {
+          continue;
+        }
+
+        // Convert timestamp from microseconds to ISO
+        const timestamp = tx.timestamp
+          ? new Date(parseInt(tx.timestamp) / 1000).toISOString()
+          : new Date().toISOString();
+
+        trades.push(aptosEventToGeomiTrade(event, tx.hash, i, timestamp));
+      }
+    }
+
+    // Sort by timestamp descending and limit
+    return trades
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, limit);
+  } catch (err) {
+    console.error('Error fetching trades from Aptos API:', err);
+    return [];
+  }
+}
+
+/**
+ * Fetch trades with automatic fallback
+ * 1. Try Geomi first
+ * 2. Fall back to Aptos Events API if Geomi fails
+ */
+export async function fetchTradesWithFallback(
+  marketAddress?: string,
+  limit: number = 50
+): Promise<{ trades: GeomiTrade[]; source: 'geomi' | 'aptos_api' | 'none' }> {
+  // Try Geomi first if configured
+  if (isGeomiConfigured()) {
+    try {
+      const trades = marketAddress
+        ? await fetchLatestTrades(marketAddress, limit)
+        : await fetchAllTrades(limit);
+
+      if (trades.length > 0) {
+        return { trades, source: 'geomi' };
+      }
+    } catch (err) {
+      console.warn('Geomi query failed, falling back to Aptos API:', err);
+    }
+  }
+
+  // Fallback to Aptos Events API
+  try {
+    const trades = await fetchTradesFromAptosApi(marketAddress, limit);
+    return { trades, source: trades.length > 0 ? 'aptos_api' : 'none' };
+  } catch {
+    return { trades: [], source: 'none' };
+  }
+}

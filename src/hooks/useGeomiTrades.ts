@@ -7,9 +7,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  fetchLatestTrades,
   fetchUserTrades,
-  fetchAllTrades,
+  fetchTradesWithFallback,
   type GeomiTrade,
   geomiTradeToLiveTrade,
 } from '../utils/geomiClient';
@@ -29,6 +28,7 @@ interface UseGeomiTradesReturn {
   error: Error | null;
   refetch: () => Promise<void>;
   isConfigured: boolean;
+  dataSource: 'geomi' | 'aptos_api' | 'none';  // Where trades are coming from
 }
 
 /**
@@ -48,12 +48,14 @@ export function useGeomiTrades(
   const [trades, setTrades] = useState<LiveTrade[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [dataSource, setDataSource] = useState<'geomi' | 'aptos_api' | 'none'>('none');
 
   const isConfigured = isGeomiConfigured();
   const lastFetchRef = useRef<number>(0);
 
   const fetchTrades = useCallback(async () => {
-    if (!isConfigured || !enabled) {
+    // Always try to fetch (Aptos API fallback doesn't require Geomi config)
+    if (!enabled) {
       return;
     }
 
@@ -68,18 +70,14 @@ export function useGeomiTrades(
     setError(null);
 
     try {
-      let geomiTrades: GeomiTrade[];
+      // Use fallback function that tries Geomi first, then Aptos API
+      const result = await fetchTradesWithFallback(marketAddress, limit);
 
-      if (marketAddress) {
-        geomiTrades = await fetchLatestTrades(marketAddress, limit);
-      } else {
-        geomiTrades = await fetchAllTrades(limit);
-      }
-
-      setRawTrades(geomiTrades);
+      setRawTrades(result.trades);
+      setDataSource(result.source);
 
       // Convert to LiveTrade format
-      const liveTrades: LiveTrade[] = geomiTrades.map(t => {
+      const liveTrades: LiveTrade[] = result.trades.map(t => {
         const converted = geomiTradeToLiveTrade(t);
         return {
           id: converted.id,
@@ -90,21 +88,23 @@ export function useGeomiTrades(
           timestamp: converted.timestamp,
           txHash: converted.txHash,
           trader: converted.trader,
+          marketAddress: t.market_address,  // Include market address for filtering
         };
       });
 
       setTrades(liveTrades);
     } catch (err) {
-      console.error('Error fetching trades from Geomi:', err);
+      console.error('Error fetching trades:', err);
       setError(err instanceof Error ? err : new Error(String(err)));
+      setDataSource('none');
     } finally {
       setIsLoading(false);
     }
-  }, [isConfigured, enabled, marketAddress, limit]);
+  }, [enabled, marketAddress, limit]);
 
   // Initial fetch and polling
   useEffect(() => {
-    if (!enabled || !isConfigured) {
+    if (!enabled) {
       return;
     }
 
@@ -115,7 +115,7 @@ export function useGeomiTrades(
     const interval = setInterval(fetchTrades, pollInterval);
 
     return () => clearInterval(interval);
-  }, [enabled, isConfigured, pollInterval, fetchTrades]);
+  }, [enabled, pollInterval, fetchTrades]);
 
   return {
     trades,
@@ -124,6 +124,7 @@ export function useGeomiTrades(
     error,
     refetch: fetchTrades,
     isConfigured,
+    dataSource,
   };
 }
 
@@ -144,6 +145,7 @@ export function useGeomiUserTrades(
   const [trades, setTrades] = useState<LiveTrade[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [dataSource, setDataSource] = useState<'geomi' | 'aptos_api' | 'none'>('none');
 
   const isConfigured = isGeomiConfigured();
 
@@ -159,6 +161,7 @@ export function useGeomiUserTrades(
       const geomiTrades = await fetchUserTrades(userAddress, limit);
 
       setRawTrades(geomiTrades);
+      setDataSource(geomiTrades.length > 0 ? 'geomi' : 'none');
 
       // Convert to LiveTrade format
       const liveTrades: LiveTrade[] = geomiTrades.map(t => {
@@ -172,6 +175,7 @@ export function useGeomiUserTrades(
           timestamp: converted.timestamp,
           txHash: converted.txHash,
           trader: converted.trader,
+          marketAddress: t.market_address,
         };
       });
 
@@ -179,6 +183,7 @@ export function useGeomiUserTrades(
     } catch (err) {
       console.error('Error fetching user trades from Geomi:', err);
       setError(err instanceof Error ? err : new Error(String(err)));
+      setDataSource('none');
     } finally {
       setIsLoading(false);
     }
@@ -206,6 +211,7 @@ export function useGeomiUserTrades(
     error,
     refetch: fetchTrades,
     isConfigured,
+    dataSource,
   };
 }
 

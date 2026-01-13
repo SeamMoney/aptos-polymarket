@@ -138,12 +138,13 @@ export function MarketDetail() {
           timestamp: t.timestamp,
           txHash: t.txHash || '',
           trader: t.bot || '',
+          marketAddress: marketAddress,  // Include market address for filtering
         };
         emitTrade(liveTrade);
       });
       lastHftTradeCountRef.current = hftTrades.length;
     }
-  }, [hftTrades]);
+  }, [hftTrades, marketAddress]);
 
   // Combine HFT trades with blockchain trades - show ALL trades from both sources
   const combinedTrades: Trade[] = useMemo(() => {

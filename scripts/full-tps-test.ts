@@ -36,17 +36,20 @@ const WORKERS = [
 const FULLNODE = 'aptos.cash.trading';
 const QUICKNODE = 'https://polished-evocative-borough.aptos-testnet.quiknode.pro/5007528028dac5f585808912130fe71e0a30558c/v1';
 
+// 12 USD1-backed Polymarket-style markets (Jan 11, 2026)
 const ALL_MARKETS = [
-  { address: '0xc47af6adee557eb824c5a82f800d9ca15a6525417d273d9671451a45106870bb', name: 'WLFI Charter' },
-  { address: '0x3b365cbbc7ea0aa6e18b3dd7d4e2cae6c84fae90d9b5d0c3b1ef8a919ea5a72f', name: 'Greenland' },
-  { address: '0xa4cc4e98d5f9dd23809ad1cf9f3b44501be2ffae47c06f59fa81df0886f01fa0', name: 'Fed Chair' },
-  { address: '0x74bbc4673ebe683d3d0013a1862c369938255071f0b32ac0fb638b476698213a', name: 'Iran Khamenei' },
-  { address: '0x2163cf2a5e8a58b262111e06f6e97818ff0a11418eaedcb28ba3e10a0fdb2d12', name: 'China Taiwan' },
-  { address: '0x9ead4f745267b70bf8f80858876552dff8b3752d67580deb0ef211a441230ebd', name: 'Russia-Ukraine' },
-  { address: '0xc0c821e880662d8f4c35d6e88521f489aa61c97fe42662a348fdb4333922f3dc', name: 'Venezuela' },
-  { address: '0x23c79ba59fdffe66abd5243ebf98d9dd13661d86a355cfcb1872eeb58e088278', name: 'Fed Rate Jan' },
-  { address: '0xb297b277d82a364b2f98d2e8fac549d921acd565dfb46c598c09eab2e93e776d', name: 'BTC Q1 2026' },
-  { address: '0xaba7e1a1ca41899757215bac86bd71ca5d8db24d53acf18332421b0424dac8f3', name: 'BTC $150K' },
+  { address: '0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052', name: 'Republican 2028' },
+  { address: '0xf3256638cad294e47c8cc6bb1a6a0fdd85b29ef427b3118028c34b9f061aa50d', name: 'WLFI Charter' },
+  { address: '0x192f7cfc0c8151deec37c6280c17b55f7557a04b580b486d6076cc11955ddde3', name: 'Greenland' },
+  { address: '0x9e4583c0af174a119b5316ae84988f4fd988259de35ef95447b371744a355762', name: 'Fed Chair' },
+  { address: '0xd82731a9a2259ccfef2fd13db13720c7cc927c5b7879aa160aecc618c4d4654f', name: 'Iran Binary' },
+  { address: '0x77a65b92664f992ccbd8a17d73a5f2fc933523ce64a1c475d1db1c0fc2acf42a', name: 'China Taiwan' },
+  { address: '0xa84ba7b7364a40031e29d355d7a5f48fd54f922c8eed0ed0009c5d660a6da339', name: 'Russia-Ukraine' },
+  { address: '0x8187c1b3b7ca06dbcbac36fe280e0b5343b744c5a299a43263f9162738d4d792', name: 'Venezuela' },
+  { address: '0x551f153ff61f94311a22592550b0ede4b3b57338af161bd9472f21e15da23b4b', name: 'Fed Jan 2026' },
+  { address: '0x742e3c66cb6570351ceb7cf1b2df87e726c708b786109a8cdae93b0c3c7b5a04', name: 'BTC Q1 2026' },
+  { address: '0x35df09c98f8668c06f6777e98e3a0405fe894c271f06ba2fed0b322e2a5c2f16', name: 'BTC $150K' },
+  { address: '0xd3227afa81dce5fa0e8f86f61dc7f3215ee799a0d2e6a112a988e5ac732bf719', name: 'Iran Date' },
 ];
 
 const MARKET_ADDRESSES = ALL_MARKETS.map(m => m.address).join(',');
@@ -211,9 +214,13 @@ export ULTRA_PRIVATE_KEYS="${keys}"
 export APTOS_API_KEY="AG-3JMDT54EN4DCLULDWAUXCYGQ56JJQCYHH"
 export FULLNODE_URL="http://${FULLNODE}:8080/v1"
 export EXTRA_RPC_ENDPOINTS="${QUICKNODE}"
-export CONTRACT_ADDRESS="0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1"
+# USD1 v2 Contract with admin drainers (Jan 11, 2026)
+export CONTRACT_ADDRESS="0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134"
 export MULTI_MARKETS="${MARKET_ADDRESSES}"
 export HFT_PORT=3001
+# USD1 Stablecoin - eliminates APT global state contention for 10K+ TPS
+export USE_USD1="true"
+export USD1_METADATA="0x4e977d5ee91d77d680972a44b38b9c7a2c5694439169eeae060a48324e5c4597"
 cd /opt/aptos-hft && npx tsx hft-ultra-server.ts quantum ${duration + 30}
 `;
 

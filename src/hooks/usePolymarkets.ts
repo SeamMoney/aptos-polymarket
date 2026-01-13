@@ -206,11 +206,22 @@ export function usePolymarkets(): PolymarketsHook {
     }));
   }, [binaryMarkets]);
 
+  // Normalize question text for deduplication (handles punctuation, whitespace, case)
+  const normalizeQuestion = (q: string): string => {
+    return q
+      .toLowerCase()
+      .trim()
+      .replace(/[?!.,;:'"]/g, '')  // Remove punctuation
+      .replace(/\s+/g, ' ')        // Normalize whitespace
+      .replace(/\$/g, '')          // Remove $ symbols
+      .substring(0, 50);           // First 50 chars for matching
+  };
+
   // Convert multi-outcome markets to Polymarket format
   // Filter duplicates by question, keeping the one with highest volume
   // Also filter out specific markets we don't want to show
   const convertedMultiMarkets: Market[] = useMemo(() => {
-    // First, deduplicate by question - keep highest volume
+    // First, deduplicate by normalized question - keep highest volume
     const deduped = multiMarkets.reduce((acc, market) => {
       // Filter out 2024 presidential election market
       if (market.question.toLowerCase().includes('2024') &&
@@ -218,13 +229,24 @@ export function usePolymarkets(): PolymarketsHook {
         return acc;
       }
 
-      const existing = acc.find(m => m.question === market.question);
+      const normalizedQuestion = normalizeQuestion(market.question);
+      const existing = acc.find(m => normalizeQuestion(m.question) === normalizedQuestion);
       if (!existing) {
         acc.push(market);
       } else if (market.totalCollateral > existing.totalCollateral) {
         // Replace with higher volume market
         const idx = acc.indexOf(existing);
         acc[idx] = market;
+        console.log('[Dedup] Replacing duplicate market:', {
+          oldAddress: existing.address.slice(0, 12),
+          newAddress: market.address.slice(0, 12),
+          question: market.question.substring(0, 50),
+        });
+      } else {
+        console.log('[Dedup] Skipping duplicate (lower volume):', {
+          address: market.address.slice(0, 12),
+          question: market.question.substring(0, 50),
+        });
       }
       return acc;
     }, [] as typeof multiMarkets);

@@ -186,7 +186,7 @@ function getConfig(mode: RunMode) {
     FIRE_AND_FORGET_RATIO: modeConfig.FIRE_AND_FORGET_RATIO,
     USE_ORDERLESS: true,
     USE_MULTI_RPC: modeConfig.USE_MULTI_RPC,
-    USE_BATCH_SUBMIT: true,  // TRUE batch: 10k txns in 1 HTTP call
+    USE_BATCH_SUBMIT: process.env.USE_BATCH_SUBMIT !== 'false',  // Set USE_BATCH_SUBMIT=false to disable
     IS_DRYRUN: mode === 'dryrun',
     TARGET_TPS: modeConfig.TARGET_TPS,
     MODE_LABEL: mode,

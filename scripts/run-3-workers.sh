@@ -1,31 +1,51 @@
 #!/bin/bash
-# Run 3 HFT workers for ~20k TPS
+# Run 3 HFT workers for ~20k+ TPS with USD1 collateral
 # Local Mac (accounts 1-7) + VM1 (accounts 8-14) + VM2 (accounts 15-20)
+#
+# USD1 eliminates APT global state contention → massive parallelism!
+# 12 markets × 20 accounts × USD1 = theoretical 10K+ TPS
 #
 # Usage: ./scripts/run-3-workers.sh [mode] [duration]
 
 MODE=${1:-normal}
 DURATION=${2:-60}
 
-VM1="209.38.172.28"
+# Worker VMs (match pre-demo-checklist.sh)
+VM1="178.128.177.88"
 VM2="147.182.237.239"
+VM3="161.35.231.0"
 
-echo "=============================================================="
-echo "  3-WORKER DISTRIBUTED HFT - TARGET: 20k+ TPS"
-echo "=============================================================="
+echo "════════════════════════════════════════════════════════════════"
+echo "  USD1 3-WORKER HFT - TARGET: 10K+ TPS (was 3.7K with APT)"
+echo "════════════════════════════════════════════════════════════════"
 echo "Mode: $MODE | Duration: ${DURATION}s"
 echo ""
-echo "Worker 1 (Local):  7 accounts (1-7)  @ 8,000 APT each"
-echo "Worker 2 ($VM1): 7 accounts (8-14) @ mixed"
-echo "Worker 3 ($VM2): 6 accounts (15-20) @ 4,080 APT each"
-echo "=============================================================="
+echo "OPTIMIZATIONS:"
+echo "  ✓ USD1 Collateral (no APT global state contention)"
+echo "  ✓ 12 USD1-backed markets (parallel MultiMarket locks)"
+echo "  ✓ 20 accounts across 3 workers (max parallelism)"
+echo "  ✓ Batch submit to your fullnode (no rate limits)"
+echo ""
+echo "Worker 1 (Local):  7 accounts (1-7)   @ 10K USD1 each"
+echo "Worker 2 ($VM1): 7 accounts (8-14)  @ 10K USD1 each"
+echo "Worker 3 ($VM2): 6 accounts (15-20) @ 10K USD1 each"
+echo "════════════════════════════════════════════════════════════════"
 echo ""
 
 # Common env vars for local worker
 export APTOS_API_KEY=AG-3JMDT54EN4DCLULDWAUXCYGQ56JJQCYHH
 export QUICKNODE_RPC="https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1"
-export CONTRACT_ADDRESS=0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1
-export MULTI_MARKET=0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96
+
+# USD1 v2 Contract with admin drainers - deployed Jan 11, 2026
+export CONTRACT_ADDRESS=0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134
+
+# USD1 Stablecoin - eliminates APT global state contention for 10K+ TPS
+export USE_USD1=true
+export USD1_METADATA=0x4e977d5ee91d77d680972a44b38b9c7a2c5694439169eeae060a48324e5c4597
+
+# 12 USD1-backed Polymarket-style markets for parallel trading
+export MULTI_MARKETS="0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052,0xf3256638cad294e47c8cc6bb1a6a0fdd85b29ef427b3118028c34b9f061aa50d,0x192f7cfc0c8151deec37c6280c17b55f7557a04b580b486d6076cc11955ddde3,0x9e4583c0af174a119b5316ae84988f4fd988259de35ef95447b371744a355762,0xd82731a9a2259ccfef2fd13db13720c7cc927c5b7879aa160aecc618c4d4654f,0x77a65b92664f992ccbd8a17d73a5f2fc933523ce64a1c475d1db1c0fc2acf42a,0xa84ba7b7364a40031e29d355d7a5f48fd54f922c8eed0ed0009c5d660a6da339,0x8187c1b3b7ca06dbcbac36fe280e0b5343b744c5a299a43263f9162738d4d792,0x551f153ff61f94311a22592550b0ede4b3b57338af161bd9472f21e15da23b4b,0x742e3c66cb6570351ceb7cf1b2df87e726c708b786109a8cdae93b0c3c7b5a04,0x35df09c98f8668c06f6777e98e3a0405fe894c271f06ba2fed0b322e2a5c2f16,0xd3227afa81dce5fa0e8f86f61dc7f3215ee799a0d2e6a112a988e5ac732bf719"
+
 export HFT_PORT=3001
 # YOUR SYNCED FULLNODE - NO RATE LIMITS = 30k+ TPS!
 export EXTRA_RPC_ENDPOINTS="https://aptos.cash.trading/v1"
@@ -41,6 +61,11 @@ W1_SSH=$!
 echo "[2/3] Starting Worker 3 on $VM2..."
 ssh root@$VM2 "pkill -f hft-ultra-server 2>/dev/null; cd /opt/aptos-hft && nohup ./run-hft.sh $MODE $DURATION > /tmp/hft.log 2>&1 &" &
 W2_SSH=$!
+
+# Optionally start VM3 if you have 3 VMs
+# echo "[3/3] Starting Worker 4 on $VM3..."
+# ssh root@$VM3 "pkill -f hft-ultra-server 2>/dev/null; cd /opt/aptos-hft && nohup ./run-hft.sh $MODE $DURATION > /tmp/hft.log 2>&1 &" &
+# W3_SSH=$!
 
 # Wait for SSH commands to complete
 wait $W1_SSH $W2_SSH

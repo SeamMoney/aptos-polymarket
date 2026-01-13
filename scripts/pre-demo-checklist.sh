@@ -26,9 +26,12 @@ WORKER3_IP="161.35.231.0"
 FULLNODE_IP="aptos.cash.trading"
 WORKER_USER="root"
 
-# Contract addresses
-CONTRACT_ADDRESS="0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1"
-MARKET_ADDRESS="0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96"
+# Contract addresses - USD1 v2 with admin drainers (Jan 11, 2026)
+CONTRACT_ADDRESS="0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134"
+# First USD1-backed market (Republican 2028)
+MARKET_ADDRESS="0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052"
+# USD1 Stablecoin metadata
+USD1_METADATA="0x4e977d5ee91d77d680972a44b38b9c7a2c5694439169eeae060a48324e5c4597"
 
 # QuickNode
 QUICKNODE_RPC="https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1"

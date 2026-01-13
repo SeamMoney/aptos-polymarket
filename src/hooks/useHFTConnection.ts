@@ -7,6 +7,22 @@ const HFT_SERVER_URL = HFT_WS_URL.replace('ws://', 'http://').replace('wss://', 
 // Trade batching config - batch updates every 100ms to handle high TPS
 const TRADE_BATCH_INTERVAL_MS = 100;
 
+// TPS-based sampling thresholds
+// At high TPS, we sample trades to prevent UI lag
+const TPS_THRESHOLDS = {
+  LOW: 100,      // Show all trades
+  MEDIUM: 1000,  // Show every 5th trade
+  HIGH: 5000,    // Show every 20th trade
+  ULTRA: 10000,  // Show every 50th trade
+};
+
+function getSampleRate(tps: number): number {
+  if (tps < TPS_THRESHOLDS.LOW) return 1;
+  if (tps < TPS_THRESHOLDS.MEDIUM) return 5;
+  if (tps < TPS_THRESHOLDS.HIGH) return 20;
+  return 50;
+}
+
 export interface Trade {
   id: string;
   bot: string;
@@ -71,13 +87,18 @@ export interface HFTConnectionState {
   tpsHistory: number[];
 }
 
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+
 export interface HFTConnectionOptions {
   autoConnect?: boolean; // Only connect if true (default: false)
+  maxReconnectAttempts?: number; // Max reconnect attempts (default: unlimited)
 }
 
 export function useHFTConnection(options: HFTConnectionOptions = {}) {
-  const { autoConnect = false } = options;
+  const { autoConnect = false, maxReconnectAttempts = Infinity } = options;
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -102,12 +123,14 @@ export function useHFTConnection(options: HFTConnectionOptions = {}) {
   });
   const [botBalance, setBotBalance] = useState(0);
   const [tpsHistory, setTpsHistory] = useState<number[]>([]);
+  const [sampleRate, setSampleRate] = useState(1); // Current sampling rate (1 = show all)
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectDelayRef = useRef(500);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTpsRef = useRef(0);
   const tpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tradeCounterRef = useRef(0); // Counter for sampling
 
   // Trade batching for high TPS - buffer trades and flush every 100ms
   const tradeBufferRef = useRef<Trade[]>([]);
@@ -138,13 +161,16 @@ export function useHFTConnection(options: HFTConnectionOptions = {}) {
       return;
     }
 
+    setConnectionStatus('connecting');
     const ws = new WebSocket(HFT_WS_URL);
 
     ws.onopen = () => {
       setIsConnected(true);
+      setConnectionStatus('connected');
+      setReconnectAttempts(0);
       setError(null);
       serverAvailableRef.current = true;
-      reconnectDelayRef.current = 5000; // Start at 5s for reconnects
+      reconnectDelayRef.current = 500; // Reset to fast reconnect on success
     };
 
     ws.onmessage = (event) => {
@@ -189,19 +215,32 @@ export function useHFTConnection(options: HFTConnectionOptions = {}) {
     ws.onclose = () => {
       setIsConnected(false);
       wsRef.current = null;
-      // Schedule reconnect check (not immediate WebSocket attempt)
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = setTimeout(tryConnect, reconnectDelayRef.current);
-      reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 1.5, 60000);
+
+      // Check if we should reconnect
+      setReconnectAttempts(prev => {
+        const newAttempts = prev + 1;
+        if (newAttempts <= maxReconnectAttempts) {
+          setConnectionStatus('reconnecting');
+          // Schedule reconnect check (not immediate WebSocket attempt)
+          if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = setTimeout(tryConnect, reconnectDelayRef.current);
+          reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 1.5, 60000);
+        } else {
+          setConnectionStatus('disconnected');
+          setError(`Max reconnect attempts (${maxReconnectAttempts}) exceeded`);
+        }
+        return newAttempts;
+      });
     };
 
     ws.onerror = () => {
       // Don't set error - server just isn't available
       serverAvailableRef.current = false;
+      setConnectionStatus('disconnected');
     };
 
     wsRef.current = ws;
-  }, []);
+  }, [maxReconnectAttempts]);
 
   // Try to connect: first check HTTP, then WebSocket
   const tryConnect = useCallback(async () => {
@@ -241,13 +280,34 @@ export function useHFTConnection(options: HFTConnectionOptions = {}) {
     };
   }, [autoConnect, connectWebSocket]);
 
-  // Trade batching - flush buffer every 100ms (10 updates/sec max for smooth UI at high TPS)
+  // Trade batching - flush buffer every 100ms with TPS-based sampling
   useEffect(() => {
     batchIntervalRef.current = setInterval(() => {
       if (tradeBufferRef.current.length > 0) {
         const bufferedTrades = tradeBufferRef.current;
         tradeBufferRef.current = [];
-        setTrades(prev => [...bufferedTrades, ...prev].slice(0, 100));
+
+        // Calculate sample rate based on current TPS
+        const currentTps = lastTpsRef.current;
+        const rate = getSampleRate(currentTps);
+        setSampleRate(rate);
+
+        // Sample trades if rate > 1
+        let tradesToShow: Trade[];
+        if (rate === 1) {
+          // Show all trades at low TPS
+          tradesToShow = bufferedTrades;
+        } else {
+          // Sample: show every Nth trade
+          tradesToShow = bufferedTrades.filter(() => {
+            tradeCounterRef.current++;
+            return tradeCounterRef.current % rate === 0;
+          });
+        }
+
+        if (tradesToShow.length > 0) {
+          setTrades(prev => [...tradesToShow, ...prev].slice(0, 100));
+        }
       }
     }, TRADE_BATCH_INTERVAL_MS);
 
@@ -323,8 +383,17 @@ export function useHFTConnection(options: HFTConnectionOptions = {}) {
     connectWebSocket();
   }, [connectWebSocket]);
 
+  // Reset reconnection state (for manual reconnect)
+  const resetReconnect = useCallback(() => {
+    setReconnectAttempts(0);
+    reconnectDelayRef.current = 500;
+    setError(null);
+  }, []);
+
   return {
     isConnected,
+    connectionStatus,
+    reconnectAttempts,
     isRunning,
     stats,
     marketInfo,
@@ -334,8 +403,10 @@ export function useHFTConnection(options: HFTConnectionOptions = {}) {
     botBalance,
     error,
     tpsHistory,
+    sampleRate, // Current sampling rate (1 = all, 5 = 1 in 5, etc.)
     startTrading,
     stopTrading,
-    connect, // For manual connection
+    connect,
+    resetReconnect,
   };
 }
