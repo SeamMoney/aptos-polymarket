@@ -13,9 +13,9 @@ wormhole = "0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625"
 [dev-addresses]
 # TPS Optimized (Table + snapshot pattern) - deployed Jan 13, 2026
 prediction_market = "0xda51d5f87be27cac0a1d72fe500da145c61b2356547ac811e0cd822c80f99a3b"
-pyth = "0x7e783b349d3e89cf5931af376ebeadbfab855b3fa239b7ada8f5a92fbea6b387"
-deployer = "0xb31e712b26fd295357355f6845e77c888298636609e93bc9b05f0f604049f434"
-wormhole = "0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625"
+
+# Benchmark variants address - for A/B testing data structures
+# prediction_market = "0x07aa6210d6eb8befe55e0cb983964ad5f2e4edb4eb80be8ea6a2ec7860ff34f0"
 
 [dependencies.AptosFramework]
 git = "https://github.com/aptos-labs/aptos-core.git"

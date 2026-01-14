@@ -283,6 +283,8 @@ export function usePolymarkets(): PolymarketsHook {
         isTrending: market.totalCollateral > 10,
         isMultiOutcome: true,
         outcomes,
+        // Pass through oracle info from on-chain data
+        oracleInfo: market.oracleInfo,
       };
     });
   }, [multiMarkets]);

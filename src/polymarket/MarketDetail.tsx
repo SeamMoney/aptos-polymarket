@@ -14,6 +14,7 @@ import { TPSChart } from "./TPSChart";
 import { AptosComparison } from "./AptosComparison";
 import { ConsensusVisualizer } from "./ConsensusVisualizer";
 import { SpeedComparison } from "./SpeedComparison";
+import { OracleStatusPanel, UMAComparisonPanel, FailureMetricsPanel } from "../components/oracle";
 import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useHFTConnection } from "../hooks/useHFTConnection";
@@ -1109,6 +1110,38 @@ export function MarketDetail() {
           }`}
         >
           <SpeedComparison />
+        </div>
+
+        {/* Oracle Status Panel */}
+        <div
+          className={`px-4 pb-4 transition-all duration-300 delay-700 ${
+            isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+          }`}
+        >
+          <OracleStatusPanel
+            marketType={market?.oracleInfo?.type || 'admin'}
+            price={market?.oracleInfo?.resolutionPrice ? market.oracleInfo.resolutionPrice * 100_000_000 : undefined}
+            targetPrice={market?.oracleInfo?.type === 'pyth' ? 100000_00000000 : undefined}
+            confidence={market?.oracleInfo?.type === 'pyth' ? 12.50 : undefined}
+          />
+        </div>
+
+        {/* UMA Comparison Panel */}
+        <div
+          className={`px-4 pb-4 transition-all duration-300 delay-700 ${
+            isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+          }`}
+        >
+          <UMAComparisonPanel />
+        </div>
+
+        {/* Polymarket Failure Metrics Panel */}
+        <div
+          className={`px-4 pb-6 transition-all duration-300 delay-700 ${
+            isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+          }`}
+        >
+          <FailureMetricsPanel />
         </div>
 
         {/* Related Section */}

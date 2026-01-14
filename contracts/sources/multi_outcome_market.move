@@ -24,7 +24,6 @@ module prediction_market::multi_outcome_market {
     use aptos_framework::timestamp;
     use aptos_framework::event;
     use aptos_framework::aggregator_v2::{Self, Aggregator};
-    use aptos_framework::coin;
     use aptos_std::table::{Self, Table};
     use prediction_market::oracle::{Self, OracleConfig};
 
@@ -1069,7 +1068,7 @@ module prediction_market::multi_outcome_market {
     #[view]
     /// Get all multi-outcome market addresses
     public fun get_all_multi_markets(): vector<address> acquires MultiMarketRegistry {
-        let registry = borrow_global<MultiMarketRegistry>(@prediction_market);
+        let _registry = borrow_global<MultiMarketRegistry>(@prediction_market);
         let addresses = vector::empty<address>();
         // Note: Table doesn't support iteration - use events or indexer for full list
         // This is a trade-off: Table optimizes for parallelization over enumeration

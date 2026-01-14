@@ -1,3 +1,13 @@
+// Oracle types: 0=Admin, 1=Pyth, 2=Switchboard, 3=Optimistic
+export type OracleType = 'admin' | 'pyth' | 'switchboard' | 'optimistic';
+
+export interface OracleInfo {
+  type: OracleType;
+  hasConfig: boolean;
+  oracleResolved: boolean;
+  resolutionPrice: number | null;
+}
+
 export interface Market {
   id: string;
   question: string;
@@ -16,6 +26,7 @@ export interface Market {
   outcomes?: Outcome[];
   createdAt?: string;
   resolver?: string;
+  oracleInfo?: OracleInfo;
 }
 
 export interface Outcome {

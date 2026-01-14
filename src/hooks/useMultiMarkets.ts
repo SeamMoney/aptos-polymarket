@@ -26,6 +26,16 @@ interface Outcome {
   userBalance: number;
 }
 
+// Oracle types: 0=Admin, 1=Pyth, 2=Switchboard, 3=Optimistic
+export type OracleType = 'admin' | 'pyth' | 'switchboard' | 'optimistic';
+
+export interface OracleInfo {
+  type: OracleType;
+  hasConfig: boolean;
+  oracleResolved: boolean;
+  resolutionPrice: number | null;
+}
+
 interface MultiMarket {
   address: string;
   question: string;
@@ -37,6 +47,7 @@ interface MultiMarket {
   resolved: boolean;
   winningOutcome: number | null;
   totalCollateral: number;
+  oracleInfo?: OracleInfo;
 }
 
 export function useMultiMarkets() {
@@ -73,11 +84,19 @@ export function useMultiMarkets() {
         return;
       }
 
+      // Helper to convert oracle type number to string
+      const oracleTypeMap: Record<number, OracleType> = {
+        0: 'admin',
+        1: 'pyth',
+        2: 'switchboard',
+        3: 'optimistic',
+      };
+
       // Fetch all markets in PARALLEL for speed
       const fetchSingleMarket = async (addr: string): Promise<MultiMarket | null> => {
         try {
           // Make all RPC calls for this market in parallel
-          const [infoResult, labelsResult, pricesResult, positionsResult] = await Promise.all([
+          const [infoResult, labelsResult, pricesResult, positionsResult, oracleResult] = await Promise.all([
             aptos.view({
               payload: {
                 function: `${MODULE}::get_multi_market_info` as MoveFn,
@@ -104,6 +123,13 @@ export function useMultiMarkets() {
                   },
                 }).catch(() => [new Array(10).fill('0')])
               : Promise.resolve([new Array(10).fill('0')]),
+            // Fetch oracle info (may fail on old contracts without this function)
+            aptos.view({
+              payload: {
+                function: `${MODULE}::get_oracle_info` as MoveFn,
+                functionArguments: [addr],
+              },
+            }).catch(() => [0, false, false, { vec: [] }]),
           ]);
 
           const [question, description, category, outcomeCount, endTime, resolved, winningOutcome, totalCollateral] =
@@ -112,6 +138,22 @@ export function useMultiMarkets() {
           const labels = labelsResult[0] as string[];
           const rawPrices = (pricesResult[0] as string[]).map(p => parseInt(p));
           const userBalances = (positionsResult[0] as string[]).map(b => parseInt(b) / 100_000_000);
+
+          // Parse oracle info
+          const [oracleType, hasConfig, oracleResolved, resolutionPriceVec] = oracleResult as [
+            number | string,
+            boolean,
+            boolean,
+            { vec: string[] }
+          ];
+          const oracleInfo: OracleInfo = {
+            type: oracleTypeMap[Number(oracleType)] || 'admin',
+            hasConfig: Boolean(hasConfig),
+            oracleResolved: Boolean(oracleResolved),
+            resolutionPrice: resolutionPriceVec.vec.length > 0
+              ? parseInt(resolutionPriceVec.vec[0]) / 100_000_000
+              : null,
+          };
 
           // Normalize prices to sum to 100%
           const priceSum = rawPrices.reduce((acc, p) => acc + p, 0);
@@ -138,6 +180,7 @@ export function useMultiMarkets() {
             resolved,
             winningOutcome: winningOutcome.vec.length > 0 ? parseInt(winningOutcome.vec[0]) : null,
             totalCollateral: parseInt(totalCollateral) / 100_000_000,
+            oracleInfo,
           };
         } catch (err) {
           console.error(`Error fetching market ${addr}:`, err);
