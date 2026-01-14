@@ -8,7 +8,7 @@
 /// - Winning tokens redeem for 1 USD1 each
 ///
 /// TPS OPTIMIZATIONS:
-/// - SmartTable registry for O(1) lookups without global lock
+/// - Table registry for O(1) lookups (better parallelization than SmartTable)
 /// - Separate OutcomeMarket objects for per-outcome parallelization
 /// - Aggregator_v2 for all numeric state (parallel add/sub)
 /// - Custom collateral (USD1) to avoid APT global state contention
@@ -24,7 +24,9 @@ module prediction_market::multi_outcome_market {
     use aptos_framework::timestamp;
     use aptos_framework::event;
     use aptos_framework::aggregator_v2::{Self, Aggregator};
-    use aptos_std::smart_table::{Self, SmartTable};
+    use aptos_framework::coin;
+    use aptos_std::table::{Self, Table};
+    use prediction_market::oracle::{Self, OracleConfig};
 
     // ==================== Error Codes ====================
 
@@ -41,6 +43,11 @@ module prediction_market::multi_outcome_market {
     const E_INVALID_OUTCOME_COUNT: u64 = 11;
     const E_INSUFFICIENT_BALANCE: u64 = 12;
     const E_OUTCOME_NOT_FOUND: u64 = 13;
+    // Oracle error codes
+    const E_NO_ORACLE_CONFIG: u64 = 14;
+    const E_WRONG_ORACLE_TYPE: u64 = 15;
+    const E_ORACLE_PRICE_INVALID: u64 = 16;
+    const E_ORACLE_PRICE_STALE: u64 = 17;
 
     // ==================== Constants ====================
 
@@ -129,19 +136,28 @@ module prediction_market::multi_outcome_market {
         fee_bps: u64,
         /// Accumulated fees (Aggregator for parallel execution)
         accumulated_fees: Aggregator<u64>,
+
+        // ==================== Oracle Fields (NEW) ====================
+
+        /// Oracle configuration (None = admin-only resolution)
+        oracle_config: Option<OracleConfig>,
+        /// Whether resolution was via oracle (vs admin)
+        oracle_resolved: bool,
+        /// Price at resolution (for Pyth markets)
+        resolution_price: Option<u64>,
     }
 
-    /// Market metadata for SmartTable registry
+    /// Market metadata for Table registry
     struct MarketMetadata has store, drop, copy {
         creator: address,
         created_at: u64,
         outcome_count: u64,
     }
 
-    /// Global registry using SmartTable for O(1) lookups without global lock
+    /// Global registry using Table for O(1) lookups (better parallelization than SmartTable)
     struct MultiMarketRegistry has key {
-        /// SmartTable: market_address -> MarketMetadata
-        markets: SmartTable<address, MarketMetadata>,
+        /// Table: market_address -> MarketMetadata
+        markets: Table<address, MarketMetadata>,
         /// Total market count (still uses direct increment for simplicity)
         market_count: u64,
         /// Extension ref for registry operations
@@ -214,6 +230,15 @@ module prediction_market::multi_outcome_market {
         payout: u64,
     }
 
+    #[event]
+    struct OracleResolution has drop, store {
+        market_address: address,
+        oracle_type: u8,
+        price: u64,
+        outcome: u64,
+        timestamp: u64,
+    }
+
     // ==================== Initialization ====================
 
     /// Initialize the multi-market registry (called once on deployment)
@@ -222,7 +247,7 @@ module prediction_market::multi_outcome_market {
         let extend_ref = object::generate_extend_ref(&constructor_ref);
 
         move_to(deployer, MultiMarketRegistry {
-            markets: smart_table::new(),
+            markets: table::new(),
             market_count: 0,
             extend_ref,
             admin: signer::address_of(deployer), // Admin = contract deployer
@@ -316,11 +341,15 @@ module prediction_market::multi_outcome_market {
             extend_ref,
             fee_bps: FEE_BPS,
             accumulated_fees: aggregator_v2::create_unbounded_aggregator_with_value(0u64),
+            // Initialize oracle fields (admin-only by default)
+            oracle_config: option::none(),
+            oracle_resolved: false,
+            resolution_price: option::none(),
         });
 
-        // Register in SmartTable registry (O(1) insertion, no global lock on reads)
+        // Register in Table registry (O(1) insertion, better parallelization)
         let registry = borrow_global_mut<MultiMarketRegistry>(@prediction_market);
-        smart_table::add(&mut registry.markets, market_addr, MarketMetadata {
+        table::add(&mut registry.markets, market_addr, MarketMetadata {
             creator: creator_addr,
             created_at: timestamp::now_seconds(),
             outcome_count: (outcome_count as u64),
@@ -452,8 +481,12 @@ module prediction_market::multi_outcome_market {
         let outcome = borrow_global_mut<OutcomeMarket>(outcome_addr);
 
         // Get current reserves for CPMM calculation
-        let current_base_reserve = aggregator_v2::read(&market.base_reserve);
-        let current_outcome_reserve = aggregator_v2::read(&outcome.reserve);
+        // Using snapshot() + read_snapshot() instead of read() to avoid sequential dependencies
+        // Per AIP-47: "Unlike read(), it is fast and avoids sequential dependencies"
+        let base_snapshot = aggregator_v2::snapshot(&market.base_reserve);
+        let outcome_snapshot = aggregator_v2::snapshot(&outcome.reserve);
+        let current_base_reserve = aggregator_v2::read_snapshot(&base_snapshot);
+        let current_outcome_reserve = aggregator_v2::read_snapshot(&outcome_snapshot);
 
         // Calculate output using CPMM
         let tokens_out = calculate_buy_output(current_base_reserve, current_outcome_reserve, amount_after_fee);
@@ -472,10 +505,13 @@ module prediction_market::multi_outcome_market {
         let tokens = fungible_asset::mint(&outcome.mint_ref, tokens_out);
         primary_fungible_store::deposit(buyer_addr, tokens);
 
-        // Calculate new price for event
-        let updated_base_reserve = aggregator_v2::read(&market.base_reserve);
-        let updated_outcome_reserve = aggregator_v2::read(&outcome.reserve);
-        let new_price = calculate_price(updated_base_reserve, updated_outcome_reserve);
+        // Calculate new price from known values (AVOIDS extra aggregator reads that serialize!)
+        // new_base = old_base + amount_after_fee
+        // new_outcome = old_outcome - tokens_out
+        let new_price = calculate_price(
+            current_base_reserve + amount_after_fee,
+            current_outcome_reserve - tokens_out
+        );
 
         event::emit(OutcomeTokenBought {
             market_address: market_addr,
@@ -509,8 +545,12 @@ module prediction_market::multi_outcome_market {
         let outcome = borrow_global_mut<OutcomeMarket>(outcome_addr);
 
         // Get current reserves for CPMM calculation
-        let current_base_reserve = aggregator_v2::read(&market.base_reserve);
-        let current_outcome_reserve = aggregator_v2::read(&outcome.reserve);
+        // Using snapshot() + read_snapshot() instead of read() to avoid sequential dependencies
+        // Per AIP-47: "Unlike read(), it is fast and avoids sequential dependencies"
+        let base_snapshot = aggregator_v2::snapshot(&market.base_reserve);
+        let outcome_snapshot = aggregator_v2::snapshot(&outcome.reserve);
+        let current_base_reserve = aggregator_v2::read_snapshot(&base_snapshot);
+        let current_outcome_reserve = aggregator_v2::read_snapshot(&outcome_snapshot);
 
         // Calculate collateral out using CPMM
         let collateral_out_before_fee = calculate_sell_output(current_outcome_reserve, current_base_reserve, tokens_in);
@@ -535,10 +575,13 @@ module prediction_market::multi_outcome_market {
         let payout = fungible_asset::withdraw(&market_signer, market.collateral_store, collateral_out);
         primary_fungible_store::deposit(seller_addr, payout);
 
-        // Calculate new price for event
-        let updated_base_reserve = aggregator_v2::read(&market.base_reserve);
-        let updated_outcome_reserve = aggregator_v2::read(&outcome.reserve);
-        let new_price = calculate_price(updated_base_reserve, updated_outcome_reserve);
+        // Calculate new price from known values (AVOIDS extra aggregator reads that serialize!)
+        // new_outcome = old_outcome + tokens_in
+        // new_base = old_base - collateral_out_before_fee
+        let new_price = calculate_price(
+            current_base_reserve - collateral_out_before_fee,
+            current_outcome_reserve + tokens_in
+        );
 
         event::emit(OutcomeTokenSold {
             market_address: market_addr,
@@ -572,6 +615,162 @@ module prediction_market::multi_outcome_market {
             winning_outcome,
             resolver: resolver_addr,
         });
+    }
+
+    /// Create a crypto price market with Pyth oracle for instant resolution
+    /// Example: "Will BTC be above $100,000 on Jan 31, 2026?"
+    /// Resolution: Instant (~125ms) via Pyth price feed
+    public entry fun create_crypto_price_market(
+        creator: &signer,
+        question: String,
+        description: String,
+        end_time: u64,
+        price_feed_id: vector<u8>,
+        target_price: u64,
+        condition: u8,
+        collateral_metadata: Object<Metadata>,
+        initial_liquidity: u64,
+    ) acquires MultiMarketRegistry {
+        let outcome_count = 2; // Binary: Yes/No
+        assert!(initial_liquidity >= MINIMUM_LIQUIDITY * (outcome_count as u64), E_INSUFFICIENT_LIQUIDITY);
+
+        let creator_addr = signer::address_of(creator);
+
+        // Create market object
+        let constructor_ref = object::create_object(creator_addr);
+        let market_signer = object::generate_signer(&constructor_ref);
+        let market_addr = signer::address_of(&market_signer);
+        let extend_ref = object::generate_extend_ref(&constructor_ref);
+
+        // Create outcome markets: "Yes" and "No"
+        let outcome_addresses = vector::empty<address>();
+        let reserve_per_outcome = initial_liquidity / (outcome_count as u64);
+
+        let yes_addr = create_outcome_market(&market_signer, market_addr, 0, string::utf8(b"Yes"), reserve_per_outcome);
+        let no_addr = create_outcome_market(&market_signer, market_addr, 1, string::utf8(b"No"), reserve_per_outcome);
+        vector::push_back(&mut outcome_addresses, yes_addr);
+        vector::push_back(&mut outcome_addresses, no_addr);
+
+        // Create collateral store
+        let collateral_constructor = object::create_named_object(&market_signer, b"COLLATERAL");
+        let collateral_store = fungible_asset::create_store(&collateral_constructor, collateral_metadata);
+
+        // Transfer initial liquidity from creator
+        let liquidity = primary_fungible_store::withdraw(creator, collateral_metadata, initial_liquidity);
+        fungible_asset::deposit(collateral_store, liquidity);
+
+        // Create oracle config for Pyth
+        let oracle_config = oracle::new_pyth_config(price_feed_id, target_price, condition);
+
+        // Create the market with oracle config
+        move_to(&market_signer, MultiMarket {
+            question,
+            description,
+            category: string::utf8(b"Crypto"),
+            end_time,
+            creator: creator_addr,
+            outcome_addresses,
+            outcome_count: (outcome_count as u64),
+            collateral_metadata,
+            collateral_store,
+            total_collateral: aggregator_v2::create_unbounded_aggregator_with_value(initial_liquidity),
+            base_reserve: aggregator_v2::create_unbounded_aggregator_with_value(reserve_per_outcome),
+            resolved: false,
+            winning_outcome: option::none(),
+            extend_ref,
+            fee_bps: FEE_BPS,
+            accumulated_fees: aggregator_v2::create_unbounded_aggregator_with_value(0u64),
+            // Oracle fields
+            oracle_config: option::some(oracle_config),
+            oracle_resolved: false,
+            resolution_price: option::none(),
+        });
+
+        // Register in Table registry
+        let registry = borrow_global_mut<MultiMarketRegistry>(@prediction_market);
+        table::add(&mut registry.markets, market_addr, MarketMetadata {
+            creator: creator_addr,
+            created_at: timestamp::now_seconds(),
+            outcome_count: (outcome_count as u64),
+        });
+        registry.market_count = registry.market_count + 1;
+
+        event::emit(MultiMarketCreated {
+            market_address: market_addr,
+            question: string::utf8(b""),
+            category: string::utf8(b"Crypto"),
+            outcome_count: (outcome_count as u64),
+            creator: creator_addr,
+            end_time,
+            initial_liquidity,
+        });
+    }
+
+    /// Resolve market using Pyth oracle (instant ~125ms resolution)
+    /// Anyone can call this after end_time - no admin required!
+    /// This is 57,600x faster than UMA's 2+ hour resolution
+    public entry fun resolve_with_pyth(
+        market_addr: address,
+    ) acquires MultiMarket {
+        let market = borrow_global_mut<MultiMarket>(market_addr);
+
+        assert!(!market.resolved, E_MARKET_ALREADY_RESOLVED);
+        assert!(timestamp::now_seconds() >= market.end_time, E_MARKET_STILL_ACTIVE);
+        assert!(option::is_some(&market.oracle_config), E_NO_ORACLE_CONFIG);
+
+        let config = option::borrow(&market.oracle_config);
+        assert!(oracle::is_pyth(config), E_WRONG_ORACLE_TYPE);
+
+        // Get price and check condition
+        let (condition_met, price) = oracle::check_price_condition(config);
+
+        // Validate price is fresh
+        assert!(oracle::validate_pyth_price(config), E_ORACLE_PRICE_STALE);
+
+        // Determine winning outcome: Yes (0) if condition met, No (1) otherwise
+        let winning_outcome = if (condition_met) { 0u64 } else { 1u64 };
+
+        // Resolve the market
+        market.resolved = true;
+        market.oracle_resolved = true;
+        market.winning_outcome = option::some(winning_outcome);
+        market.resolution_price = option::some(price);
+
+        event::emit(OracleResolution {
+            market_address: market_addr,
+            oracle_type: oracle::oracle_type_pyth(),
+            price,
+            outcome: winning_outcome,
+            timestamp: timestamp::now_seconds(),
+        });
+    }
+
+    /// Set oracle config on an existing market (creator only, before market ends)
+    /// Useful for upgrading admin markets to oracle-resolved markets
+    public entry fun set_oracle_config(
+        creator: &signer,
+        market_addr: address,
+        oracle_type: u8,
+        price_feed_id: vector<u8>,
+        target_price: u64,
+        condition: u8,
+    ) acquires MultiMarket {
+        let market = borrow_global_mut<MultiMarket>(market_addr);
+        let creator_addr = signer::address_of(creator);
+
+        assert!(creator_addr == market.creator, E_NOT_AUTHORIZED);
+        assert!(!market.resolved, E_MARKET_ALREADY_RESOLVED);
+        assert!(timestamp::now_seconds() < market.end_time, E_MARKET_STILL_ACTIVE);
+
+        let config = if (oracle_type == oracle::oracle_type_pyth()) {
+            oracle::new_pyth_config(price_feed_id, target_price, condition)
+        } else if (oracle_type == oracle::oracle_type_optimistic()) {
+            oracle::new_optimistic_config()
+        } else {
+            oracle::new_admin_config()
+        };
+
+        market.oracle_config = option::some(config);
     }
 
     /// Redeem winning outcome tokens for collateral (1:1)
@@ -872,9 +1071,8 @@ module prediction_market::multi_outcome_market {
     public fun get_all_multi_markets(): vector<address> acquires MultiMarketRegistry {
         let registry = borrow_global<MultiMarketRegistry>(@prediction_market);
         let addresses = vector::empty<address>();
-        // Note: SmartTable iteration is available via for_each but we store count
-        // For now, return empty - use events or indexer for full list
-        // This is a trade-off: SmartTable doesn't support cheap enumeration
+        // Note: Table doesn't support iteration - use events or indexer for full list
+        // This is a trade-off: Table optimizes for parallelization over enumeration
         addresses
     }
 
@@ -889,7 +1087,42 @@ module prediction_market::multi_outcome_market {
     /// Check if market exists in registry
     public fun market_exists(market_addr: address): bool acquires MultiMarketRegistry {
         let registry = borrow_global<MultiMarketRegistry>(@prediction_market);
-        smart_table::contains(&registry.markets, market_addr)
+        table::contains(&registry.markets, market_addr)
+    }
+
+    #[view]
+    /// Get oracle configuration for a market
+    /// Returns (oracle_type, has_config, oracle_resolved, resolution_price)
+    public fun get_oracle_info(market_addr: address): (u8, bool, bool, Option<u64>) acquires MultiMarket {
+        let market = borrow_global<MultiMarket>(market_addr);
+        if (option::is_some(&market.oracle_config)) {
+            let config = option::borrow(&market.oracle_config);
+            (
+                oracle::get_oracle_type(config),
+                true,
+                market.oracle_resolved,
+                market.resolution_price,
+            )
+        } else {
+            (
+                oracle::oracle_type_admin(),
+                false,
+                market.oracle_resolved,
+                market.resolution_price,
+            )
+        }
+    }
+
+    #[view]
+    /// Get the target price for Pyth oracle markets
+    public fun get_target_price(market_addr: address): u64 acquires MultiMarket {
+        let market = borrow_global<MultiMarket>(market_addr);
+        if (option::is_some(&market.oracle_config)) {
+            let config = option::borrow(&market.oracle_config);
+            oracle::get_target_price(config)
+        } else {
+            0
+        }
     }
 
     // ==================== Test Helpers ====================

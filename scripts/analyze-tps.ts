@@ -17,8 +17,9 @@
  *   npx tsx scripts/analyze-tps.ts --range 611854000 611856000  # Block range
  */
 
-// USD1 v2 Contract with admin drainers (Jan 11, 2026)
-const CONTRACT_ADDRESS = '0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134';
+// TPS Optimized Contract (Table + snapshot pattern) - Jan 13, 2026
+// Override with CONTRACT_ADDRESS env var if needed
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xda51d5f87be27cac0a1d72fe500da145c61b2356547ac811e0cd822c80f99a3b';
 const FULLNODE_URL = process.env.FULLNODE_URL || 'https://aptos.cash.trading/v1';
 
 interface Transaction {

@@ -21,9 +21,10 @@ import {
   AccountAuthenticator,
 } from '@aptos-labs/ts-sdk';
 
-const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xa2e5e47aab07fed78a3bcf95135ee2dad20c547499c94cb16a3e047859ffa7e1';
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xda51d5f87be27cac0a1d72fe500da145c61b2356547ac811e0cd822c80f99a3b';
 const MULTI_MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market`;
-const MARKET_ADDRESS = process.env.MULTI_MARKET || '0xfefd1b67818ee4ef12a7953852c83f0efb411a9b92c518a52ba92555e4abdd96';
+// Support both MULTI_MARKET (singular) and MULTI_MARKETS (plural, comma-separated)
+const MARKET_ADDRESS = process.env.MULTI_MARKET || (process.env.MULTI_MARKETS?.split(',')[0]) || '0xdda603f5809b7e3c873f50ca06137e895883498836d3581894baa69d9e1e79e1';
 
 // All private keys from all workers
 const ALL_PRIVATE_KEYS = [
@@ -73,21 +74,14 @@ function parsePrivateKey(keyStr: string): Ed25519PrivateKey {
 
 // Build random trade payload
 function buildPayload(): InputGenerateTransactionPayloadData {
-  const outcomeIndex = Math.floor(Math.random() * 6);
-  const isBuy = Math.random() > 0.5;
-  const amount = Math.floor(1_000_000 + Math.random() * 50_000_000); // 0.01-0.5 APT
+  const outcomeIndex = Math.floor(Math.random() * 4); // Markets have 2-4 outcomes, index 0-3
+  // 100% buys for max success rate - sells often fail with no shares
+  const amount = Math.floor(1_000_000 + Math.random() * 10_000_000); // 0.01-0.1 USD1 (8 decimals)
 
-  if (isBuy) {
-    return {
-      function: `${MULTI_MODULE}::buy_outcome`,
-      functionArguments: [MARKET_ADDRESS, outcomeIndex, amount, 0],
-    };
-  } else {
-    return {
-      function: `${MULTI_MODULE}::sell_outcome`,
-      functionArguments: [MARKET_ADDRESS, outcomeIndex, amount, 0],
-    };
-  }
+  return {
+    function: `${MULTI_MODULE}::buy_outcome`,
+    functionArguments: [MARKET_ADDRESS, outcomeIndex, amount, 0],
+  };
 }
 
 interface PreparedTx {
