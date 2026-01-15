@@ -629,7 +629,10 @@ export function MarketDetail() {
 
     console.log('[chartOutcomes] FALLBACK result:', fallbackResult.length, 'outcomes with', fallbackResult[0]?.prices?.length, 'price points each');
     return fallbackResult;
-  }, [market?.outcomes, market?.yesPrice, market?.noPrice, market?.question, timeRange, livePriceHistory]);
+  }, [market?.outcomes, market?.yesPrice, market?.noPrice, market?.question, timeRange, livePriceHistory,
+      // Force recalculation when outcome prices change (shallow comparison of outcomes array isn't enough)
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      JSON.stringify(market?.outcomes?.map(o => o.price))]);
 
   // Log final chartOutcomes result
   console.log('[chartOutcomes] Final result:', chartOutcomes.length, 'outcomes', chartOutcomes.map(o => o.name));
