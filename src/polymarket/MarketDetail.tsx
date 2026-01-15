@@ -791,9 +791,17 @@ export function MarketDetail() {
               const outcomeId = chartOutcome.id;
               const isHighlighted = highlightedOutcomeId === outcomeId;
               const isDimmed = highlightedOutcomeId && !isHighlighted;
-              // Use REAL Polymarket price for display (static, realistic data)
-              const realPolymarketPrice = (LATEST_REAL_PRICES as Record<string, number>)[chartOutcome.name] || 0;
-              // Fall back to chart end price if no Polymarket data
+              // Only use hardcoded Polymarket prices for specific markets (GOP nominee, Khamenei, Fed Chair)
+              // For generic Yes/No markets like BTC $100K, use actual chart end price (from on-chain data)
+              const isSpecialMarket = market?.question?.toLowerCase().includes('republican') ||
+                                     market?.question?.toLowerCase().includes('nominee') ||
+                                     market?.question?.toLowerCase().includes('khamenei') ||
+                                     market?.question?.toLowerCase().includes('fed chair') ||
+                                     market?.question?.toLowerCase().includes('trump nominate');
+              const realPolymarketPrice = isSpecialMarket
+                ? ((LATEST_REAL_PRICES as Record<string, number>)[chartOutcome.name] || 0)
+                : 0;
+              // Use on-chain price (chart end price) for generic markets
               const currentPrice = realPolymarketPrice > 0 ? realPolymarketPrice : chartOutcome.prices[chartOutcome.prices.length - 1];
 
               return (
