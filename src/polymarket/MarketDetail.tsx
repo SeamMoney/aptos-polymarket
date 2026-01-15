@@ -941,8 +941,18 @@ export function MarketDetail() {
               // Map "Other" to "Donald Trump Jr." for display
               const displayName = outcome.name === "Other" ? "Donald Trump Jr." : outcome.name;
 
-              // Use REAL Polymarket prices for display
-              const realPrice = LATEST_REAL_PRICES[displayName] || LATEST_REAL_PRICES[outcome.name] || outcome.price;
+              // Only use hardcoded Polymarket prices for specific markets (GOP nominee, Khamenei, Fed Chair)
+              // For generic Yes/No markets like BTC $100K, use actual on-chain prices
+              const isSpecialMarket = market.question.toLowerCase().includes('republican') ||
+                                     market.question.toLowerCase().includes('nominee') ||
+                                     market.question.toLowerCase().includes('khamenei') ||
+                                     market.question.toLowerCase().includes('fed chair') ||
+                                     market.question.toLowerCase().includes('trump nominate');
+
+              // Use hardcoded prices only for special markets, otherwise use on-chain price
+              const realPrice = isSpecialMarket
+                ? (LATEST_REAL_PRICES[displayName] || LATEST_REAL_PRICES[outcome.name] || outcome.price)
+                : outcome.price;
               const yesPrice = Math.round(realPrice * 100);
               const noPrice = 100 - yesPrice;
               const yesPriceDisplay = yesPrice < 10 ? `${(realPrice * 100).toFixed(1)}` : yesPrice.toString();
