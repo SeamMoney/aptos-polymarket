@@ -39,9 +39,9 @@ function AptosKeylessIcon() {
   );
 }
 
-// USD1 Contract addresses
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134";
-const USD1_METADATA = "0x4e977d5ee91d77d680972a44b38b9c7a2c5694439169eeae060a48324e5c4597";
+// USD1 Contract addresses - use env vars to match deployed contracts
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x1bd17a9cb5a55a414de956128e332f7744ef260bbdc49303a08105c986adbda3";
+const USD1_METADATA = import.meta.env.VITE_USD1_METADATA || "0xa89bf8c3480600cf0b30914b3370fed8ebfd7a638df6a6edee0e45b2a1dfff82";
 const FUND_AMOUNT_USD1 = 1000; // $1000 worth of USD1 (8 decimals)
 
 export function PolyHeader() {

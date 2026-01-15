@@ -199,15 +199,13 @@ export function useMultiMarkets() {
         const batchResults = await Promise.all(batch.map(fetchSingleMarket));
         fetchedMarkets.push(...batchResults.filter((m): m is MultiMarket => m !== null));
 
-        // Update state incrementally so UI shows markets as they load
-        setMarkets([...fetchedMarkets]);
-
         // Add delay between batches to stay under rate limit
         if (i + BATCH_SIZE < marketAddresses.length) {
           await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
         }
       }
 
+      // Only update state once all markets are loaded (prevents flickering)
       setMarkets(fetchedMarkets);
       setError(null);
     } catch (err) {

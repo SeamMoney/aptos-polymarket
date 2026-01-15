@@ -11,7 +11,7 @@ import { useGeomiUserTrades } from "../hooks/useGeomiTrades";
 const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
 
 // Contract addresses (from env vars)
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134";
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x1bd17a9cb5a55a414de956128e332f7744ef260bbdc49303a08105c986adbda3";
 const MARKET_ADDRESS = import.meta.env.VITE_MULTI_MARKETS?.split(',')[0] || "0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052";
 const MARKET_CONTRACTS = [
   CONTRACT_ADDRESS, // multi-outcome market (USD1)
