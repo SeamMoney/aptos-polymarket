@@ -196,7 +196,9 @@ function getConfig(mode: RunMode) {
     TRADE_SAMPLE_RATE: modeConfig.TRADE_SAMPLE_RATE,
     STATS_CACHE_TTL_MS: 200,
     FIRE_AND_FORGET_RATIO: modeConfig.FIRE_AND_FORGET_RATIO,
-    USE_ORDERLESS: true,
+    // USE_ORDERLESS: Set USE_ORDERLESS=false to use sequence numbers instead of random nonces
+    // Aptos devs suggest trying without orderless for potential TPS improvement
+    USE_ORDERLESS: process.env.USE_ORDERLESS !== 'false',
     USE_MULTI_RPC: modeConfig.USE_MULTI_RPC,
     USE_BATCH_SUBMIT: process.env.USE_BATCH_SUBMIT !== 'false',  // Set USE_BATCH_SUBMIT=false to disable
     IS_DRYRUN: mode === 'dryrun',
@@ -223,16 +225,26 @@ if (!API_KEY) {
 }
 
 // PHASE 17: Multi-RPC load balancing - spread load across multiple endpoints
-// YOUR FULLNODE ONLY - NO RATE LIMITS! 🚀
+// Aptos internal stress testing fullnode (recommended by Aptos team for TPS testing)
+const APTOS_INTERNAL_FULLNODE = 'http://vfn0.usce1-0.testnet.aptoslabs.com:80';
+// Custom fullnode - no rate limits
 const CUSTOM_FULLNODE = process.env.FULLNODE_URL || 'https://aptos.cash.trading/v1';
 
-// Use ONLY your custom fullnode - no public endpoints that will rate limit us!
-// For even more TPS, you can add multiple fullnodes via EXTRA_RPC_ENDPOINTS
-const RPC_ENDPOINTS = [
-  CUSTOM_FULLNODE,
-  // Add additional fullnodes via env var (comma-separated) if you have more
-  ...(process.env.EXTRA_RPC_ENDPOINTS ? process.env.EXTRA_RPC_ENDPOINTS.split(',') : []),
-];
+// RPC_MODE: 'internal' (Aptos stress test node), 'custom' (your fullnode), 'balanced' (both)
+const RPC_MODE = process.env.RPC_MODE || 'custom'; // Default to custom for backward compatibility
+const RPC_ENDPOINTS = (() => {
+  const extraEndpoints = process.env.EXTRA_RPC_ENDPOINTS ? process.env.EXTRA_RPC_ENDPOINTS.split(',') : [];
+  switch (RPC_MODE) {
+    case 'internal':
+      return [APTOS_INTERNAL_FULLNODE, ...extraEndpoints];
+    case 'balanced':
+      return [APTOS_INTERNAL_FULLNODE, CUSTOM_FULLNODE, ...extraEndpoints];
+    case 'custom':
+    default:
+      return [CUSTOM_FULLNODE, ...extraEndpoints];
+  }
+})();
+console.log(`RPC Mode: ${RPC_MODE}, Endpoints: ${RPC_ENDPOINTS.join(', ')}`);
 
 // Create multiple Aptos clients for load balancing
 // Always use CUSTOM_FULLNODE as primary - no rate limits!
@@ -258,6 +270,9 @@ function getNextAptos(): Aptos {
 // Default client for non-trading operations
 const aptos = aptosClients[0];
 
+// Primary endpoint for batch submissions (first in RPC_ENDPOINTS array)
+const PRIMARY_ENDPOINT = RPC_ENDPOINTS[0];
+
 // TRUE BATCH SUBMIT - Single HTTP call with up to 10k transactions
 // Uses POST /v1/transactions/batch endpoint
 async function submitBatchTransactions(
@@ -266,7 +281,7 @@ async function submitBatchTransactions(
   if (signedTxns.length === 0) return [];
 
   try {
-    const response = await fetch(`${CUSTOM_FULLNODE}/transactions/batch`, {
+    const response = await fetch(`${PRIMARY_ENDPOINT}/transactions/batch`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x.aptos.signed_transaction+bcs',
@@ -1971,6 +1986,7 @@ async function startTrading(): Promise<void> {
 
   console.log(`\nStarting ${activeAccounts.length} parallel trading loops...`);
   console.log(`Batch: ${CONFIG.BATCH_SIZE} | Delay: ${CONFIG.BATCH_DELAY_MS}ms`);
+  console.log(`Orderless: ${CONFIG.USE_ORDERLESS ? 'YES (random nonces)' : 'NO (sequence numbers)'}`);
   console.log(`Target: ~${(CONFIG.BATCH_SIZE * activeAccounts.length / (CONFIG.BATCH_DELAY_MS / 1000)).toFixed(0)} TPS\n`);
 
   // Start periodic UI data refresh (every 15 seconds, non-blocking)
