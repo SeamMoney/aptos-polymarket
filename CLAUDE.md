@@ -233,20 +233,21 @@ If errors start during demo:
 
 | Mode | Accounts | Avg TPS | Peak TPS | Success | Notes |
 |------|----------|---------|----------|---------|-------|
-| Light | 200 | **625** | **1,929** | 78% | Sustained, reliable |
-| Turbo | 500 | 263 | **2,290** | 77% | Peak performance |
+| Turbo (internal VFN) | 500 | **676** | **3,180** | 79% | **Best result** |
+| Light (custom) | 200 | 625 | 1,929 | 78% | Sustained, reliable |
 
-**Critical Discovery:** Internal VFN (`vfn0.usce1-0.testnet.aptoslabs.com`) does NOT have the new contract module. Must use `RPC_MODE=custom` with `aptos.cash.trading`.
+**Critical Fix:** Internal VFN requires `/v1` suffix in URL:
+- ❌ `http://vfn0.usce1-0.testnet.aptoslabs.com:80` (BROKEN)
+- ✅ `http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1` (WORKS - 3,180 TPS)
 
-**Working Command:**
+**Working Command (3K+ TPS):**
 ```bash
 SEED_MNEMONIC="..." \
-ACCOUNT_COUNT=200 \
-RPC_MODE=custom \
-FULLNODE_URL="https://aptos.cash.trading/v1" \
+ACCOUNT_COUNT=500 \
+RPC_MODE=internal \
 CONTRACT_ADDRESS="0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea" \
 MULTI_MARKETS="0xaf561030c7ebb22b1d8b99b727c27caab1f6944ce39c141fd2b6b0cfbf614a9e,..." \
-npx tsx server/hft-piscina-server.ts light
+npx tsx server/hft-piscina-server.ts turbo
 ```
 
 Then: `curl -X POST "http://localhost:3001/start?duration=60"`
