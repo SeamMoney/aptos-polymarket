@@ -27,13 +27,18 @@ import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { Worker } from 'worker_threads';
+
+// ESM-compatible __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import { validateMnemonic } from '../config/seed-accounts';
 
 // Configuration
-const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134';
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea';
 
 // RPC endpoints
 const APTOS_INTERNAL_FULLNODE = 'http://vfn0.usce1-0.testnet.aptoslabs.com:80';
@@ -269,7 +274,8 @@ function createWorker(config: {
   accountStartIndex: number;
   accountCount: number;
 }): Worker {
-  const workerPath = path.resolve(__dirname, 'trading-worker.ts');
+  // Use pre-compiled JS worker (run: npx esbuild server/trading-worker.ts --bundle --platform=node --outfile=server/trading-worker.js --format=esm --external:@aptos-labs/ts-sdk --external:bip39 --external:@scure/bip32)
+  const workerPath = path.resolve(__dirname, 'trading-worker.js');
 
   const workerConfig = {
     workerId: config.workerId,
@@ -287,10 +293,9 @@ function createWorker(config: {
     usd1Metadata: USD1_METADATA,
   };
 
-  // Use tsx to run TypeScript workers
+  // Create worker with compiled JS file (no special execArgv needed)
   const worker = new Worker(workerPath, {
     workerData: workerConfig,
-    execArgv: ['--import', 'tsx'],
   });
 
   // Handle worker messages

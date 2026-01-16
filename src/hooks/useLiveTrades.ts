@@ -2,15 +2,15 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useGeomiTrades } from './useGeomiTrades';
 import { isGeomiConfigured } from '../config/geomi';
 
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134";
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea";
 const TRADES_STORAGE_KEY = 'polymarket_live_trades';
 const MAX_STORED_TRADES = 100;
 const TRADE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-// RPC endpoints in priority order (your fullnode first, then QuickNode fallback)
+// RPC endpoints in priority order (custom fullnode first, then Aptos Labs fallback)
 const RPC_ENDPOINTS = [
-  "https://aptos.cash.trading/v1",  // Your fullnode - no rate limits
-  "https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1",  // QuickNode fallback
+  "https://aptos.cash.trading/v1",  // Custom fullnode - no rate limits
+  "https://api.testnet.aptoslabs.com/v1",  // Aptos Labs fallback
 ];
 
 // Helper to fetch from RPC with failover

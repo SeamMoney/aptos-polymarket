@@ -239,11 +239,13 @@ async function main() {
     console.warn(`WARNING: Funder may not have enough APT (need ${totalAptNeeded} APT)`);
   }
 
-  // Get minter for USD1
+  // Get minter for USD1 (use contract deployer - can mint USD1)
+  const minterKey = process.env.MINTER_KEY || CONTRACTS.deployerKey;
   const minter = Account.fromPrivateKey({
-    privateKey: new Ed25519PrivateKey(cleanKey(WALLETS.usd1Deployer.key)),
+    privateKey: new Ed25519PrivateKey(cleanKey(minterKey)),
   });
   console.log(`USD1 Minter: ${minter.accountAddress.toString().slice(0, 20)}...`);
+  console.log(`USD1 Contract: ${CONTRACT_ADDRESS.slice(0, 20)}...`);
   console.log();
 
   // Fund with APT

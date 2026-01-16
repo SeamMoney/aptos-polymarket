@@ -1,7 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 // Configurable URLs - use environment variables for production (VM connection)
-const HFT_WS_URL = import.meta.env.VITE_HFT_WS_URL || 'ws://localhost:3001';
+const HFT_WS_URL_RAW = import.meta.env.VITE_HFT_WS_URL || 'ws://localhost:3001';
+
+// Auto-upgrade ws:// to wss:// when on HTTPS to avoid mixed content errors
+const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+const HFT_WS_URL = isHttps && HFT_WS_URL_RAW.startsWith('ws://')
+  ? HFT_WS_URL_RAW.replace('ws://', 'wss://')
+  : HFT_WS_URL_RAW;
 const HFT_SERVER_URL = HFT_WS_URL.replace('ws://', 'http://').replace('wss://', 'https://');
 
 // Trade batching config - batch updates every 100ms to handle high TPS
@@ -162,7 +168,17 @@ export function useHFTConnection(options: HFTConnectionOptions = {}) {
     }
 
     setConnectionStatus('connecting');
-    const ws = new WebSocket(HFT_WS_URL);
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(HFT_WS_URL);
+    } catch (err) {
+      // Handle SecurityError when trying to connect ws:// from https:// page
+      console.warn('[HFT] WebSocket connection blocked (likely mixed content):', err);
+      setConnectionStatus('disconnected');
+      setError('WebSocket blocked - HFT server requires WSS for HTTPS pages');
+      return;
+    }
 
     ws.onopen = () => {
       setIsConnected(true);

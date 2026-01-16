@@ -231,13 +231,6 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
     [...(wallets || []), ...notDetectedWallets]
   );
 
-  // Debug: Log available wallets with full details
-  console.log('[WalletSelector] petraWebWallets:', petraWebWallets.map(w => ({ name: w.name, url: w.url })));
-  console.log('[WalletSelector] availableWallets:', availableWallets.map(w => ({ name: w.name, url: w.url })));
-  console.log('[WalletSelector] installableWallets:', installableWallets.map(w => w.name));
-  console.log('[WalletSelector] raw wallets from useWallet:', wallets?.map(w => ({ name: w.name, url: w.url })));
-  console.log('[WalletSelector] notDetectedWallets:', notDetectedWallets?.map(w => ({ name: w.name, url: w.url })));
-
   // Separate cross-chain wallets (Solana/Ethereum) from Aptos wallets
   const aptosWallets = availableWallets.filter(w =>
     !w.name.includes('Solana') && !w.name.includes('Ethereum')

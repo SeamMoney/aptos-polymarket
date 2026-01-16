@@ -21,7 +21,9 @@
 import fs from 'fs';
 import path from 'path';
 
-const FULLNODE_URL = process.env.FULLNODE_URL || 'https://aptos.cash.trading/v1';
+// Use official testnet API (has indexer for transaction lookups)
+const DEFAULT_FULLNODE = 'https://api.testnet.aptoslabs.com/v1';
+const FULLNODE_URL = process.env.FULLNODE_URL || DEFAULT_FULLNODE;
 const HISTORY_DIR = path.join(process.env.HOME || '/tmp', '.aptos-tps-history');
 
 interface SubmittedTxn {

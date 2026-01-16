@@ -55,27 +55,54 @@ export const WALLETS = {
 // ==================== CONTRACT ADDRESSES ====================
 
 export const CONTRACTS = {
-  // USD1 v2 contract with admin drainers (deployed Jan 11, 2026)
-  address: "0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134",
+  // AMM-fixed contract with per-outcome base_reserve (deployed Jan 14, 2026)
+  // This fixes: price convergence to 50/50, improves parallelization
+  address: "0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea",
 
-  // USD1 stablecoin metadata
-  usd1Metadata: "0x4e977d5ee91d77d680972a44b38b9c7a2c5694439169eeae060a48324e5c4597",
+  // USD1 stablecoin metadata (from new contract)
+  usd1Metadata: "0x14b1ec8a5f31554d0cd19c390be83444ed519be2d7108c3e27dcbc4230c01fa3",
 
-  // Polymarket-style markets (12 markets with USD1 collateral)
+  // Deployer key for this contract (can mint USD1)
+  deployerKey: "0xCD5A6456DC16CD34BF5CDAE7A20D1DF1674FCF46D8084F2A864DE4CB246BC659",
+
+  // Markets on the new contract (10 Polymarket-style markets + 1 test market)
   markets: [
-    "0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052", // 1. Republican 2028
-    "0xf3256638cad294e47c8cc6bb1a6a0fdd85b29ef427b3118028c34b9f061aa50d", // 2. WLFI charter
-    "0x192f7cfc0c8151deec37c6280c17b55f7557a04b580b486d6076cc11955ddde3", // 3. Greenland
-    "0x9e4583c0af174a119b5316ae84988f4fd988259de35ef95447b371744a355762", // 4. Fed Chair
-    "0xd82731a9a2259ccfef2fd13db13720c7cc927c5b7879aa160aecc618c4d4654f", // 5. Iran Binary (Yes/No)
-    "0x77a65b92664f992ccbd8a17d73a5f2fc933523ce64a1c475d1db1c0fc2acf42a", // 6. China Taiwan
-    "0xa84ba7b7364a40031e29d355d7a5f48fd54f922c8eed0ed0009c5d660a6da339", // 7. Russia Ukraine
-    "0x8187c1b3b7ca06dbcbac36fe280e0b5343b744c5a299a43263f9162738d4d792", // 8. Venezuela
-    "0x551f153ff61f94311a22592550b0ede4b3b57338af161bd9472f21e15da23b4b", // 9. Fed Jan 2026
-    "0x742e3c66cb6570351ceb7cf1b2df87e726c708b786109a8cdae93b0c3c7b5a04", // 10. BTC Q1 2026
-    "0x35df09c98f8668c06f6777e98e3a0405fe894c271f06ba2fed0b322e2a5c2f16", // 11. BTC $150K
-    "0xd3227afa81dce5fa0e8f86f61dc7f3215ee799a0d2e6a112a988e5ac732bf719", // 12. Iran Date (When will Khamenei...)
+    "0xaf561030c7ebb22b1d8b99b727c27caab1f6944ce39c141fd2b6b0cfbf614a9e", // 1. WLFI Banking Charter
+    "0xa4ee321c4c642e7b5a3e27b9820f2be4c17a1add79f8129122289fca2c3ca7c3", // 2. Trump Greenland
+    "0xf85c7010d966bc6c3417e52a9b4d86b5f36117e51b43bf5c7a92f0468bac5497", // 3. Fed Chair Nomination
+    "0xcbdddcf6206d2b5956b6c7c6a10d4ac1d6253a2c1c151e8b3af113d8e940f01f", // 4. Khamenei Iran
+    "0xe128c8f16a0f07f48c69a38ac75868a2d5fdd9fbf3299958e9b1e2994a0b9f57", // 5. China Taiwan
+    "0xf60c218d500eb76c66a4a7fb6c6e5664847d5e9496016000fc953b5a89f6eb",   // 6. Russia-Ukraine
+    "0x287968f6d26efbd291960455ce14e3723a48d32b3dc0a8c545d4603fe842e30f", // 7. Venezuela
+    "0xa594c8df003cd232043b34beefe020af744f378ec367a7f65b89e306e06baacb", // 8. Fed Rate Jan 2026
+    "0x310ccec449c57bf8972feab19c5cb8ba5004e2934e4fa1bd565fdbd1a44f4008", // 9. Bitcoin Q1 2026
+    "0x8172b2cf4ba365d72fca8b899a54d3c9e2539d63bd2283aca55c0d032fc793f6", // 10. Bitcoin $150K
+    "0xa550234b5784656e3f3d060134e36ab9a0eecc436d182452955c995984b3e67a", // 11. Test market: BTC $100K
+    "0x9dc3b78821f64119671d7918b824b3b3c4b0e2124643ebe6b1e587efe9591202", // 12. Insurrection Act 2026
+    "0xf508498afdecb2a2f6b40912efb1611b9fe9725e9c35521be5ff2bba3c187efa", // 13. Midterm Elections Nov 2026
+    "0x289aabd338cf7a2bc48512927775b5e1218b15bd83c3c740c3ec43faccef5b21", // 14. Trump Third Term 2026
+    "0x8c4f0da1238adb4486d2a62ff08c85af331e022c1446445059059918d4361cd3", // 15. Republican 2028 Nominee (Vance, Rubio, Trump, DeSantis, Carlson, Other)
   ],
+
+  // Legacy: USD1 v2 contract (Jan 11, 2026) - prices converge to 50/50
+  legacyUsd1V2: {
+    address: "0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134",
+    usd1Metadata: "0x4e977d5ee91d77d680972a44b38b9c7a2c5694439169eeae060a48324e5c4597",
+    markets: [
+      "0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052", // 1. Republican 2028
+      "0xf3256638cad294e47c8cc6bb1a6a0fdd85b29ef427b3118028c34b9f061aa50d", // 2. WLFI charter
+      "0x192f7cfc0c8151deec37c6280c17b55f7557a04b580b486d6076cc11955ddde3", // 3. Greenland
+      "0x9e4583c0af174a119b5316ae84988f4fd988259de35ef95447b371744a355762", // 4. Fed Chair
+      "0xd82731a9a2259ccfef2fd13db13720c7cc927c5b7879aa160aecc618c4d4654f", // 5. Iran Binary (Yes/No)
+      "0x77a65b92664f992ccbd8a17d73a5f2fc933523ce64a1c475d1db1c0fc2acf42a", // 6. China Taiwan
+      "0xa84ba7b7364a40031e29d355d7a5f48fd54f922c8eed0ed0009c5d660a6da339", // 7. Russia Ukraine
+      "0x8187c1b3b7ca06dbcbac36fe280e0b5343b744c5a299a43263f9162738d4d792", // 8. Venezuela
+      "0x551f153ff61f94311a22592550b0ede4b3b57338af161bd9472f21e15da23b4b", // 9. Fed Jan 2026
+      "0x742e3c66cb6570351ceb7cf1b2df87e726c708b786109a8cdae93b0c3c7b5a04", // 10. BTC Q1 2026
+      "0x35df09c98f8668c06f6777e98e3a0405fe894c271f06ba2fed0b322e2a5c2f16", // 11. BTC $150K
+      "0xd3227afa81dce5fa0e8f86f61dc7f3215ee799a0d2e6a112a988e5ac732bf719", // 12. Iran Date
+    ],
+  },
 
   // Legacy contracts (APT-based, TVL locked)
   legacy: {

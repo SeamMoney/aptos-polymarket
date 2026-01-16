@@ -81,7 +81,7 @@ module prediction_market::optimistic_oracle {
         /// Collateral token used for bond
         collateral_metadata: Object<Metadata>,
         /// Whether proposal has been finalized
-        finalized: bool,
+        finalized: bool
     }
 
     /// Committee member for dispute resolution
@@ -97,7 +97,7 @@ module prediction_market::optimistic_oracle {
         /// Accuracy score (0-100, tracks correct votes)
         accuracy_score: u64,
         /// Whether member is currently active
-        is_active: bool,
+        is_active: bool
     }
 
     /// Global registry for the optimistic oracle system
@@ -111,7 +111,7 @@ module prediction_market::optimistic_oracle {
         /// Total challenges
         total_challenges: u64,
         /// Total disputes resolved
-        total_resolutions: u64,
+        total_resolutions: u64
     }
 
     // ==================== Events ====================
@@ -122,7 +122,7 @@ module prediction_market::optimistic_oracle {
         proposer: address,
         proposed_outcome: u64,
         challenge_deadline: u64,
-        evidence_url: String,
+        evidence_url: String
     }
 
     #[event]
@@ -130,7 +130,7 @@ module prediction_market::optimistic_oracle {
         market_addr: address,
         proposer: address,
         challenger: address,
-        proposed_outcome: u64,
+        proposed_outcome: u64
     }
 
     #[event]
@@ -139,7 +139,7 @@ module prediction_market::optimistic_oracle {
         outcome: u64,
         proposer: address,
         resolution_time_secs: u64,
-        was_challenged: bool,
+        was_challenged: bool
     }
 
     #[event]
@@ -147,20 +147,23 @@ module prediction_market::optimistic_oracle {
         market_addr: address,
         final_outcome: u64,
         proposer_slashed: bool,
-        challenger_rewarded: bool,
+        challenger_rewarded: bool
     }
 
     // ==================== Initialization ====================
 
     /// Initialize the optimistic oracle registry
     fun init_module(deployer: &signer) {
-        move_to(deployer, OptimisticOracleRegistry {
-            committee_members: vector::empty(),
-            admin: signer::address_of(deployer),
-            total_proposals: 0,
-            total_challenges: 0,
-            total_resolutions: 0,
-        });
+        move_to(
+            deployer,
+            OptimisticOracleRegistry {
+                committee_members: vector::empty(),
+                admin: signer::address_of(deployer),
+                total_proposals: 0,
+                total_challenges: 0,
+                total_resolutions: 0
+            }
+        );
     }
 
     // ==================== Entry Functions ====================
@@ -172,14 +175,17 @@ module prediction_market::optimistic_oracle {
         market_addr: address,
         outcome: u64,
         evidence_url: String,
-        collateral_metadata: Object<Metadata>,
+        collateral_metadata: Object<Metadata>
     ) acquires OptimisticOracleRegistry {
         let proposer_addr = signer::address_of(proposer);
         let current_time = timestamp::now_seconds();
         let challenge_deadline = current_time + CHALLENGE_PERIOD_SECS;
 
         // Take bond from proposer
-        let bond = primary_fungible_store::withdraw(proposer, collateral_metadata, PROPOSER_BOND);
+        let bond =
+            primary_fungible_store::withdraw(
+                proposer, collateral_metadata, PROPOSER_BOND
+            );
         // Store bond in proposal object (simplified - in production use escrow)
         primary_fungible_store::deposit(proposer_addr, bond);
 
@@ -195,7 +201,7 @@ module prediction_market::optimistic_oracle {
             challenger: option::none(),
             evidence_url,
             collateral_metadata,
-            finalized: false,
+            finalized: false
         };
 
         move_to(proposer, proposal);
@@ -204,20 +210,21 @@ module prediction_market::optimistic_oracle {
         let registry = borrow_global_mut<OptimisticOracleRegistry>(@prediction_market);
         registry.total_proposals = registry.total_proposals + 1;
 
-        event::emit(ProposalSubmitted {
-            market_addr,
-            proposer: proposer_addr,
-            proposed_outcome: outcome,
-            challenge_deadline,
-            evidence_url,
-        });
+        event::emit(
+            ProposalSubmitted {
+                market_addr,
+                proposer: proposer_addr,
+                proposed_outcome: outcome,
+                challenge_deadline,
+                evidence_url
+            }
+        );
     }
 
     /// Challenge a proposal within the 15-minute window
     /// Challenger must also post bond
     public entry fun challenge_proposal(
-        challenger: &signer,
-        proposer_addr: address,
+        challenger: &signer, proposer_addr: address
     ) acquires Proposal, OptimisticOracleRegistry {
         let proposal = borrow_global_mut<Proposal>(proposer_addr);
         let challenger_addr = signer::address_of(challenger);
@@ -228,11 +235,12 @@ module prediction_market::optimistic_oracle {
         assert!(!proposal.finalized, E_ALREADY_PROPOSED);
 
         // Take challenger bond
-        let bond = primary_fungible_store::withdraw(
-            challenger,
-            proposal.collateral_metadata,
-            CHALLENGER_BOND
-        );
+        let bond =
+            primary_fungible_store::withdraw(
+                challenger,
+                proposal.collateral_metadata,
+                CHALLENGER_BOND
+            );
         // Store bond (simplified)
         primary_fungible_store::deposit(challenger_addr, bond);
 
@@ -243,18 +251,20 @@ module prediction_market::optimistic_oracle {
         let registry = borrow_global_mut<OptimisticOracleRegistry>(@prediction_market);
         registry.total_challenges = registry.total_challenges + 1;
 
-        event::emit(ProposalChallenged {
-            market_addr: proposal.market_addr,
-            proposer: proposal.proposer,
-            challenger: challenger_addr,
-            proposed_outcome: proposal.proposed_outcome,
-        });
+        event::emit(
+            ProposalChallenged {
+                market_addr: proposal.market_addr,
+                proposer: proposal.proposer,
+                challenger: challenger_addr,
+                proposed_outcome: proposal.proposed_outcome
+            }
+        );
     }
 
     /// Finalize an unchallenged proposal after 15 minutes
     /// Anyone can call this - it's permissionless
     public entry fun finalize_unchallenged(
-        proposer_addr: address,
+        proposer_addr: address
     ) acquires Proposal, OptimisticOracleRegistry {
         let proposal = borrow_global_mut<Proposal>(proposer_addr);
         let current_time = timestamp::now_seconds();
@@ -272,13 +282,15 @@ module prediction_market::optimistic_oracle {
         let registry = borrow_global_mut<OptimisticOracleRegistry>(@prediction_market);
         registry.total_resolutions = registry.total_resolutions + 1;
 
-        event::emit(ProposalFinalized {
-            market_addr: proposal.market_addr,
-            outcome: proposal.proposed_outcome,
-            proposer: proposal.proposer,
-            resolution_time_secs: resolution_time,
-            was_challenged: false,
-        });
+        event::emit(
+            ProposalFinalized {
+                market_addr: proposal.market_addr,
+                outcome: proposal.proposed_outcome,
+                proposer: proposal.proposer,
+                resolution_time_secs: resolution_time,
+                was_challenged: false
+            }
+        );
 
         // Note: In production, this would call back to multi_outcome_market::resolve_internal()
         // to actually resolve the market with proposal.proposed_outcome
@@ -290,15 +302,15 @@ module prediction_market::optimistic_oracle {
         committee_signer: &signer,
         proposer_addr: address,
         final_outcome: u64,
-        slash_proposer: bool,
+        slash_proposer: bool
     ) acquires Proposal, OptimisticOracleRegistry {
         let registry = borrow_global<OptimisticOracleRegistry>(@prediction_market);
         let committee_addr = signer::address_of(committee_signer);
 
         // Verify committee authority (simplified - in production use multisig)
         assert!(
-            committee_addr == registry.admin ||
-            vector::contains(&registry.committee_members, &committee_addr),
+            committee_addr == registry.admin
+                || vector::contains(&registry.committee_members, &committee_addr),
             E_NOT_COMMITTEE
         );
 
@@ -313,23 +325,28 @@ module prediction_market::optimistic_oracle {
         let challenger_rewarded = slash_proposer;
 
         // Update registry
-        let registry_mut = borrow_global_mut<OptimisticOracleRegistry>(@prediction_market);
+        let registry_mut =
+            borrow_global_mut<OptimisticOracleRegistry>(@prediction_market);
         registry_mut.total_resolutions = registry_mut.total_resolutions + 1;
 
-        event::emit(DisputeResolved {
-            market_addr: proposal.market_addr,
-            final_outcome,
-            proposer_slashed,
-            challenger_rewarded,
-        });
+        event::emit(
+            DisputeResolved {
+                market_addr: proposal.market_addr,
+                final_outcome,
+                proposer_slashed,
+                challenger_rewarded
+            }
+        );
 
-        event::emit(ProposalFinalized {
-            market_addr: proposal.market_addr,
-            outcome: final_outcome,
-            proposer: proposal.proposer,
-            resolution_time_secs: timestamp::now_seconds() - proposal.proposal_time,
-            was_challenged: true,
-        });
+        event::emit(
+            ProposalFinalized {
+                market_addr: proposal.market_addr,
+                outcome: final_outcome,
+                proposer: proposal.proposer,
+                resolution_time_secs: timestamp::now_seconds() - proposal.proposal_time,
+                was_challenged: true
+            }
+        );
 
         // Note: In production, bond slashing would transfer funds:
         // - If proposer was wrong: transfer proposer bond to challenger
@@ -340,7 +357,7 @@ module prediction_market::optimistic_oracle {
     public entry fun add_committee_member(
         admin: &signer,
         member_addr: address,
-        initial_stake: u64,
+        initial_stake: u64
     ) acquires OptimisticOracleRegistry {
         let registry = borrow_global_mut<OptimisticOracleRegistry>(@prediction_market);
         let admin_addr = signer::address_of(admin);
@@ -351,13 +368,16 @@ module prediction_market::optimistic_oracle {
 
         // Create committee member record
         // Note: In production, the member would stake funds
-        move_to(admin, CommitteeMember {
-            member_addr,
-            stake: initial_stake,
-            votes_cast: 0,
-            accuracy_score: 100, // Start with perfect score
-            is_active: true,
-        });
+        move_to(
+            admin,
+            CommitteeMember {
+                member_addr,
+                stake: initial_stake,
+                votes_cast: 0,
+                accuracy_score: 100, // Start with perfect score
+                is_active: true
+            }
+        );
     }
 
     // ==================== View Functions ====================
@@ -394,13 +414,15 @@ module prediction_market::optimistic_oracle {
 
     #[view]
     /// Get proposal info
-    public fun get_proposal_info(proposer_addr: address): (
+    public fun get_proposal_info(
+        proposer_addr: address
+    ): (
         address, // market_addr
-        u64,     // proposed_outcome
-        u64,     // proposal_time
-        u64,     // challenge_deadline
-        bool,    // challenged
-        bool,    // finalized
+        u64, // proposed_outcome
+        u64, // proposal_time
+        u64, // challenge_deadline
+        bool, // challenged
+        bool // finalized
     ) acquires Proposal {
         let proposal = borrow_global<Proposal>(proposer_addr);
         (
@@ -409,7 +431,7 @@ module prediction_market::optimistic_oracle {
             proposal.proposal_time,
             proposal.challenge_deadline,
             proposal.challenged,
-            proposal.finalized,
+            proposal.finalized
         )
     }
 
@@ -417,9 +439,9 @@ module prediction_market::optimistic_oracle {
     /// Check if a proposal can be finalized (challenge period ended, not challenged)
     public fun can_finalize(proposer_addr: address): bool acquires Proposal {
         let proposal = borrow_global<Proposal>(proposer_addr);
-        !proposal.challenged &&
-        !proposal.finalized &&
-        timestamp::now_seconds() >= proposal.challenge_deadline
+        !proposal.challenged
+            && !proposal.finalized
+            && timestamp::now_seconds() >= proposal.challenge_deadline
     }
 
     #[view]
@@ -427,9 +449,8 @@ module prediction_market::optimistic_oracle {
     public fun time_remaining(proposer_addr: address): u64 acquires Proposal {
         let proposal = borrow_global<Proposal>(proposer_addr);
         let current_time = timestamp::now_seconds();
-        if (current_time >= proposal.challenge_deadline) {
-            0
-        } else {
+        if (current_time >= proposal.challenge_deadline) { 0 }
+        else {
             proposal.challenge_deadline - current_time
         }
     }
@@ -441,7 +462,7 @@ module prediction_market::optimistic_oracle {
         (
             registry.total_proposals,
             registry.total_challenges,
-            registry.total_resolutions,
+            registry.total_resolutions
         )
     }
 

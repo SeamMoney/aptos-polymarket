@@ -97,6 +97,13 @@ export function MarketDetail() {
   } = usePolymarkets();
 
   // HFT connection for live demo - auto-connect to show live trades
+  // HFT connection - only enable when:
+  // 1. VITE_HFT_WS_URL is set, AND
+  // 2. Either we're on HTTP, OR the HFT URL supports WSS
+  const hftWsUrl = import.meta.env.VITE_HFT_WS_URL || '';
+  const isPageHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  const hftSupportsHttps = hftWsUrl.startsWith('wss://');
+  const hftEnabled = !!hftWsUrl && (!isPageHttps || hftSupportsHttps);
   const {
     isConnected: hftConnected,
     isRunning: hftRunning,
@@ -105,7 +112,7 @@ export function MarketDetail() {
     marketReserves: hftReserves,
     trades: hftTrades,
     tpsHistory,
-  } = useHFTConnection({ autoConnect: true });
+  } = useHFTConnection({ autoConnect: hftEnabled });
 
   // Live price tracking for real-time chart updates
   const {
@@ -189,6 +196,11 @@ export function MarketDetail() {
            market?.question?.toLowerCase().includes('iran supreme leader');
   }, [market?.question]);
 
+  // Reset scroll position when navigating to this page
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [id]);
+
   // Animate in on mount
   useEffect(() => {
     const timer = setTimeout(() => setIsLoaded(true), 50);
@@ -211,18 +223,9 @@ export function MarketDetail() {
   // Use REAL Polymarket price data for the chart + LIVE price updates during HFT demo
   // IMPORTANT: All prices in 0-1 decimal format
   const chartOutcomes = useMemo(() => {
-    // Debug: Log market state
-    console.log('[chartOutcomes] START - market:', market?.question?.slice(0, 50), 'hasOutcomes:', !!market?.outcomes, 'outcomeCount:', market?.outcomes?.length, 'yesPrice:', market?.yesPrice);
-
     // Early exit if no market
     if (!market) {
-      console.log('[chartOutcomes] No market - returning empty');
       return [];
-    }
-
-    // Log outcome details
-    if (market.outcomes) {
-      console.log('[chartOutcomes] Outcome details:', market.outcomes.map(o => ({ name: o.name, price: o.price, color: o.color })));
     }
 
     // Check if this is the VP nominee market (has matching candidates)
@@ -364,7 +367,6 @@ export function MarketDetail() {
                        market?.question?.toLowerCase().includes('iran supreme leader');
 
     if (isKhamenei) {
-      console.log('[chartOutcomes] KHAMENEI market detected! Using real historical data');
 
       // Use the "Jan 31" outcome data as the primary "Yes" price since it's the most likely outcome
       // This matches what Polymarket shows - the probability of Khamenei being out by a certain date
@@ -396,8 +398,6 @@ export function MarketDetail() {
       // No price is complement of Yes
       const noPrices = yesPrices.map(p => 1 - p);
 
-      console.log('[chartOutcomes] Khamenei data: start=', yesPrices[0]?.toFixed(3), 'end=', yesPrices[yesPrices.length-1]?.toFixed(3), 'points=', yesPrices.length);
-
       return [
         {
           id: "yes",
@@ -414,197 +414,131 @@ export function MarketDetail() {
       ];
     }
 
-    // Fallback for other markets - use synthetic data with aggressive volatility
-    console.log('[chartOutcomes] Checking GENERIC handler: hasOutcomes=', !!market?.outcomes, 'length=', market?.outcomes?.length);
-
+    // Handle markets with outcomes array
     if (market?.outcomes && market.outcomes.length > 0) {
-      console.log('[chartOutcomes] GENERIC handler MATCHED! Processing', market.outcomes.length, 'outcomes');
-      console.log('[chartOutcomes] Outcome data:', JSON.stringify(market.outcomes.slice(0, 3).map(o => ({
-        id: o.id,
-        name: o.name,
-        price: o.price,
-        color: o.color
-      }))));
+      const numPoints = pointsToShow;
+      const outcomeNames = market.outcomes.map(o => o.name.toLowerCase());
 
-      // Better hash function for unique seeds per market+outcome
-      const hashString = (str: string): number => {
-        let hash = 5381;
-        for (let i = 0; i < str.length; i++) {
-          hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
+      // Check if this is a binary Yes/No market - prices MUST be mirrors
+      const isBinaryYesNo = market.outcomes.length === 2 &&
+        outcomeNames.includes('yes') && outcomeNames.includes('no');
+
+      if (isBinaryYesNo) {
+        // Binary market: Yes + No = 100% at all times
+        const yesOutcome = market.outcomes.find(o => o.name.toLowerCase() === 'yes')!;
+        const noOutcome = market.outcomes.find(o => o.name.toLowerCase() === 'no')!;
+        const yesEndPrice = yesOutcome.price;
+
+        // Seeded random for consistent chart
+        const seed = market.question.length * 7 + market.id.length;
+        const seededRandom = (s: number) => {
+          const x = Math.sin(s * 12345.6789) * 43758.5453;
+          return x - Math.floor(x);
+        };
+
+        // Generate step-like Yes prices (like real trading)
+        const yesPrices: number[] = [];
+        let currentPrice = 0.5; // Start at 50%
+
+        // Create random step points where price jumps (more steps = more granular)
+        const numSteps = 25 + Math.floor(seededRandom(seed) * 15); // 25-40 steps
+        const stepIndices: number[] = [];
+        for (let s = 0; s < numSteps; s++) {
+          stepIndices.push(Math.floor(seededRandom(seed * 100 + s) * numPoints));
         }
-        return Math.abs(hash);
-      };
+        stepIndices.sort((a, b) => a - b);
 
-      // Seeded random for consistent charts
-      const seededRandom = (seed: number) => {
-        const x = Math.sin(seed * 12345.6789) * 43758.5453;
-        return x - Math.floor(x);
-      };
+        // Pre-calculate step prices trending toward end
+        const stepPrices: number[] = [0.5];
+        let stepPrice = 0.5;
+        for (let s = 0; s < numSteps; s++) {
+          const progress = (s + 1) / numSteps;
+          const targetAtStep = 0.5 + (yesEndPrice - 0.5) * progress;
+          // Random jump toward target with more variance
+          const jump = (seededRandom(seed * 200 + s) - 0.4) * 0.04;
+          stepPrice = stepPrice + (targetAtStep - stepPrice) * 0.3 + jump;
+          stepPrice = Math.max(0.30, Math.min(0.70, stepPrice)); // Allow wider swings
+          stepPrices.push(stepPrice);
+        }
+        stepPrices.push(yesEndPrice);
 
-      // Create unique seed from market question + id for truly different charts
-      const marketHash = hashString(market.question + market.id);
+        // Generate prices with step behavior
+        let stepIdx = 0;
+        for (let i = 0; i < numPoints; i++) {
+          // Check if we hit a step
+          while (stepIdx < stepIndices.length && i >= stepIndices[stepIdx]) {
+            currentPrice = stepPrices[stepIdx + 1];
+            stepIdx++;
+          }
+          yesPrices.push(currentPrice);
+        }
+        yesPrices[numPoints - 1] = yesEndPrice;
 
+        // No is EXACTLY 1 - Yes (perfect mirror)
+        const noPrices = yesPrices.map(p => 1 - p);
+
+        return [
+          { id: yesOutcome.id || 'yes', name: 'Yes', color: '#4abe7a', prices: yesPrices },
+          { id: noOutcome.id || 'no', name: 'No', color: '#5b9cf6', prices: noPrices },
+        ];
+      }
+
+      // Multi-outcome market (3+ options) - generate independent prices
       const genericResult = market.outcomes.map((outcome, outcomeIdx) => {
-        const numPoints = pointsToShow;
         const prices: number[] = [];
         const endPrice = outcome.price;
-        // Combine market hash with outcome name for unique per-outcome seed
-        const seed = marketHash + hashString(outcome.name) + outcomeIdx * 7919;
 
-        // Start with variance from end price
-        let currentPrice = endPrice + (seededRandom(seed) - 0.5) * 0.2;
-
-        // More aggressive volatility - bigger swings for smaller prices
-        const baseVolatility = Math.min(0.12, Math.max(0.04, endPrice * 0.25));
-        const volatilityBoost = endPrice < 0.1 ? 2.5 : endPrice < 0.3 ? 1.5 : 1.0;
-        const volatility = baseVolatility * volatilityBoost;
-
-        // Pre-generate news events for this outcome
-        const newsIndices = new Set<number>();
-        for (let n = 0; n < 15; n++) {
-          newsIndices.add(Math.floor(seededRandom(seed * 500 + n) * numPoints));
-        }
+        // Smooth trend from a starting point to end price
+        const startPrice = Math.max(0.05, Math.min(0.95, endPrice + (Math.random() - 0.5) * 0.1));
 
         for (let i = 0; i < numPoints; i++) {
-          const targetAtT = currentPrice + (endPrice - currentPrice) * 0.05;
-
-          // More dramatic random jumps
-          const jump = (seededRandom(seed * 1000 + i) - 0.5) * volatility * 1.5;
-
-          // More frequent spikes with bigger magnitude
-          let spike = 0;
-          if (newsIndices.has(i)) {
-            // Big news event spike
-            const spikeDir = seededRandom(seed * 17 + i) > 0.5 ? 1 : -1;
-            spike = spikeDir * volatility * (2.0 + seededRandom(seed * 19 + i) * 2.0);
-          } else {
-            const spikeRoll = seededRandom(seed * 2000 + i);
-            if (spikeRoll > 0.85) spike = volatility * 1.2;
-            else if (spikeRoll < 0.15) spike = -volatility * 1.2;
-          }
-
-          // Higher step probability (80%)
-          if (seededRandom(seed * 3000 + i) > 0.2) {
-            currentPrice = currentPrice + jump + (targetAtT - currentPrice) * 0.05 + spike;
-          }
-
-          // Allow wider price range
-          const minBound = Math.max(0.01, endPrice * 0.4);
-          const maxBound = Math.min(0.99, endPrice * 2.0);
-          currentPrice = Math.max(minBound, Math.min(maxBound, currentPrice));
-
-          // Gently blend to end price
-          if (i >= numPoints - 5) {
-            const blend = (i - (numPoints - 5)) / 4;
-            currentPrice = currentPrice * (1 - blend * 0.5) + endPrice * (blend * 0.5);
-          }
-
-          prices.push(currentPrice);
+          const t = i / (numPoints - 1);
+          const smoothT = t * t * (3 - 2 * t);
+          const price = startPrice + (endPrice - startPrice) * smoothT;
+          prices.push(Math.max(0.01, Math.min(0.99, price)));
         }
         prices[numPoints - 1] = endPrice;
-
-        // Ensure all prices are valid numbers
-        const validPrices = prices.map(p => isNaN(p) ? 0.5 : p);
-
-        console.log('[chartOutcomes] Generated outcome:', outcome.name, 'pricesLength:', validPrices.length, 'endPrice:', endPrice);
 
         return {
           id: outcome.id || `outcome-${outcomeIdx}`,
           name: outcome.name || `Outcome ${outcomeIdx}`,
-          color: outcome.color || ['#00c853', '#5b9cf6', '#f5a623', '#00bcd4', '#ef4444'][outcomeIdx % 5],
-          prices: validPrices,
+          color: outcome.color || ['#4abe7a', '#5b9cf6', '#f5a623', '#00bcd4', '#ef4444'][outcomeIdx % 5],
+          prices,
         };
       });
 
-      console.log('[chartOutcomes] GENERIC handler returning:', genericResult.length, 'outcomes');
       return genericResult;
     }
 
-    // Handle binary markets with aggressive volatility
+    // Handle binary markets - Yes and No MUST be mirrors (sum to 100%)
     if (market?.yesPrice !== undefined) {
-      // Better hash function for unique seeds
-      const hashString = (str: string): number => {
-        let hash = 5381;
-        for (let i = 0; i < str.length; i++) {
-          hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
-        }
-        return Math.abs(hash);
-      };
+      const numPoints = pointsToShow;
+      const yesPrices: number[] = [];
 
-      const seededRandom = (seed: number) => {
-        const x = Math.sin(seed * 12345.6789) * 43758.5453;
-        return x - Math.floor(x);
-      };
+      // Smooth trend from 50% to current Yes price
+      const startPrice = 0.5;
+      const endPrice = market.yesPrice;
 
-      // Unique seed per market based on question
-      const marketSeed = hashString(market.question + market.id);
+      for (let i = 0; i < numPoints; i++) {
+        const t = i / (numPoints - 1);
+        // Smooth S-curve interpolation
+        const smoothT = t * t * (3 - 2 * t);
+        const price = startPrice + (endPrice - startPrice) * smoothT;
+        yesPrices.push(Math.max(0.01, Math.min(0.99, price)));
+      }
+      yesPrices[numPoints - 1] = endPrice;
 
-      const generateVolatilePrices = (endPrice: number, seed: number) => {
-        const numPoints = pointsToShow;
-        const prices: number[] = [];
-        let currentPrice = endPrice + (seededRandom(seed) - 0.5) * 0.2;
-
-        // Aggressive volatility
-        const baseVolatility = Math.min(0.12, Math.max(0.04, endPrice * 0.25));
-        const volatilityBoost = endPrice < 0.1 ? 2.5 : endPrice < 0.3 ? 1.5 : 1.0;
-        const volatility = baseVolatility * volatilityBoost;
-
-        // News events
-        const newsIndices = new Set<number>();
-        for (let n = 0; n < 15; n++) {
-          newsIndices.add(Math.floor(seededRandom(seed * 500 + n) * numPoints));
-        }
-
-        for (let i = 0; i < numPoints; i++) {
-          const jump = (seededRandom(seed * 1000 + i) - 0.5) * volatility * 1.5;
-          let spike = 0;
-
-          if (newsIndices.has(i)) {
-            const spikeDir = seededRandom(seed * 17 + i) > 0.5 ? 1 : -1;
-            spike = spikeDir * volatility * (2.0 + seededRandom(seed * 19 + i) * 2.0);
-          } else {
-            const spikeRoll = seededRandom(seed * 2000 + i);
-            if (spikeRoll > 0.85) spike = volatility * 1.2;
-            else if (spikeRoll < 0.15) spike = -volatility * 1.2;
-          }
-
-          if (seededRandom(seed * 3000 + i) > 0.2) {
-            currentPrice = currentPrice + jump + (endPrice - currentPrice) * 0.05 + spike;
-          }
-
-          const minBound = Math.max(0.01, endPrice * 0.4);
-          const maxBound = Math.min(0.99, endPrice * 2.0);
-          currentPrice = Math.max(minBound, Math.min(maxBound, currentPrice));
-
-          if (i >= numPoints - 5) {
-            const blend = (i - (numPoints - 5)) / 4;
-            currentPrice = currentPrice * (1 - blend * 0.5) + endPrice * (blend * 0.5);
-          }
-          prices.push(currentPrice);
-        }
-        prices[numPoints - 1] = endPrice;
-        return prices;
-      };
+      // No prices are EXACTLY 1 - Yes prices (perfect mirror)
+      const noPrices = yesPrices.map(p => 1 - p);
 
       return [
-        {
-          id: "yes",
-          name: "Yes",
-          color: "#4abe7a",
-          prices: generateVolatilePrices(market.yesPrice, marketSeed),
-        },
-        {
-          id: "no",
-          name: "No",
-          color: "#e5534b",
-          prices: generateVolatilePrices(market.noPrice || (1 - market.yesPrice), marketSeed + 54321),
-        },
+        { id: "yes", name: "Yes", color: "#4abe7a", prices: yesPrices },
+        { id: "no", name: "No", color: "#5b9cf6", prices: noPrices },
       ];
     }
 
     // Final fallback - ALWAYS generate chart data if we have a market
     // This ensures the chart is never empty
-    console.log('[chartOutcomes] FALLBACK - generating default chart. market exists:', !!market, 'yesPrice:', market?.yesPrice);
 
     const numPoints = 220;
     const yPrice = market?.yesPrice ?? 0.5;
@@ -627,15 +561,11 @@ export function MarketDetail() {
       { id: "no", name: "No", color: "#e5534b", prices: generateSimplePrices(nPrice, 54321) },
     ];
 
-    console.log('[chartOutcomes] FALLBACK result:', fallbackResult.length, 'outcomes with', fallbackResult[0]?.prices?.length, 'price points each');
     return fallbackResult;
   }, [market?.outcomes, market?.yesPrice, market?.noPrice, market?.question, timeRange, livePriceHistory,
       // Force recalculation when outcome prices change (shallow comparison of outcomes array isn't enough)
       // eslint-disable-next-line react-hooks/exhaustive-deps
       JSON.stringify(market?.outcomes?.map(o => o.price))]);
-
-  // Log final chartOutcomes result
-  console.log('[chartOutcomes] Final result:', chartOutcomes.length, 'outcomes', chartOutcomes.map(o => o.name));
 
   const handleBuyYes = (outcome: Outcome) => {
     setSelectedOutcome(outcome);
@@ -846,7 +776,7 @@ export function MarketDetail() {
             width={Math.min(800, window.innerWidth - 80)}
             highlightedOutcomeId={highlightedOutcomeId}
             timestamps={isKhameneiMarket ? KHAMENEI_PRICE_HISTORY.map((p: { timestamp: number }) => p.timestamp) : REAL_PRICE_HISTORY.map((p: { timestamp: number }) => p.timestamp)}
-            autoScale={isKhameneiMarket || timeRange === '1H' || timeRange === '6H' || timeRange === '1D'}
+            autoScale={true}
             timeRange={timeRange}
           />
         </div>

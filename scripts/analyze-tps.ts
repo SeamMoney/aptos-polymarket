@@ -17,10 +17,13 @@
  *   npx tsx scripts/analyze-tps.ts --range 611854000 611856000  # Block range
  */
 
-// TPS Optimized Contract (Table + snapshot pattern) - Jan 13, 2026
+// AMM-fixed Contract (per-outcome base_reserve) - Jan 14, 2026
 // Override with CONTRACT_ADDRESS env var if needed
-const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xda51d5f87be27cac0a1d72fe500da145c61b2356547ac811e0cd822c80f99a3b';
-const FULLNODE_URL = process.env.FULLNODE_URL || 'https://aptos.cash.trading/v1';
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea';
+
+// Use official testnet API (has indexer)
+const DEFAULT_FULLNODE = 'https://api.testnet.aptoslabs.com/v1';
+const FULLNODE_URL = process.env.FULLNODE_URL || DEFAULT_FULLNODE;
 
 interface Transaction {
   type: string;

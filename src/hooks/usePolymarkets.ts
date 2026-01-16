@@ -6,7 +6,7 @@ import { useMultiMarkets } from './useMultiMarkets';
 import type { Market, Category, Outcome } from '../polymarket/types';
 
 // Contract address from env var (USD1 contract deployed Jan 11, 2026)
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134';
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea';
 
 // Outcome colors for multi-outcome markets
 const OUTCOME_COLORS = [
@@ -237,16 +237,6 @@ export function usePolymarkets(): PolymarketsHook {
         // Replace with higher volume market
         const idx = acc.indexOf(existing);
         acc[idx] = market;
-        console.log('[Dedup] Replacing duplicate market:', {
-          oldAddress: existing.address.slice(0, 12),
-          newAddress: market.address.slice(0, 12),
-          question: market.question.substring(0, 50),
-        });
-      } else {
-        console.log('[Dedup] Skipping duplicate (lower volume):', {
-          address: market.address.slice(0, 12),
-          question: market.question.substring(0, 50),
-        });
       }
       return acc;
     }, [] as typeof multiMarkets);

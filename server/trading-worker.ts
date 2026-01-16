@@ -16,7 +16,7 @@ import {
   InputGenerateTransactionPayloadData,
 } from '@aptos-labs/ts-sdk';
 import {
-  deriveAccounts,
+  deriveAccount,
   validateMnemonic,
 } from '../config/seed-accounts';
 
@@ -58,8 +58,10 @@ interface TxRecord {
   sender: string;
 }
 
-// Circular buffer for transaction hashes (keep last N for memory efficiency)
-const TX_BUFFER_SIZE = 10000;
+// Circular buffer for transaction hashes
+// At 5000 TPS for 60s = 300K txns. With 4 workers, need 75K each minimum.
+// Setting to 100K per worker (400K total) for safety.
+const TX_BUFFER_SIZE = 100000;
 const txBuffer: TxRecord[] = [];
 let txBufferIndex = 0;
 
@@ -162,11 +164,11 @@ async function initialize(): Promise<void> {
   console.log(`[Worker ${config.workerId}] Deriving ${config.accountCount} accounts starting at index ${config.accountStartIndex}...`);
   const startDerive = Date.now();
 
-  // Derive only the accounts this worker needs
+  // Derive only the accounts this worker needs (using deriveAccount directly for efficiency)
   for (let i = 0; i < config.accountCount; i++) {
     const globalIndex = config.accountStartIndex + i;
-    const derivedAccounts = deriveAccounts(config.mnemonic, globalIndex + 1);
-    const account = derivedAccounts[globalIndex];
+    // Use deriveAccount directly instead of deriveAccounts to avoid O(n²) derivation
+    const account = deriveAccount(config.mnemonic, globalIndex);
 
     const accState: AccountState = {
       account,

@@ -270,9 +270,12 @@ export function MarketCard({ market, onPress }: MarketCardProps) {
 
   return (
     <div className="px-4 mb-4">
-      <button
+      <div
         onClick={onPress}
-        className="w-full bg-[#2a3d4e] rounded-xl overflow-hidden text-left hover:bg-[#324858] transition-colors border border-[#3a4f60]"
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onPress(); }}
+        className="w-full bg-[#2a3d4e] rounded-xl overflow-hidden text-left hover:bg-[#324858] transition-colors border border-[#3a4f60] cursor-pointer"
       >
         <div className="p-3">
           {/* Header with image and title */}
@@ -358,7 +361,7 @@ export function MarketCard({ market, onPress }: MarketCardProps) {
             </div>
           </div>
         </div>
-      </button>
+      </div>
     </div>
   );
 }

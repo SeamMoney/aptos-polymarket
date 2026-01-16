@@ -93,6 +93,8 @@ module prediction_market::multi_outcome_market {
         transfer_ref: TransferRef,
         /// Current CPMM reserve (Aggregator for parallel execution)
         reserve: Aggregator<u64>,
+        /// Per-outcome base reserve for CPMM pricing (moved from MultiMarket for independent pricing)
+        base_reserve: Aggregator<u64>,
     }
 
     /// Multi-outcome prediction market
@@ -120,8 +122,8 @@ module prediction_market::multi_outcome_market {
         /// Total collateral from complete sets (Aggregator for parallel execution)
         total_collateral: Aggregator<u64>,
 
-        /// Base reserve for CPMM pricing (Aggregator for parallel execution)
-        base_reserve: Aggregator<u64>,
+        // NOTE: base_reserve moved to OutcomeMarket for per-outcome pricing
+        // This allows prices to diverge independently (proper CPMM behavior)
 
         /// Resolution state
         resolved: bool,
@@ -334,7 +336,7 @@ module prediction_market::multi_outcome_market {
             collateral_metadata,
             collateral_store,
             total_collateral: aggregator_v2::create_unbounded_aggregator_with_value(initial_liquidity),
-            base_reserve: aggregator_v2::create_unbounded_aggregator_with_value(reserve_per_outcome),
+            // base_reserve now per-outcome in OutcomeMarket
             resolved: false,
             winning_outcome: option::none(),
             extend_ref,
@@ -482,7 +484,8 @@ module prediction_market::multi_outcome_market {
         // Get current reserves for CPMM calculation
         // Using snapshot() + read_snapshot() instead of read() to avoid sequential dependencies
         // Per AIP-47: "Unlike read(), it is fast and avoids sequential dependencies"
-        let base_snapshot = aggregator_v2::snapshot(&market.base_reserve);
+        // Now using outcome.base_reserve (per-outcome) instead of market.base_reserve (shared)
+        let base_snapshot = aggregator_v2::snapshot(&outcome.base_reserve);
         let outcome_snapshot = aggregator_v2::snapshot(&outcome.reserve);
         let current_base_reserve = aggregator_v2::read_snapshot(&base_snapshot);
         let current_outcome_reserve = aggregator_v2::read_snapshot(&outcome_snapshot);
@@ -492,7 +495,8 @@ module prediction_market::multi_outcome_market {
         assert!(tokens_out >= min_tokens_out, E_SLIPPAGE_EXCEEDED);
 
         // Update reserves (parallel-safe using aggregators)
-        aggregator_v2::add(&mut market.base_reserve, amount_after_fee);
+        // Now updates outcome.base_reserve instead of market.base_reserve
+        aggregator_v2::add(&mut outcome.base_reserve, amount_after_fee);
         aggregator_v2::sub(&mut outcome.reserve, tokens_out);
 
         // Take collateral
@@ -546,7 +550,8 @@ module prediction_market::multi_outcome_market {
         // Get current reserves for CPMM calculation
         // Using snapshot() + read_snapshot() instead of read() to avoid sequential dependencies
         // Per AIP-47: "Unlike read(), it is fast and avoids sequential dependencies"
-        let base_snapshot = aggregator_v2::snapshot(&market.base_reserve);
+        // Now using outcome.base_reserve (per-outcome) instead of market.base_reserve (shared)
+        let base_snapshot = aggregator_v2::snapshot(&outcome.base_reserve);
         let outcome_snapshot = aggregator_v2::snapshot(&outcome.reserve);
         let current_base_reserve = aggregator_v2::read_snapshot(&base_snapshot);
         let current_outcome_reserve = aggregator_v2::read_snapshot(&outcome_snapshot);
@@ -561,8 +566,9 @@ module prediction_market::multi_outcome_market {
         aggregator_v2::add(&mut market.accumulated_fees, fee);
 
         // Update reserves (parallel-safe using aggregators)
+        // Now updates outcome.base_reserve instead of market.base_reserve
         aggregator_v2::add(&mut outcome.reserve, tokens_in);
-        aggregator_v2::sub(&mut market.base_reserve, collateral_out_before_fee);
+        aggregator_v2::sub(&mut outcome.base_reserve, collateral_out_before_fee);
 
         // Burn tokens from seller
         let tokens = primary_fungible_store::withdraw(seller, outcome.metadata, tokens_in);
@@ -673,7 +679,7 @@ module prediction_market::multi_outcome_market {
             collateral_metadata,
             collateral_store,
             total_collateral: aggregator_v2::create_unbounded_aggregator_with_value(initial_liquidity),
-            base_reserve: aggregator_v2::create_unbounded_aggregator_with_value(reserve_per_outcome),
+            // base_reserve now per-outcome in OutcomeMarket
             resolved: false,
             winning_outcome: option::none(),
             extend_ref,
@@ -901,6 +907,7 @@ module prediction_market::multi_outcome_market {
         let transfer_ref = fungible_asset::generate_transfer_ref(&constructor);
 
         // Create OutcomeMarket at separate address (key for parallelism!)
+        // Each outcome gets its OWN base_reserve for independent pricing
         move_to(&outcome_signer, OutcomeMarket {
             market_addr,
             outcome_index: index,
@@ -910,6 +917,7 @@ module prediction_market::multi_outcome_market {
             burn_ref,
             transfer_ref,
             reserve: aggregator_v2::create_unbounded_aggregator_with_value(initial_reserve),
+            base_reserve: aggregator_v2::create_unbounded_aggregator_with_value(initial_reserve),
         });
 
         outcome_addr
@@ -942,14 +950,16 @@ module prediction_market::multi_outcome_market {
 
     #[view]
     /// Get all outcome prices (returns vector of prices 0-100)
+    /// Each outcome now has its own base_reserve for independent pricing
     public fun get_all_prices(market_addr: address): vector<u64> acquires MultiMarket, OutcomeMarket {
         let market = borrow_global<MultiMarket>(market_addr);
-        let base_reserve = aggregator_v2::read(&market.base_reserve);
         let prices = vector::empty<u64>();
         let i = 0;
         while (i < market.outcome_count) {
             let outcome_addr = *vector::borrow(&market.outcome_addresses, i);
             let outcome = borrow_global<OutcomeMarket>(outcome_addr);
+            // Now reads per-outcome base_reserve (not shared market.base_reserve)
+            let base_reserve = aggregator_v2::read(&outcome.base_reserve);
             let outcome_reserve = aggregator_v2::read(&outcome.reserve);
             let price = calculate_price(base_reserve, outcome_reserve);
             vector::push_back(&mut prices, price);
@@ -963,9 +973,10 @@ module prediction_market::multi_outcome_market {
     public fun get_outcome_price(market_addr: address, outcome_index: u64): u64 acquires MultiMarket, OutcomeMarket {
         let market = borrow_global<MultiMarket>(market_addr);
         assert!(outcome_index < market.outcome_count, E_INVALID_OUTCOME);
-        let base_reserve = aggregator_v2::read(&market.base_reserve);
         let outcome_addr = *vector::borrow(&market.outcome_addresses, outcome_index);
         let outcome = borrow_global<OutcomeMarket>(outcome_addr);
+        // Now reads per-outcome base_reserve (not shared market.base_reserve)
+        let base_reserve = aggregator_v2::read(&outcome.base_reserve);
         let outcome_reserve = aggregator_v2::read(&outcome.reserve);
         calculate_price(base_reserve, outcome_reserve)
     }
@@ -1040,9 +1051,10 @@ module prediction_market::multi_outcome_market {
         assert!(outcome_index < market.outcome_count, E_INVALID_OUTCOME);
         let fee = (collateral_in * market.fee_bps) / BPS_DENOMINATOR;
         let amount_after_fee = collateral_in - fee;
-        let base_reserve = aggregator_v2::read(&market.base_reserve);
         let outcome_addr = *vector::borrow(&market.outcome_addresses, outcome_index);
         let outcome = borrow_global<OutcomeMarket>(outcome_addr);
+        // Now reads per-outcome base_reserve (not shared market.base_reserve)
+        let base_reserve = aggregator_v2::read(&outcome.base_reserve);
         let outcome_reserve = aggregator_v2::read(&outcome.reserve);
         calculate_buy_output(base_reserve, outcome_reserve, amount_after_fee)
     }
@@ -1056,9 +1068,10 @@ module prediction_market::multi_outcome_market {
     ): u64 acquires MultiMarket, OutcomeMarket {
         let market = borrow_global<MultiMarket>(market_addr);
         assert!(outcome_index < market.outcome_count, E_INVALID_OUTCOME);
-        let base_reserve = aggregator_v2::read(&market.base_reserve);
         let outcome_addr = *vector::borrow(&market.outcome_addresses, outcome_index);
         let outcome = borrow_global<OutcomeMarket>(outcome_addr);
+        // Now reads per-outcome base_reserve (not shared market.base_reserve)
+        let base_reserve = aggregator_v2::read(&outcome.base_reserve);
         let outcome_reserve = aggregator_v2::read(&outcome.reserve);
         let collateral_out_before_fee = calculate_sell_output(outcome_reserve, base_reserve, tokens_in);
         let fee = (collateral_out_before_fee * market.fee_bps) / BPS_DENOMINATOR;

@@ -15,7 +15,9 @@
 
 import fs from 'fs';
 
-const FULLNODE_URL = process.env.FULLNODE_URL || 'https://aptos.cash.trading/v1';
+// Use official testnet API (has indexer for transaction lookups)
+const DEFAULT_FULLNODE = 'https://api.testnet.aptoslabs.com/v1';
+const FULLNODE_URL = process.env.FULLNODE_URL || DEFAULT_FULLNODE;
 
 interface SubmittedTxn {
   hash: string;
@@ -311,12 +313,14 @@ async function main() {
   }
 
   // Sample if too many transactions (for speed)
+  // 10K samples gives good accuracy while keeping analysis fast
+  const MAX_SAMPLES = 10000;
   let txnsToAnalyze = data.transactions;
-  if (data.transactions.length > 5000) {
-    console.log(`  Sampling ${5000} transactions for analysis (full set: ${formatNumber(data.transactions.length)})`);
+  if (data.transactions.length > MAX_SAMPLES) {
+    console.log(`  Sampling ${MAX_SAMPLES} transactions for analysis (full set: ${formatNumber(data.transactions.length)})`);
     // Take evenly distributed samples
-    const step = Math.floor(data.transactions.length / 5000);
-    txnsToAnalyze = data.transactions.filter((_, i) => i % step === 0).slice(0, 5000);
+    const step = Math.floor(data.transactions.length / MAX_SAMPLES);
+    txnsToAnalyze = data.transactions.filter((_, i) => i % step === 0).slice(0, MAX_SAMPLES);
   }
 
   // Fetch on-chain data

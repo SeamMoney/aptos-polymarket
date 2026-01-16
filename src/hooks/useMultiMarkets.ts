@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134';
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea';
 const MODULE = `${CONTRACT_ADDRESS}::multi_outcome_market` as const;
 
 type MoveFn = `${string}::${string}::${string}`;
@@ -11,12 +11,22 @@ type MoveFn = `${string}::${string}::${string}`;
 // Format: comma-separated addresses
 const EXPLICIT_MARKETS = import.meta.env.VITE_MULTI_MARKETS?.split(',').filter(Boolean) || [];
 
-// Use QuickNode RPC to avoid Aptos Labs rate limiting
-const QUICKNODE_RPC = import.meta.env.VITE_RPC_URL || 'https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1';
-const aptos = new Aptos(new AptosConfig({
-  network: Network.TESTNET,
-  fullnode: QUICKNODE_RPC,
-}));
+// RPC endpoints in priority order (custom fullnode first, Aptos Labs fallback)
+const RPC_ENDPOINTS = [
+  'https://aptos.cash.trading/v1',      // Custom fullnode - no rate limits
+  'https://api.testnet.aptoslabs.com/v1', // Aptos Labs fallback
+];
+
+// Create Aptos client for a specific endpoint
+function createAptosClient(fullnode: string): Aptos {
+  return new Aptos(new AptosConfig({
+    network: Network.TESTNET,
+    fullnode,
+  }));
+}
+
+// Default client (primary endpoint)
+let aptos = createAptosClient(RPC_ENDPOINTS[0]);
 
 interface Outcome {
   index: number;
@@ -50,17 +60,57 @@ interface MultiMarket {
   oracleInfo?: OracleInfo;
 }
 
+// Module-level cache to persist markets across page navigations
+// This prevents refetching when navigating between pages
+interface MarketCache {
+  markets: MultiMarket[];
+  timestamp: number;
+  walletAddress?: string;
+}
+let marketCache: MarketCache | null = null;
+const CACHE_TTL_MS = 10000; // Cache valid for 10 seconds
+
 export function useMultiMarkets() {
   const { account } = useWallet();
   const walletAddress = account?.address?.toString();
-  const [markets, setMarkets] = useState<MultiMarket[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Initialize from cache if valid (wallet-independent for initial render)
+  const getInitialMarkets = (): MultiMarket[] => {
+    if (marketCache && Date.now() - marketCache.timestamp < CACHE_TTL_MS) {
+      return marketCache.markets;
+    }
+    return [];
+  };
+
+  const [markets, setMarkets] = useState<MultiMarket[]>(getInitialMarkets);
+  const [loading, setLoading] = useState(() => getInitialMarkets().length === 0);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchMarkets = useCallback(async () => {
+  // Prevent duplicate fetches from React Strict Mode double-invocation
+  const fetchInProgressRef = useRef(false);
+
+  const fetchMarkets = useCallback(async (forceRefresh = false) => {
+    // Prevent duplicate fetches (React Strict Mode calls effects twice in dev)
+    if (fetchInProgressRef.current) {
+      return;
+    }
+
+    // Skip fetch if cache is still valid and has all markets (unless force refresh)
+    const expectedMarketCount = EXPLICIT_MARKETS.length || 15;
+    if (!forceRefresh && marketCache &&
+        Date.now() - marketCache.timestamp < CACHE_TTL_MS &&
+        marketCache.markets.length >= expectedMarketCount) {
+      setMarkets(marketCache.markets);
+      setLoading(false);
+      return;
+    }
+
+    fetchInProgressRef.current = true;
+
     try {
       // Use explicit market addresses if configured, otherwise try registry
       let marketAddresses: string[] = [];
+      console.log('[Markets] Starting fetch, explicit markets:', EXPLICIT_MARKETS.length);
 
       if (EXPLICIT_MARKETS.length > 0) {
         marketAddresses = EXPLICIT_MARKETS;
@@ -92,31 +142,33 @@ export function useMultiMarkets() {
         3: 'optimistic',
       };
 
-      // Fetch all markets in PARALLEL for speed
-      const fetchSingleMarket = async (addr: string): Promise<MultiMarket | null> => {
+      // Fetch all markets in PARALLEL for speed, with endpoint failover
+      const fetchSingleMarket = async (addr: string, endpointIndex = 0): Promise<MultiMarket | null> => {
+        const client = endpointIndex === 0 ? aptos : createAptosClient(RPC_ENDPOINTS[endpointIndex]);
+
         try {
           // Make all RPC calls for this market in parallel
           const [infoResult, labelsResult, pricesResult, positionsResult, oracleResult] = await Promise.all([
-            aptos.view({
+            client.view({
               payload: {
                 function: `${MODULE}::get_multi_market_info` as MoveFn,
                 functionArguments: [addr],
               },
             }),
-            aptos.view({
+            client.view({
               payload: {
                 function: `${MODULE}::get_outcome_labels` as MoveFn,
                 functionArguments: [addr],
               },
             }),
-            aptos.view({
+            client.view({
               payload: {
                 function: `${MODULE}::get_all_prices` as MoveFn,
                 functionArguments: [addr],
               },
             }),
             walletAddress
-              ? aptos.view({
+              ? client.view({
                   payload: {
                     function: `${MODULE}::get_user_multi_positions` as MoveFn,
                     functionArguments: [addr, walletAddress],
@@ -124,7 +176,7 @@ export function useMultiMarkets() {
                 }).catch(() => [new Array(10).fill('0')])
               : Promise.resolve([new Array(10).fill('0')]),
             // Fetch oracle info (may fail on old contracts without this function)
-            aptos.view({
+            client.view({
               payload: {
                 function: `${MODULE}::get_oracle_info` as MoveFn,
                 functionArguments: [addr],
@@ -183,36 +235,59 @@ export function useMultiMarkets() {
             oracleInfo,
           };
         } catch (err) {
-          console.error(`Error fetching market ${addr}:`, err);
+          // Try next endpoint on failure
+          if (endpointIndex < RPC_ENDPOINTS.length - 1) {
+            return fetchSingleMarket(addr, endpointIndex + 1);
+          }
+          console.error(`Error fetching market ${addr} (all endpoints failed):`, err);
           return null;
         }
       };
 
-      // Fetch markets in batches to avoid QuickNode rate limit (50 req/sec)
-      // Each market makes 4 RPC calls, so batch size of 4 = 16 calls per batch
-      const BATCH_SIZE = 4;
-      const BATCH_DELAY_MS = 250; // 250ms delay between batches
+      // Fetch ALL markets in parallel - no rate limits on custom fullnode
+      const results = await Promise.all(marketAddresses.map(fetchSingleMarket));
+      const fetchedMarkets = results.filter((m): m is MultiMarket => m !== null);
 
-      const fetchedMarkets: MultiMarket[] = [];
-      for (let i = 0; i < marketAddresses.length; i += BATCH_SIZE) {
-        const batch = marketAddresses.slice(i, i + BATCH_SIZE);
-        const batchResults = await Promise.all(batch.map(fetchSingleMarket));
-        fetchedMarkets.push(...batchResults.filter((m): m is MultiMarket => m !== null));
+      // Only update state if we got all markets or more than we currently have
+      // This prevents rate-limited fetches from overwriting good data
+      console.log('[Markets] Fetch complete:', fetchedMarkets.length, 'of', marketAddresses.length);
+      setMarkets(prevMarkets => {
+        let newMarkets: MultiMarket[];
+        let shouldCache = false;
 
-        // Add delay between batches to stay under rate limit
-        if (i + BATCH_SIZE < marketAddresses.length) {
-          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+        if (fetchedMarkets.length >= marketAddresses.length) {
+          // Got all markets, update and cache
+          newMarkets = fetchedMarkets;
+          shouldCache = true;
+        } else if (fetchedMarkets.length > prevMarkets.length) {
+          // Got more than before, update but don't cache (partial data)
+          newMarkets = fetchedMarkets;
+        } else if (prevMarkets.length === 0) {
+          // First load, use whatever we got but don't cache (partial data)
+          newMarkets = fetchedMarkets;
+        } else {
+          // Rate-limited fetch returned fewer markets, keep existing data
+          return prevMarkets;
         }
-      }
 
-      // Only update state once all markets are loaded (prevents flickering)
-      setMarkets(fetchedMarkets);
+        // Only cache when we have all markets
+        if (shouldCache) {
+          marketCache = {
+            markets: newMarkets,
+            timestamp: Date.now(),
+            walletAddress,
+          };
+        }
+
+        return newMarkets;
+      });
       setError(null);
     } catch (err) {
       console.error('Error fetching multi-outcome markets:', err);
       setError('Failed to fetch markets');
     } finally {
       setLoading(false);
+      fetchInProgressRef.current = false;
     }
   }, [walletAddress]);
 
@@ -221,9 +296,9 @@ export function useMultiMarkets() {
     fetchMarkets();
   }, [fetchMarkets]);
 
-  // Refresh every 10 seconds
+  // Refresh every 30 seconds (reduced from 10s to avoid rate limiting)
   useEffect(() => {
-    const interval = setInterval(fetchMarkets, 10000);
+    const interval = setInterval(fetchMarkets, 30000);
     return () => clearInterval(interval);
   }, [fetchMarkets]);
 

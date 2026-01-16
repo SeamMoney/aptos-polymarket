@@ -112,8 +112,8 @@ async function main() {
   console.log('╚══════════════════════════════════════════════════════════════╝');
   console.log('');
 
-  // Use USD1 deployer as market creator
-  const creatorKey = new Ed25519PrivateKey(cleanKey(WALLETS.usd1Deployer.key));
+  // Use contract deployer as market creator (can mint USD1)
+  const creatorKey = new Ed25519PrivateKey(cleanKey(CONTRACTS.deployerKey));
   const creator = Account.fromPrivateKey({ privateKey: creatorKey });
 
   console.log(`Creator: ${creator.accountAddress.toString().slice(0, 20)}...`);

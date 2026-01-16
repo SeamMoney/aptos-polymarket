@@ -1,11 +1,36 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134";
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea";
 // First market from VITE_MULTI_MARKETS or default to first new market
 const MARKET_ADDRESS = import.meta.env.VITE_MULTI_MARKETS?.split(',')[0] || "0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052";
 
-const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
+// RPC endpoints in priority order (custom fullnode first, Aptos Labs fallback)
+const RPC_ENDPOINTS = [
+  'https://aptos.cash.trading/v1',      // Custom fullnode - no rate limits
+  'https://api.testnet.aptoslabs.com/v1', // Aptos Labs fallback
+];
+
+// Create Aptos clients for failover
+const aptosClients = RPC_ENDPOINTS.map(url => new Aptos(new AptosConfig({
+  network: Network.TESTNET,
+  fullnode: url,
+})));
+
+// Helper to fetch with failover
+async function fetchWithFailover<T>(
+  fn: (client: Aptos) => Promise<T>
+): Promise<T> {
+  for (let i = 0; i < aptosClients.length; i++) {
+    try {
+      return await fn(aptosClients[i]);
+    } catch (err) {
+      if (i === aptosClients.length - 1) throw err;
+      // Continue to next endpoint
+    }
+  }
+  throw new Error('All RPC endpoints failed');
+}
 
 export interface PricePoint {
   timestamp: number;
@@ -31,13 +56,13 @@ export function useLivePrices(pollInterval: number = 3000): UseLivePricesReturn 
 
   const fetchPrices = useCallback(async () => {
     try {
-      const result = await aptos.view({
+      const result = await fetchWithFailover(client => client.view({
         payload: {
           function: `${CONTRACT_ADDRESS}::multi_outcome_market::get_all_prices`,
           typeArguments: [],
           functionArguments: [MARKET_ADDRESS],
         },
-      });
+      }));
 
       const rawPrices = (result[0] as string[]).map(p => parseInt(p));
       const priceSum = rawPrices.reduce((a, b) => a + b, 0);

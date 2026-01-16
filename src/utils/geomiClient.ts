@@ -416,8 +416,8 @@ export async function fetchTradesWithFallback(
       if (trades.length > 0) {
         return { trades, source: 'geomi' };
       }
-    } catch (err) {
-      console.warn('Geomi query failed, falling back to Aptos API:', err);
+    } catch {
+      // Silently fall back to Aptos API - Geomi may not have trades table indexed
     }
   }
 

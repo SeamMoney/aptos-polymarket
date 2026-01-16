@@ -56,7 +56,7 @@ const oracleInfo: Record<OracleType, {
 
 export function OracleStatusPanel({
   marketType,
-  lastUpdate,
+  lastUpdate: _lastUpdate,
   price,
   targetPrice,
   confidence
