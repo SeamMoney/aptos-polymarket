@@ -41,7 +41,7 @@ import { validateMnemonic } from '../config/seed-accounts';
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea';
 
 // RPC endpoints
-const APTOS_INTERNAL_FULLNODE = 'http://vfn0.usce1-0.testnet.aptoslabs.com:80';
+const APTOS_INTERNAL_FULLNODE = 'http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1';
 const CUSTOM_FULLNODE = process.env.FULLNODE_URL || 'https://aptos.cash.trading/v1';
 
 const RPC_MODE = process.env.RPC_MODE || 'internal';
