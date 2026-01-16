@@ -2,6 +2,163 @@
 
 ## Verified Peak Performance
 
+### January 16, 2026 - 3,180 TPS (AMM-Fixed Contract, Internal VFN)
+
+**Time:** 1:15 AM - 1:17 AM PST
+**Contract Address:** `0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea`
+**Module:** `multi_outcome_market` (AMM-fixed with per-outcome base_reserve)
+**Collateral:** USD1 Stablecoin
+**Infrastructure:** Local machine, 500 accounts, 4 worker threads, Aptos Internal VFN
+
+#### Key Discovery: Internal VFN URL Fix
+
+The internal Aptos VFN requires `/v1` suffix:
+- ❌ `http://vfn0.usce1-0.testnet.aptoslabs.com:80` (BROKEN - module not found)
+- ✅ `http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1` (WORKS)
+
+#### On-Chain Proof
+
+| Block | Txns | Gas Used | Gas/Txn | Output | Events | Success% | Est TPS |
+|-------|------|----------|---------|--------|--------|----------|---------|
+| **622,302,153** | **300** | 4,837 | 16 | 1.41 MB | 1,228 | 78% | **3,180** |
+| 622,302,472 | 300 | 4,506 | 15 | 1.43 MB | 1,249 | 79% | 3,180 |
+| 622,302,399 | 288 | 4,810 | 17 | 1.38 MB | 1,210 | 80% | 3,053 |
+| 622,302,183 | 284 | 4,019 | 14 | 1.33 MB | 1,156 | 77% | 3,010 |
+| 622,302,444 | 278 | 4,112 | 15 | 1.34 MB | 1,175 | 81% | 2,947 |
+
+**TPS Calculation:** 300 txns/block × 10.6 blocks/sec = **3,180 TPS**
+
+#### Server-Reported Results
+
+| Metric | Value |
+|--------|-------|
+| Total Trades Submitted | 77,880 |
+| Successful | 55,748 |
+| Failed | 22,132 |
+| **Success Rate** | **71.6%** |
+| **Peak TPS (server)** | **2,210** |
+| Duration | 73 seconds |
+
+#### Full On-Chain Metrics
+
+| Metric | Value |
+|--------|-------|
+| Total Transactions | 46,114 |
+| Successful | 36,523 (79.2%) |
+| Failed | 9,591 |
+| **Peak TPS (single block)** | **3,180** |
+| Peak Txns/Block | 300 |
+| Average TPS | 676 |
+| Duration | 68.2 seconds |
+| Total Gas Used | 850,011 units |
+| Gas/Second | 12,468 gas/sec |
+| Avg Gas/Transaction | 18 gas |
+| Total State Changes | 850,228 |
+| Total Events | 191,691 |
+
+#### Configuration Used
+
+```typescript
+turbo: {
+  batchSize: 30,
+  batchDelayMs: 40,
+  fireAndForgetRatio: 0.85,
+  targetTps: 3000,
+}
+```
+
+#### Infrastructure
+
+| Component | Value |
+|-----------|-------|
+| **RPC Endpoint** | `http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1` |
+| **Accounts** | 500 (seed-derived) |
+| **Worker Threads** | 4 |
+| **Script** | `hft-piscina-server.ts` |
+| **Mode** | turbo |
+
+#### Launch Command
+
+```bash
+SEED_MNEMONIC="..." \
+ACCOUNT_COUNT=500 \
+RPC_MODE=internal \
+CONTRACT_ADDRESS="0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea" \
+MULTI_MARKETS="0xaf561030c7ebb22b1d8b99b727c27caab1f6944ce39c141fd2b6b0cfbf614a9e,..." \
+npx tsx server/hft-piscina-server.ts turbo
+
+# Then trigger:
+curl -X POST "http://localhost:3001/start?duration=60"
+```
+
+---
+
+### January 16, 2026 - 2,290 TPS (AMM-Fixed Contract, Custom Fullnode)
+
+**Time:** 12:35 AM - 12:37 AM PST
+**Contract Address:** `0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea`
+**Module:** `multi_outcome_market` (AMM-fixed with per-outcome base_reserve)
+**Infrastructure:** Local machine, 500 accounts, custom fullnode (aptos.cash.trading)
+
+#### On-Chain Proof
+
+| Block | Txns | Gas Used | Gas/Txn | Output | Events | Success% | Est TPS |
+|-------|------|----------|---------|--------|--------|----------|---------|
+| **622,272,712** | **216** | 4,253 | 20 | 1.04 MB | 911 | 81% | **2,290** |
+| 622,272,817 | 203 | 3,511 | 17 | 1001.5 KB | 856 | 81% | 2,152 |
+| 622,272,716 | 185 | 3,751 | 20 | 908.8 KB | 776 | 80% | 1,961 |
+| 622,272,759 | 181 | 4,687 | 26 | 858.2 KB | 731 | 76% | 1,919 |
+
+**TPS Calculation:** 216 txns/block × 10.6 blocks/sec = **2,290 TPS**
+
+#### Full On-Chain Metrics
+
+| Metric | Value |
+|--------|-------|
+| Total Transactions | 26,813 |
+| Successful | 20,670 (77.1%) |
+| **Peak TPS (single block)** | **2,290** |
+| Peak Txns/Block | 216 |
+| Average TPS | 263 |
+| Duration | 102.0 seconds |
+| Total Gas Used | 734,768 units |
+
+#### Notes
+
+This run used `aptos.cash.trading` as the RPC endpoint because the internal VFN URL was missing `/v1`. After discovering the URL fix, subsequent runs used the internal VFN and achieved higher TPS.
+
+---
+
+### January 16, 2026 - 1,929 TPS (Light Mode, Custom Fullnode)
+
+**Time:** 12:39 AM - 12:41 AM PST
+**Contract Address:** `0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea`
+**Infrastructure:** Local machine, 200 accounts, light mode
+
+#### On-Chain Proof
+
+| Block | Txns | Gas Used | Output | Events | Success% | Est TPS |
+|-------|------|----------|--------|--------|----------|---------|
+| **622,275,275** | **182** | 2,601 | 874.9 KB | 747 | 78% | **1,929** |
+| 622,275,197 | 154 | 2,775 | 762.9 KB | 652 | 81% | 1,632 |
+| 622,275,746 | 152 | 2,300 | 765.9 KB | 655 | 83% | 1,611 |
+
+#### Full On-Chain Metrics
+
+| Metric | Value |
+|--------|-------|
+| Total Transactions | 47,337 |
+| Successful | 36,929 (78%) |
+| **Peak TPS (single block)** | **1,929** |
+| Average TPS | 625 |
+| Duration | 75.7 seconds |
+
+#### Notes
+
+Light mode (batchSize: 3, batchDelayMs: 80) provides more sustained throughput with higher success rates, useful for demos where reliability matters more than peak TPS.
+
+---
+
 ### January 12, 2026 - 3,371 TPS (3 Workers, Turbo Mode)
 
 **Time:** 7:12 PM - 7:15 PM PST
