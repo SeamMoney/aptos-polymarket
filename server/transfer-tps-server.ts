@@ -354,7 +354,7 @@ function createWorker(workerConfig: {
   recipientStartIndex: number;
   count: number;
 }, modeConfig: ModeConfig): Worker {
-  const workerPath = path.resolve(__dirname, 'transfer-worker.js');
+  const workerPath = path.resolve(__dirname, 'transfer-worker.cjs');
 
   const worker = new Worker(workerPath, {
     workerData: {
