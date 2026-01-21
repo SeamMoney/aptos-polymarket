@@ -111,10 +111,11 @@ npm run test:stress      # Stress test
 | Contract build | `contracts/build/PredictionMarket/` |
 | Server code | `server/*.ts` |
 | React app | `src/` |
-| Trading scripts | `scripts/*.ts` |
+| Trading scripts | `scripts/*.ts` (active), `scripts/legacy/` (deprecated) |
 | Shell scripts | `scripts/*.sh` |
 | Config/wallets | `config/wallets.ts` |
 | Environment | `.env.local`, `.env.seed`, `.env.benchmark` |
+| Scripts guide | `docs/SCRIPTS_GUIDE.md` |
 
 ## Demo Workflow
 
@@ -214,7 +215,7 @@ If errors start during demo:
 
 | Component | Address |
 |-----------|---------|
-| Internal VFN | `http://vfn0.usce1-0.testnet.aptoslabs.com:80` |
+| Internal VFN | `http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1` |
 | Custom Fullnode | `http://aptos.cash.trading:8080/v1` |
 | Worker 1 | 178.128.177.88 |
 | Worker 2 | 147.182.237.239 |
@@ -223,6 +224,7 @@ If errors start during demo:
 ### Key Docs
 - `docs/TPS_BENCHMARKS.md` - Verified on-chain proof of TPS
 - `docs/amm-parallelization-analysis.md` - State contention analysis
+- `docs/SCRIPTS_GUIDE.md` - Comprehensive scripts reference (active vs legacy)
 - `DEMO_GUIDE.md` - Step-by-step demo instructions
 
 ---
