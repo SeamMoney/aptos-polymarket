@@ -45,7 +45,7 @@ const mode = process.argv[2] || 'turbo';
 process.env.TOKEN_TYPE = 'usd1';
 
 // Validate mode
-const validModes = ['light', 'turbo', 'quantum', 'hyper'];
+const validModes = ['reliable', 'light', 'proven', 'turbo', 'quantum', 'hyper'];
 if (!validModes.includes(mode)) {
   console.error(`Invalid mode: ${mode}`);
   console.error(`Valid modes: ${validModes.join(', ')}`);

@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-01-21T06:03:23.044Z",
+  "status": "completed",
+  "summary": {
+    "peakTps": 0,
+    "averageTps": 0,
+    "successRate": 100,
+    "durationSec": 35.089
+  },
+  "config": {
+    "mode": "dryrun",
+    "network": "testnet",
+    "accounts": 10,
+    "workers": 1,
+    "duration": 30,
+    "rpcEndpoint": "https://aptos.cash.trading/v1"
+  },
+  "stats": {
+    "totalTransfers": 218,
+    "successfulTransfers": 218,
+    "failedTransfers": 0,
+    "peakTps": 0,
+    "tpsHistory": [],
+    "errors": {}
+  },
+  "environment": {
+    "nodeVersion": "v20.19.4",
+    "platform": "darwin"
+  }
+}

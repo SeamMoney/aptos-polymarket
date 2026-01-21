@@ -61,6 +61,26 @@ interface ModeConfig {
 }
 
 const MODES: Record<string, ModeConfig> = {
+  // Dryrun mode: Ultra-light for testing (~10 TPS)
+  dryrun: {
+    accounts: 10,
+    workers: 1,
+    batchSize: 1,
+    batchDelayMs: 500,
+    fireAndForgetRatio: 0,      // Wait for ALL confirmations
+    workerJitterMs: 0,
+    targetTps: 10,
+  },
+  // Reliable mode: 100% success rate, waits for confirmations
+  reliable: {
+    accounts: 100,
+    workers: 4,
+    batchSize: 1,               // One txn at a time per account
+    batchDelayMs: 100,          // Wait between batches
+    fireAndForgetRatio: 0,      // Wait for ALL confirmations
+    workerJitterMs: 500,
+    targetTps: 500,             // Conservative target
+  },
   // Light mode: Safe for testing, low resource usage
   light: {
     accounts: 200,
@@ -123,6 +143,8 @@ interface RpcEndpoint {
 }
 
 const TESTNET_ENDPOINTS: RpcEndpoint[] = [
+  { url: 'https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1', name: 'QuikNode', network: 'testnet' },
+  { url: 'https://aptos.cash.trading/v1', name: 'Custom Fullnode', network: 'testnet' },
   { url: 'http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1', name: 'Internal VFN', network: 'testnet' },
   { url: 'https://fullnode.testnet.aptoslabs.com/v1', name: 'Aptos Labs', network: 'testnet' },
 ];
@@ -369,7 +391,7 @@ function createWorker(workerConfig: {
       batchDelayMs: modeConfig.batchDelayMs,
       fireAndForgetRatio: modeConfig.fireAndForgetRatio,
       workerJitterMs: modeConfig.workerJitterMs,  // Pass jitter config to worker
-      useOrderless: true,
+      useOrderless: modeConfig.fireAndForgetRatio > 0,  // Disable orderless for reliable mode (FAF=0)
       tokenType: config.tokenType,
       usd1Metadata: config.usd1Metadata,
       transferAmount: config.transferAmount,

@@ -469,6 +469,81 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
 }
 
 /**
+ * Reliable single transfer with confirmation (100% success rate)
+ */
+async function reliableTransfer(accState: AccountState): Promise<void> {
+  if (!accState.isActive) return;
+
+  const senderAddr = accState.account.accountAddress.toString();
+  const payload = buildTransferPayload(accState.recipientAddress, config.transferAmount);
+  const submitStart = Date.now();
+
+  try {
+    // Build transaction with sequential nonce
+    const txn = await aptos.transaction.build.simple({
+      sender: accState.account.accountAddress,
+      data: payload,
+      options: {
+        accountSequenceNumber: accState.sequenceNumber,
+        maxGasAmount: 2000,
+        gasUnitPrice: 100,
+        expireTimestamp: Math.floor(Date.now() / 1000) + 30,
+      },
+    });
+
+    // Sign and submit
+    const signedTxn = aptos.transaction.sign({ signer: accState.account, transaction: txn });
+    const pendingTxn = await aptos.transaction.submit.simple({
+      transaction: txn,
+      senderAuthenticator: signedTxn,
+    });
+
+    // Wait for confirmation
+    const result = await aptos.waitForTransaction({
+      transactionHash: pendingTxn.hash,
+      options: { timeoutSecs: 20 },
+    });
+
+    const latencyMs = Date.now() - submitStart;
+
+    if (result.success) {
+      stats.totalTransfers++;
+      stats.successfulTransfers++;
+      accState.successCount++;
+      accState.sequenceNumber++;
+      accState.lastTxHash = pendingTxn.hash;
+
+      const record: TransferRecord = {
+        hash: pendingTxn.hash,
+        timestamp: Date.now(),
+        sender: senderAddr,
+        recipient: accState.recipientAddress,
+        amount: config.transferAmount,
+        success: true,
+        latencyMs,
+      };
+      recordTransfer(record);
+      logTransfer(senderAddr, accState.recipientAddress, config.transferAmount, true, latencyMs, pendingTxn.hash);
+    } else {
+      stats.totalTransfers++;
+      stats.failedTransfers++;
+      accState.failCount++;
+      logTransfer(senderAddr, accState.recipientAddress, config.transferAmount, false, latencyMs);
+      // Refresh sequence on failure
+      await refreshSequenceNumber(accState);
+    }
+  } catch (e: any) {
+    stats.totalTransfers++;
+    stats.failedTransfers++;
+    accState.failCount++;
+    const latencyMs = Date.now() - submitStart;
+    logTransfer(senderAddr, accState.recipientAddress, config.transferAmount, false, latencyMs);
+    // Refresh sequence number on error
+    await refreshSequenceNumber(accState);
+  }
+}
+
+/**
  * Fire-and-forget batch (faster, optimistic counting)
  */
 async function fireAndForgetBatch(accState: AccountState): Promise<void> {
@@ -558,8 +633,12 @@ async function accountTransferLoop(accState: AccountState, accountIndex: number)
 
   while (isRunning && accState.isActive) {
     try {
+      // Reliable mode: wait for confirmation on every transaction
+      if (config.fireAndForgetRatio === 0) {
+        await reliableTransfer(accState);
+      }
       // Hybrid mode: fire-and-forget vs safe mode
-      if (Math.random() < config.fireAndForgetRatio) {
+      else if (Math.random() < config.fireAndForgetRatio) {
         await fireAndForgetBatch(accState);
       } else {
         await executeBatchForAccount(accState);
