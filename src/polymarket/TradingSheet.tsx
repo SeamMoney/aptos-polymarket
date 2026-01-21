@@ -53,7 +53,7 @@ export function TradingSheet({
   onBuyOutcome,
   onSellOutcome,
 }: TradingSheetProps) {
-  const { connected, account } = useWallet();
+  const { connected, account, disconnect } = useWallet();
   const [direction, setDirection] = useState<TradeDirection>("buy");
   const [tradeType, setTradeType] = useState<"yes" | "no">(initialType);
   const [amount, setAmount] = useState(0);
@@ -530,6 +530,7 @@ export function TradingSheet({
         isOpen={showIOSModal}
         onClose={() => setShowIOSModal(false)}
         onContinueInBrowser={executeTrade}
+        onDisconnect={disconnect}
       />
     </AnimatePresence>
   );
