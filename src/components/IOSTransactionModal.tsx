@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Smartphone, ExternalLink, ChevronRight, AlertTriangle } from "lucide-react";
+import { X, Smartphone, ChevronRight } from "lucide-react";
 
 interface IOSTransactionModalProps {
   isOpen: boolean;
@@ -18,17 +18,11 @@ const getPetraDeepLink = () => {
 export function IOSTransactionModal({
   isOpen,
   onClose,
-  onContinueInBrowser,
 }: IOSTransactionModalProps) {
   const petraDeepLink = getPetraDeepLink();
 
   const handleOpenInPetra = () => {
     window.location.href = petraDeepLink;
-  };
-
-  const handleContinue = () => {
-    onContinueInBrowser();
-    onClose();
   };
 
   return (
@@ -62,68 +56,50 @@ export function IOSTransactionModal({
 
             {/* Header */}
             <div className="pt-6 pb-4 px-6 text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
-                <AlertTriangle size={32} className="text-amber-500" />
+              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-[#6C5CE7]/30 to-[#8B5CF6]/30 flex items-center justify-center">
+                <Smartphone size={32} className="text-[#8B5CF6]" />
               </div>
               <h2 className="text-xl font-bold text-white mb-2">
-                iOS Safari Detected
+                Open in Petra App
               </h2>
               <p className="text-[#8297a3] text-sm">
-                Safari's toolbar may hide wallet buttons. Choose how to proceed:
+                iOS Safari has display issues with wallet pages.
+                Please use the Petra App for the best experience.
               </p>
             </div>
 
-            {/* Options */}
+            {/* Single Action */}
             <div className="px-6 pb-6 space-y-3">
-              {/* Recommended: Open in Petra App */}
+              {/* Open in Petra App - Primary action */}
               <button
                 onClick={handleOpenInPetra}
                 className="w-full p-4 bg-gradient-to-r from-[#6C5CE7] to-[#8B5CF6] hover:from-[#5B4ED6] hover:to-[#7C4DDB] rounded-xl transition-all group"
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-                    <Smartphone size={24} className="text-white" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <div className="flex items-center gap-2">
-                      <span className="text-white font-semibold">Open in Petra App</span>
-                      <span className="px-1.5 py-0.5 bg-white/20 text-white text-[10px] font-medium rounded">
-                        RECOMMENDED
-                      </span>
-                    </div>
-                    <p className="text-white/70 text-xs mt-0.5">
-                      Best experience - no viewport issues
-                    </p>
-                  </div>
+                <div className="flex items-center justify-center gap-3">
+                  <Smartphone size={24} className="text-white" />
+                  <span className="text-white font-semibold text-lg">Open Petra App</span>
                   <ChevronRight size={20} className="text-white/70 group-hover:translate-x-0.5 transition-transform" />
                 </div>
               </button>
 
-              {/* Alternative: Continue in Safari with instructions */}
-              <button
-                onClick={handleContinue}
-                className="w-full p-4 bg-[#2a3d4e] hover:bg-[#324858] border border-[#3a4f60] rounded-xl transition-all group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-[#3a4f60] flex items-center justify-center shrink-0">
-                    <ExternalLink size={20} className="text-[#8297a3]" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <span className="text-white font-medium">Continue in Safari</span>
-                    <p className="text-[#6b7a8a] text-xs mt-0.5">
-                      Scroll down on Petra page to see buttons
-                    </p>
-                  </div>
-                  <ChevronRight size={20} className="text-[#6b7a8a] group-hover:translate-x-0.5 transition-transform" />
-                </div>
-              </button>
-
-              {/* Visual instruction for Safari option */}
-              <div className="mt-4 p-3 bg-[#2a3d4e]/50 rounded-lg border border-[#3a4f60]/50">
+              {/* Info text */}
+              <div className="p-3 bg-[#2a3d4e]/50 rounded-lg border border-[#3a4f60]/50">
                 <p className="text-[#8297a3] text-xs text-center">
-                  <strong className="text-amber-400">Tip:</strong> If you continue in Safari,
-                  swipe up on the Petra page to reveal the Cancel/Approve buttons hidden below Safari's toolbar.
+                  The Petra App will open this page in its built-in browser where transactions work perfectly.
                 </p>
+              </div>
+
+              {/* Don't have the app? */}
+              <div className="text-center pt-2">
+                <p className="text-[#6b7a8a] text-xs mb-2">Don't have Petra installed?</p>
+                <a
+                  href="https://apps.apple.com/app/petra-wallet/id6446259840"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[#8B5CF6] text-xs hover:underline"
+                >
+                  Download from App Store
+                </a>
               </div>
             </div>
           </motion.div>
