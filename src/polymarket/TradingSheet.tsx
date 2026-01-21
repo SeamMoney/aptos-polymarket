@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { ChevronDown, Minus, Plus, Loader2, CheckCircle, AlertCircle, ArrowLeftRight, ExternalLink, X } from "lucide-react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -7,6 +7,18 @@ import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import type { Market, Outcome } from "./types";
 import { saveTradeRecord, type TradeRecord } from "./PortfolioPage";
 import { emitTrade, type LiveTrade } from "../hooks/useLiveTrades";
+import { IOSTransactionModal } from "../components/IOSTransactionModal";
+
+// Detect iOS Safari (has Petra Web viewport issues)
+const isIOSSafari = () => {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua);
+  const isWebkit = /WebKit/.test(ua);
+  const isChrome = /CriOS/.test(ua);
+  const isFirefox = /FxiOS/.test(ua);
+  return isIOS && isWebkit && !isChrome && !isFirefox;
+};
 
 interface TradingSheetProps {
   market: Market;
@@ -51,6 +63,10 @@ export function TradingSheet({
   const [txMessage, setTxMessage] = useState("");
   const [txHash, setTxHash] = useState<string | null>(null);
   const [balance, setBalance] = useState<number>(0);
+  const [showIOSModal, setShowIOSModal] = useState(false);
+
+  // Detect iOS Safari (viewport issues on wallet websites)
+  const isOnIOSSafari = useMemo(() => isIOSSafari(), []);
 
   // Fetch wallet balance
   useEffect(() => {
@@ -297,7 +313,7 @@ export function TradingSheet({
             dragConstraints={{ top: 0 }}
             dragElastic={{ top: 0, bottom: 0.5 }}
             onDragEnd={handleDragEnd}
-            className="relative bg-[#1c2b3a] rounded-t-2xl w-full max-w-lg overflow-hidden touch-pan-y"
+            className="relative bg-[#1c2b3a] rounded-t-2xl w-full max-w-none sm:max-w-lg overflow-hidden touch-pan-y mx-auto"
           >
             {/* Drag Handle */}
             <div className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing">
@@ -487,7 +503,7 @@ export function TradingSheet({
                 </button>
               ) : (
                 <button
-                  onClick={amount > 0 ? executeTrade : undefined}
+                  onClick={amount > 0 ? (isOnIOSSafari ? () => setShowIOSModal(true) : executeTrade) : undefined}
                   disabled={isLoading || amount === 0}
                   className={`w-full py-3.5 rounded-lg transition-colors flex items-center justify-center gap-2 ${
                     isLoading || amount === 0
@@ -508,6 +524,13 @@ export function TradingSheet({
           </motion.div>
         </div>
       )}
+
+      {/* iOS Safari Transaction Modal */}
+      <IOSTransactionModal
+        isOpen={showIOSModal}
+        onClose={() => setShowIOSModal(false)}
+        onContinueInBrowser={executeTrade}
+      />
     </AnimatePresence>
   );
 }

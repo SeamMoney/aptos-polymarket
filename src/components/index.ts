@@ -9,3 +9,4 @@ export { HFTVisualizer } from './HFTVisualizer';
 export { TurboVisualizer } from './TurboVisualizer';
 export { OrderBook } from './OrderBook';
 export { DemoMode } from './DemoMode';
+export { IOSTransactionModal } from './IOSTransactionModal';
