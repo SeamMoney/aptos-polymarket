@@ -22,6 +22,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import { validateMnemonic } from '../config/seed-accounts';
+import { generateDemoId } from '../lib/ralphy-collector';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -198,14 +199,28 @@ interface WorkerStats {
   activeAccounts: number;
 }
 
+// Transfer record (for hash collection)
+interface TransferRecord {
+  hash: string;
+  timestamp: number;
+  sender: string;
+  recipient: string;
+  amount: number;
+  success: boolean;
+  latencyMs: number;
+}
+
 // Global state
 const workerStats = new Map<number, WorkerStats>();
 const workers = new Map<number, Worker>();
+const collectedTransfers: TransferRecord[] = []; // All transaction hashes from workers
 let workersReady = 0;
 let workersDone = 0;
 let startTime = 0;
 let peakTps = 0;
 let isRunning = false;
+let transfersCollected = 0; // Track how many workers have sent their transfers
+let currentDemoId = ''; // Ralphy collector demo ID for disk streaming
 
 // Print box-drawn header
 function printHeader(modeConfig: ModeConfig): void {
@@ -375,7 +390,7 @@ function createWorker(workerConfig: {
   startIndex: number;
   recipientStartIndex: number;
   count: number;
-}, modeConfig: ModeConfig): Worker {
+}, modeConfig: ModeConfig, demoId: string): Worker {
   const workerPath = path.resolve(__dirname, 'transfer-worker.cjs');
 
   const worker = new Worker(workerPath, {
@@ -396,6 +411,7 @@ function createWorker(workerConfig: {
       usd1Metadata: config.usd1Metadata,
       transferAmount: config.transferAmount,
       verbose: config.verbose,
+      demoId: demoId,  // Ralphy collector demo ID for disk streaming
     },
   });
 
@@ -409,6 +425,13 @@ function createWorker(workerConfig: {
         break;
       case 'stats':
         workerStats.set(message.data.workerId, message.data);
+        break;
+      case 'transfers':
+        // Collect transaction hashes from worker
+        const transfers = message.data.transfers as TransferRecord[];
+        collectedTransfers.push(...transfers);
+        transfersCollected++;
+        console.log(`${c.cyan}[HASHES]${c.reset} Collected ${transfers.length} transaction hashes from Worker ${message.data.workerId}`);
         break;
       case 'error':
         console.error(`${c.red}[ERROR]${c.reset} Worker ${message.data.workerId}: ${message.data.error}`);
@@ -467,6 +490,9 @@ function printResults(modeConfig: ModeConfig): void {
     : 'https://explorer.aptoslabs.com/?network=testnet';
   console.log(`  ${c.dim}Explorer:${c.reset}         ${c.blue}${explorerUrl}${c.reset}`);
   console.log();
+  console.log(`  ${c.dim}Ralphy Demo ID:${c.reset}   ${c.bold}${currentDemoId}${c.reset}`);
+  console.log(`  ${c.dim}Hash Files:${c.reset}       .ralphy/hashes/${currentDemoId}-worker-*.jsonl`);
+  console.log();
   console.log(`${c.cyan}═══════════════════════════════════════════════════════════════════════${c.reset}`);
   console.log();
 }
@@ -521,6 +547,12 @@ async function main(): Promise<void> {
   }
   console.log();
 
+  // Generate demo ID for Ralphy collector
+  currentDemoId = generateDemoId();
+  console.log(`${c.cyan}[RALPHY]${c.reset} Demo ID: ${c.bold}${currentDemoId}${c.reset}`);
+  console.log(`${c.dim}  Hash files: .ralphy/hashes/${currentDemoId}-worker-*.jsonl${c.reset}`);
+  console.log();
+
   // Create workers
   console.log(`${c.cyan}[INIT]${c.reset} Starting workers...`);
   for (const range of workerRanges) {
@@ -534,7 +566,7 @@ async function main(): Promise<void> {
       activeAccounts: 0,
     });
 
-    const worker = createWorker(range, modeConfig);
+    const worker = createWorker(range, modeConfig, currentDemoId);
     workers.set(range.workerId, worker);
   }
 
@@ -590,11 +622,55 @@ async function main(): Promise<void> {
 
   clearInterval(statsInterval);
 
+  // Collect transaction hashes from all workers for verification
+  console.log();
+  console.log(`${c.cyan}[COLLECT]${c.reset} Requesting transaction hashes from workers...`);
+  transfersCollected = 0;
+  workers.forEach(worker => worker.postMessage({ type: 'getTransfers' }));
+
+  // Wait for all workers to send their transfers (with timeout)
+  const collectTimeout = 5000; // 5 seconds max
+  const collectStart = Date.now();
+  while (transfersCollected < workers.size && Date.now() - collectStart < collectTimeout) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+  console.log(`${c.cyan}[COLLECT]${c.reset} Collected ${collectedTransfers.length} total transaction hashes`);
+
   // Print final results
   printResults(modeConfig);
 
+  // Output transaction hashes in JSON format for verification
+  // This allows the demo script to parse and verify each hash individually
+  // Note: With Ralphy collector, hashes are also persisted to disk at .ralphy/hashes/
+  console.log();
+  console.log(`${c.cyan}===TRANSACTION_HASHES_START===${c.reset}`);
+  console.log(JSON.stringify({
+    demoId: currentDemoId,
+    count: collectedTransfers.length,
+    hashFiles: `.ralphy/hashes/${currentDemoId}-worker-*.jsonl`,
+    hashes: collectedTransfers.map(t => ({
+      hash: t.hash,
+      sender: t.sender,
+      success: t.success,
+      timestamp: t.timestamp,
+    })),
+  }));
+  console.log(`${c.cyan}===TRANSACTION_HASHES_END===${c.reset}`);
+
   // Terminate workers
   workers.forEach(worker => worker.terminate());
+
+  // Wait for stdout to flush before exiting
+  // This ensures the demo script receives all output including transaction hashes
+  await new Promise<void>((resolve) => {
+    if (process.stdout.write('')) {
+      resolve();
+    } else {
+      process.stdout.once('drain', resolve);
+    }
+  });
+  await new Promise(r => setTimeout(r, 500)); // Extra buffer for safety
 
   process.exit(0);
 }

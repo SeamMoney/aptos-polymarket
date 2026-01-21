@@ -1,0 +1,120 @@
+{
+  "timestamp": "2026-01-21T20:29:05.924Z",
+  "status": "completed",
+  "summary": {
+    "peakTps": 14,
+    "averageTps": 7,
+    "successRate": 100,
+    "durationSec": 24.403,
+    "verified": true
+  },
+  "config": {
+    "mode": "dryrun",
+    "network": "testnet",
+    "accounts": 10,
+    "workers": 1,
+    "duration": 20,
+    "rpcEndpoint": "https://aptos.cash.trading/v1"
+  },
+  "serverReported": {
+    "totalTransfers": 147,
+    "successfulTransfers": 147,
+    "failedTransfers": 0,
+    "peakTps": 13,
+    "avgTps": 8,
+    "successRate": 100,
+    "tpsHistory": [
+      1,
+      1,
+      2,
+      2,
+      3,
+      3,
+      6,
+      6,
+      10,
+      10,
+      10,
+      10,
+      5,
+      5,
+      9,
+      9,
+      8,
+      8,
+      7,
+      7,
+      7,
+      10,
+      9,
+      9,
+      11,
+      11,
+      6,
+      6,
+      13,
+      13,
+      7,
+      7,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10
+    ],
+    "errors": {}
+  },
+  "verified": {
+    "accountsChecked": 5,
+    "confirmedTransfers": 162,
+    "failedTransfers": 0,
+    "peakTps": 14,
+    "avgTps": 7,
+    "successRate": 100,
+    "discrepancy": -10.2
+  },
+  "prediction": {
+    "peakTps": {
+      "low": 7,
+      "expected": 12,
+      "high": 17
+    },
+    "avgTps": {
+      "low": 5,
+      "expected": 8,
+      "high": 13
+    },
+    "successRate": 100,
+    "factors": {
+      "baseline": 8,
+      "accountFactor": 1,
+      "workerFactor": 1,
+      "latencyFactor": 1.49,
+      "reliabilityFactor": 1,
+      "combined": 1.49
+    }
+  },
+  "evaluation": {
+    "peakTpsAccuracy": 0.83,
+    "avgTpsAccuracy": 0.88,
+    "successRateAccuracy": 1,
+    "overallAccuracy": 0.9,
+    "withinConfidence": true,
+    "rating": "GOOD",
+    "deltas": {
+      "peakTps": 16.7,
+      "avgTps": -12.5,
+      "successRate": 0,
+      "totalTransfers": 1.3
+    }
+  },
+  "environment": {
+    "nodeVersion": "v20.19.4",
+    "platform": "darwin"
+  }
+}

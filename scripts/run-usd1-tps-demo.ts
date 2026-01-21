@@ -26,6 +26,20 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
+import {
+  predictTPS,
+  evaluatePrediction,
+  formatPrediction,
+  formatEvaluation,
+  TPSPrediction,
+  PredictionEvaluation,
+} from '../lib/tps-predictor';
+import {
+  loadHashesFromFile,
+  getHashCount,
+} from '../lib/ralphy-collector';
+import { RalphyVerifier, VerificationSummary } from '../lib/ralphy-verifier';
+import { generateAnalyticsReport, AnalyticsReport } from '../lib/ralphy-analytics';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -65,18 +79,18 @@ const TESTNET_ENDPOINTS = [
   { url: 'https://fullnode.testnet.aptoslabs.com/v1', name: 'Aptos Labs Public' },
 ];
 
-// Mode configurations
-const MODES: Record<string, { accounts: number; workers: number; batchSize: number; batchDelayMs: number; targetTps: number }> = {
-  dryrun: { accounts: 10, workers: 1, batchSize: 1, batchDelayMs: 500, targetTps: 10 },
-  reliable: { accounts: 100, workers: 4, batchSize: 1, batchDelayMs: 100, targetTps: 500 },
-  light: { accounts: 200, workers: 4, batchSize: 5, batchDelayMs: 50, targetTps: 2000 },
-  proven: { accounts: 500, workers: 4, batchSize: 30, batchDelayMs: 40, targetTps: 5000 },
-  turbo: { accounts: 500, workers: 4, batchSize: 20, batchDelayMs: 20, targetTps: 5000 },
-  quantum: { accounts: 1000, workers: 8, batchSize: 20, batchDelayMs: 10, targetTps: 10000 },
-  hyper: { accounts: 2000, workers: 16, batchSize: 20, batchDelayMs: 0, targetTps: 16000 },
+// Mode configurations (with fireAndForgetRatio for prediction)
+const MODES: Record<string, { accounts: number; workers: number; batchSize: number; batchDelayMs: number; fireAndForgetRatio: number; targetTps: number }> = {
+  dryrun: { accounts: 10, workers: 1, batchSize: 1, batchDelayMs: 500, fireAndForgetRatio: 0, targetTps: 10 },
+  reliable: { accounts: 100, workers: 4, batchSize: 1, batchDelayMs: 100, fireAndForgetRatio: 0, targetTps: 500 },
+  light: { accounts: 200, workers: 4, batchSize: 5, batchDelayMs: 50, fireAndForgetRatio: 0.8, targetTps: 2000 },
+  proven: { accounts: 500, workers: 4, batchSize: 30, batchDelayMs: 40, fireAndForgetRatio: 0.85, targetTps: 5000 },
+  turbo: { accounts: 500, workers: 4, batchSize: 20, batchDelayMs: 20, fireAndForgetRatio: 0.9, targetTps: 5000 },
+  quantum: { accounts: 1000, workers: 8, batchSize: 20, batchDelayMs: 10, fireAndForgetRatio: 0.95, targetTps: 10000 },
+  hyper: { accounts: 2000, workers: 16, batchSize: 20, batchDelayMs: 0, fireAndForgetRatio: 0.99, targetTps: 16000 },
 };
 
-// Demo stats
+// Demo stats (server-reported - based on submissions)
 interface DemoStats {
   startTime: number;
   endTime: number;
@@ -86,6 +100,22 @@ interface DemoStats {
   peakTps: number;
   tpsHistory: number[];
   errors: Record<string, number>;
+}
+
+// Verified stats (on-chain confirmed transactions)
+interface VerifiedStats {
+  verified: boolean;
+  accountsChecked: number;
+  confirmedTransfers: number;
+  failedTransfers: number;
+  peakTps: number;
+  avgTps: number;
+  successRate: number;
+  serverVsOnChain: {
+    serverReported: number;
+    onChainConfirmed: number;
+    discrepancy: number; // percentage difference
+  };
 }
 
 // Global state
@@ -100,7 +130,22 @@ let stats: DemoStats = {
   tpsHistory: [],
   errors: {},
 };
+let verifiedStats: VerifiedStats | null = null;
 let selectedEndpoint: { url: string; name: string; latencyMs: number } | null = null;
+let prediction: TPSPrediction | null = null;
+let evaluation: PredictionEvaluation | null = null;
+
+// Collected transaction hashes from server for verification
+interface CollectedHash {
+  hash: string;
+  sender: string;
+  success: boolean;
+  timestamp: number;
+}
+let collectedHashes: CollectedHash[] = [];
+let fullServerOutput = ''; // Accumulate ALL server output for post-process parsing
+let ralphyDemoId = ''; // Ralphy collector demo ID from server
+let ralphyAnalytics: AnalyticsReport | null = null; // Comprehensive analytics report
 
 // Parse CLI arguments
 const args = process.argv.slice(2);
@@ -292,6 +337,33 @@ async function phase2RpcValidation(): Promise<boolean> {
   printInfo(`Selected: ${c.green}${selectedEndpoint.name}${c.reset} (${selectedEndpoint.latencyMs}ms latency)`);
 
   return true;
+}
+
+// Phase 2.5: TPS Prediction
+function phase2_5Prediction(): void {
+  printHeader('PHASE 2.5: TPS PREDICTION');
+
+  if (!selectedEndpoint) {
+    printWarning('Cannot predict TPS: no RPC endpoint selected');
+    return;
+  }
+
+  const modeConfig = MODES[config.mode];
+  if (!modeConfig) {
+    printWarning(`Cannot predict TPS: unknown mode ${config.mode}`);
+    return;
+  }
+
+  // Generate prediction
+  prediction = predictTPS(
+    config.mode,
+    modeConfig,
+    selectedEndpoint.latencyMs,
+    config.duration
+  );
+
+  // Display prediction
+  console.log(formatPrediction(prediction, config.duration));
 }
 
 // Phase 3: Account Balance Validation
@@ -518,12 +590,20 @@ async function phase5to7ServerLifecycle(): Promise<boolean> {
       }
 
       // Parse stats from output (look for TPS patterns)
-      const tpsMatch = output.match(/TPS:\s*(\d+)/i) || output.match(/(\d+)\s*txns?\/s/i);
+      // Server outputs: "│ TPS: [====    ] 123 │" with progress bar between TPS: and number
+      // Also try: "TPS: 123" or "123 txns/s" or "Peak: 123"
+      const tpsMatch = output.match(/TPS:\s*\[[^\]]*\]\s*(\d+)/i) ||  // TPS: [bar] 123
+                       output.match(/│\s*TPS:\s*[^│]*\s(\d+)\s*│/i) || // │ TPS: ... 123 │
+                       output.match(/TPS:\s*(\d+)/i) ||                 // TPS: 123
+                       output.match(/(\d+)\s*txns?\/s/i) ||             // 123 txns/s
+                       output.match(/Peak:\s*(\d+)/i);                  // Peak: 123
       if (tpsMatch) {
         const tps = parseInt(tpsMatch[1], 10);
-        stats.tpsHistory.push(tps);
-        if (tps > stats.peakTps) {
-          stats.peakTps = tps;
+        if (tps > 0) {  // Only track non-zero TPS readings
+          stats.tpsHistory.push(tps);
+          if (tps > stats.peakTps) {
+            stats.peakTps = tps;
+          }
         }
       }
 
@@ -535,6 +615,10 @@ async function phase5to7ServerLifecycle(): Promise<boolean> {
       if (successMatch) stats.successfulTransfers = parseInt(successMatch[1].replace(/,/g, ''), 10);
       if (failedMatch) stats.failedTransfers = parseInt(failedMatch[1].replace(/,/g, ''), 10);
       if (totalMatch) stats.totalTransfers = parseInt(totalMatch[1].replace(/,/g, ''), 10);
+
+      // Accumulate all output for post-process hash extraction
+      // (Parsing happens after server closes to avoid race conditions)
+      fullServerOutput += output;
 
       // Forward output to console
       process.stdout.write(data);
@@ -557,6 +641,45 @@ async function phase5to7ServerLifecycle(): Promise<boolean> {
 
     serverProcess.on('close', (code) => {
       stats.endTime = Date.now();
+
+      // Extract transaction hashes from accumulated output AFTER server closes
+      // This ensures we have all the output before parsing
+      const startMarker = '===TRANSACTION_HASHES_START===';
+      const endMarker = '===TRANSACTION_HASHES_END===';
+
+      // Strip ANSI codes for parsing
+      const cleanOutput = fullServerOutput.replace(/\x1b\[[0-9;]*m/g, '');
+
+      if (cleanOutput.includes(startMarker) && cleanOutput.includes(endMarker)) {
+        try {
+          const startIdx = cleanOutput.indexOf(startMarker) + startMarker.length;
+          const endIdx = cleanOutput.indexOf(endMarker);
+
+          if (startIdx > 0 && endIdx > startIdx) {
+            const jsonStr = cleanOutput.slice(startIdx, endIdx).trim();
+
+            // Find JSON object
+            const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              const parsed = JSON.parse(jsonMatch[0]);
+              if (parsed.hashes && Array.isArray(parsed.hashes)) {
+                collectedHashes = parsed.hashes;
+                console.log(`\n  ${c.cyan}[HASHES]${c.reset} Extracted ${collectedHashes.length} transaction hashes for verification`);
+              }
+              // Extract demoId for Ralphy verification
+              if (parsed.demoId) {
+                ralphyDemoId = parsed.demoId;
+                console.log(`  ${c.cyan}[RALPHY]${c.reset} Demo ID: ${ralphyDemoId}`);
+              }
+            }
+          }
+        } catch (err) {
+          console.log(`  ${c.yellow}[WARN]${c.reset} Could not parse transaction hashes: ${err}`);
+        }
+      } else if (cleanOutput.includes(startMarker)) {
+        // START found but END missing - output was truncated
+        console.log(`  ${c.yellow}[WARN]${c.reset} Transaction hash output was truncated (END marker missing)`);
+      }
 
       if (!initialized) {
         printError('Server failed to initialize');
@@ -585,6 +708,334 @@ async function phase5to7ServerLifecycle(): Promise<boolean> {
       }
     }, 120000);
   });
+}
+
+// Phase 7: Ralphy Verification Loop
+// Multi-pass verification with retry logic - guarantees 100% resolution
+async function phase7OnChainVerification(): Promise<void> {
+  printHeader('PHASE 7: RALPHY VERIFICATION LOOP');
+
+  if (!selectedEndpoint) {
+    printWarning('Cannot verify: no RPC endpoint selected');
+    return;
+  }
+
+  // Check if we have a demoId and hash files
+  if (!ralphyDemoId) {
+    printWarning('No Ralphy demo ID found in server output');
+    printInfo('Falling back to legacy verification (if hashes available)');
+
+    // Legacy fallback using collectedHashes
+    if (collectedHashes.length > 0) {
+      await legacyVerification();
+    }
+    return;
+  }
+
+  // Check hash count on disk
+  let hashCount = 0;
+  try {
+    hashCount = await getHashCount(ralphyDemoId);
+  } catch {
+    printWarning('Could not read hash files from disk');
+  }
+
+  if (hashCount === 0) {
+    printWarning('No hashes found on disk - falling back to legacy verification');
+    if (collectedHashes.length > 0) {
+      await legacyVerification();
+    }
+    return;
+  }
+
+  printInfo(`Demo ID: ${c.bold}${ralphyDemoId}${c.reset}`);
+  printInfo(`Hashes collected: ${c.cyan}${hashCount.toLocaleString()}${c.reset} (from .ralphy/hashes/)`);
+  console.log('');
+
+  try {
+    // Initialize Ralphy verifier
+    const verifier = new RalphyVerifier({
+      maxAttempts: 5,
+      initialBackoffMs: 3000,
+      backoffMultiplier: 2,
+      maxBackoffMs: 30000,
+      batchSize: 50,
+      concurrency: 10,
+      network: config.network,
+      rpcEndpoint: 'https://api.testnet.aptoslabs.com/v1', // Use indexer for verification
+    });
+
+    // Initialize from demo files
+    await verifier.init(ralphyDemoId);
+
+    // Set up progress callback
+    verifier.setProgressCallback((pass, maxPasses, processed, total, passStats) => {
+      const progress = Math.round((processed / total) * 100);
+      const confirmed = passStats.confirmed;
+      const failed = passStats.failed;
+      const pending = passStats.pending + passStats.unknown;
+
+      process.stdout.write(
+        `\r  Pass ${pass}/${maxPasses}: ${progress}% | ` +
+        `${c.green}${confirmed}${c.reset} confirmed, ` +
+        `${c.red}${failed}${c.reset} failed, ` +
+        `${c.yellow}${pending}${c.reset} pending`
+      );
+    });
+
+    // Run verification loop
+    console.log(`  ${c.bold}Starting multi-pass verification...${c.reset}`);
+    console.log('');
+
+    const summary: VerificationSummary = await verifier.runLoop();
+
+    console.log(''); // New line after progress
+
+    // Get verified records for analytics
+    const verifiedRecords = verifier.getVerifiedRecords();
+
+    // Generate comprehensive analytics
+    printInfo('Generating comprehensive analytics...');
+    ralphyAnalytics = await generateAnalyticsReport(
+      ralphyDemoId,
+      verifiedRecords,
+      stats.successfulTransfers
+    );
+
+    // Display verification results
+    console.log('');
+    console.log(`  ${c.bold}Ralphy Verification Complete${c.reset}`);
+    console.log(`  ${'─'.repeat(60)}`);
+    console.log(`  Total hashes:       ${c.cyan}${summary.totalHashes.toLocaleString()}${c.reset}`);
+    console.log(`  Verification passes:${summary.passes}`);
+    console.log(`  Quality gate:       ${summary.qualityGatePassed ? `${c.green}PASSED${c.reset}` : `${c.red}FAILED${c.reset}`}`);
+    console.log('');
+
+    console.log(`  ${c.bold}Final Status (100% Resolved)${c.reset}`);
+    console.log(`  ${'─'.repeat(60)}`);
+    console.log(`  Confirmed on-chain: ${c.green}${summary.confirmed.toLocaleString()}${c.reset} (${((summary.confirmed / summary.totalHashes) * 100).toFixed(1)}%)`);
+    console.log(`  Failed on-chain:    ${c.red}${summary.failed.toLocaleString()}${c.reset} (${((summary.failed / summary.totalHashes) * 100).toFixed(1)}%)`);
+    console.log(`  Dropped/timeout:    ${c.yellow}${summary.dropped.toLocaleString()}${c.reset} (${((summary.dropped / summary.totalHashes) * 100).toFixed(1)}%)`);
+    console.log('');
+
+    // Display TPS analytics from Ralphy
+    console.log(`  ${c.bold}Throughput (Ground Truth from On-Chain)${c.reset}`);
+    console.log(`  ${'─'.repeat(60)}`);
+    console.log(`  Peak TPS:           ${c.green}${ralphyAnalytics.summary.peakTps.toLocaleString()}${c.reset}`);
+    console.log(`  Average TPS:        ${ralphyAnalytics.summary.avgTps.toLocaleString()}`);
+    console.log(`  Median TPS:         ${ralphyAnalytics.summary.medianTps.toLocaleString()}`);
+    console.log(`  P95 TPS:            ${ralphyAnalytics.summary.p95Tps.toLocaleString()}`);
+    console.log(`  P99 TPS:            ${ralphyAnalytics.summary.p99Tps.toLocaleString()}`);
+    console.log('');
+
+    // Display latency analytics
+    console.log(`  ${c.bold}Latency (Submit → Confirm)${c.reset}`);
+    console.log(`  ${'─'.repeat(60)}`);
+    console.log(`  P50:                ${ralphyAnalytics.latency.p50Ms}ms`);
+    console.log(`  P95:                ${ralphyAnalytics.latency.p95Ms}ms`);
+    console.log(`  P99:                ${ralphyAnalytics.latency.p99Ms}ms`);
+    console.log(`  Max:                ${ralphyAnalytics.latency.maxMs}ms`);
+    console.log('');
+
+    // Display reconciliation
+    console.log(`  ${c.bold}Reconciliation (Server vs On-Chain)${c.reset}`);
+    console.log(`  ${'─'.repeat(60)}`);
+    console.log(`  Server claimed:     ${ralphyAnalytics.reconciliation.serverClaimed.toLocaleString()} successful`);
+    console.log(`  On-chain confirmed: ${c.green}${ralphyAnalytics.reconciliation.onChainConfirmed.toLocaleString()}${c.reset}`);
+
+    const discrepancy = ralphyAnalytics.reconciliation.discrepancy;
+    if (discrepancy > 5) {
+      console.log(`  Discrepancy:        ${c.red}${discrepancy.toFixed(1)}%${c.reset} (server over-reported)`);
+    } else if (discrepancy < -5) {
+      console.log(`  Discrepancy:        ${c.yellow}${Math.abs(discrepancy).toFixed(1)}%${c.reset} (server under-reported)`);
+    } else {
+      console.log(`  Discrepancy:        ${c.green}${Math.abs(discrepancy).toFixed(1)}%${c.reset} (accurate)`);
+    }
+    console.log('');
+
+    // Display error breakdown if any
+    if (Object.keys(ralphyAnalytics.errors.categories).length > 0) {
+      console.log(`  ${c.bold}Error Breakdown${c.reset}`);
+      console.log(`  ${'─'.repeat(60)}`);
+      const totalErrors = Object.values(ralphyAnalytics.errors.categories).reduce((a, b) => a + b, 0);
+      for (const [category, count] of Object.entries(ralphyAnalytics.errors.categories).sort((a, b) => b[1] - a[1])) {
+        const pct = ((count / totalErrors) * 100).toFixed(1);
+        console.log(`  ${category.padEnd(20)} ${count.toLocaleString()} (${pct}%)`);
+      }
+      console.log('');
+    }
+
+    // Store verified stats for compatibility with existing code
+    verifiedStats = {
+      verified: true,
+      accountsChecked: summary.totalHashes,
+      confirmedTransfers: summary.confirmed,
+      failedTransfers: summary.failed + summary.dropped,
+      peakTps: ralphyAnalytics.summary.peakTps,
+      avgTps: ralphyAnalytics.summary.avgTps,
+      successRate: ralphyAnalytics.summary.successRate,
+      serverVsOnChain: {
+        serverReported: ralphyAnalytics.reconciliation.serverClaimed,
+        onChainConfirmed: ralphyAnalytics.reconciliation.onChainConfirmed,
+        discrepancy: ralphyAnalytics.reconciliation.discrepancy,
+      },
+    };
+
+    if (summary.qualityGatePassed) {
+      printSuccess('Ralphy verification complete - all hashes resolved');
+    } else {
+      printWarning('Quality gate not passed - some hashes may be unresolved');
+    }
+
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    printWarning(`Ralphy verification failed: ${errMsg}`);
+    printInfo('Falling back to legacy verification');
+
+    if (collectedHashes.length > 0) {
+      await legacyVerification();
+    }
+  }
+}
+
+// Legacy verification (fallback when Ralphy files not available)
+async function legacyVerification(): Promise<void> {
+  printInfo(`Verifying ${collectedHashes.length} transaction hashes (legacy mode)...`);
+  console.log('');
+
+  try {
+    const verifyEndpoint = 'https://api.testnet.aptoslabs.com/v1';
+    const aptosConfig = new AptosConfig({
+      network: config.network === 'mainnet' ? Network.MAINNET : Network.TESTNET,
+      fullnode: verifyEndpoint,
+    });
+    const aptos = new Aptos(aptosConfig);
+
+    let confirmedOnChain = 0;
+    let failedOnChain = 0;
+    let notFound = 0;
+    const timestamps: number[] = [];
+
+    const batchSize = 50;
+    const totalBatches = Math.ceil(collectedHashes.length / batchSize);
+
+    for (let batch = 0; batch < totalBatches; batch++) {
+      const start = batch * batchSize;
+      const end = Math.min(start + batchSize, collectedHashes.length);
+      const batchHashes = collectedHashes.slice(start, end);
+
+      const progress = Math.round(((batch + 1) / totalBatches) * 100);
+      process.stdout.write(`\r  Verifying: ${progress}% (${end}/${collectedHashes.length} hashes)`);
+
+      const verifyPromises = batchHashes.map(async (h) => {
+        try {
+          const txn = await aptos.getTransactionByHash({ transactionHash: h.hash });
+          const txnAny = txn as any;
+
+          if (txnAny.type === 'pending_transaction') {
+            return { status: 'pending', timestamp: 0 };
+          }
+
+          if (txnAny.success === true) {
+            const timestamp = parseInt(txnAny.timestamp || '0', 10);
+            return { status: 'confirmed', timestamp };
+          } else {
+            return { status: 'failed', timestamp: 0 };
+          }
+        } catch (err: any) {
+          if (err.message?.includes('not found') || err.message?.includes('404')) {
+            return { status: 'not_found', timestamp: 0 };
+          }
+          return { status: 'error', timestamp: 0 };
+        }
+      });
+
+      const results = await Promise.all(verifyPromises);
+
+      for (const result of results) {
+        switch (result.status) {
+          case 'confirmed':
+            confirmedOnChain++;
+            if (result.timestamp > 0) {
+              timestamps.push(result.timestamp);
+            }
+            break;
+          case 'failed':
+            failedOnChain++;
+            break;
+          case 'not_found':
+            notFound++;
+            break;
+        }
+      }
+
+      if (batch < totalBatches - 1) {
+        await sleep(100);
+      }
+    }
+
+    console.log('');
+
+    let peakTpsVerified = 0;
+    let avgTpsVerified = 0;
+
+    if (timestamps.length > 0) {
+      timestamps.sort((a, b) => a - b);
+
+      const perSecondCounts: Map<number, number> = new Map();
+      for (const ts of timestamps) {
+        const second = Math.floor(ts / 1_000_000);
+        perSecondCounts.set(second, (perSecondCounts.get(second) || 0) + 1);
+      }
+
+      if (perSecondCounts.size > 0) {
+        peakTpsVerified = Math.max(...perSecondCounts.values());
+      }
+
+      const firstTs = timestamps[0];
+      const lastTs = timestamps[timestamps.length - 1];
+      const actualDurationSec = (lastTs - firstTs) / 1_000_000;
+      if (actualDurationSec > 0) {
+        avgTpsVerified = confirmedOnChain / actualDurationSec;
+      }
+    }
+
+    const totalVerified = confirmedOnChain + failedOnChain + notFound;
+    const successRateVerified = totalVerified > 0 ? (confirmedOnChain / totalVerified) * 100 : 0;
+    const serverClaimed = stats.successfulTransfers;
+    const discrepancy = serverClaimed > 0 ? ((serverClaimed - confirmedOnChain) / serverClaimed) * 100 : 0;
+
+    verifiedStats = {
+      verified: true,
+      accountsChecked: collectedHashes.length,
+      confirmedTransfers: confirmedOnChain,
+      failedTransfers: failedOnChain + notFound,
+      peakTps: Math.round(peakTpsVerified),
+      avgTps: Math.round(avgTpsVerified),
+      successRate: Math.round(successRateVerified * 10) / 10,
+      serverVsOnChain: {
+        serverReported: serverClaimed,
+        onChainConfirmed: confirmedOnChain,
+        discrepancy: Math.round(discrepancy * 10) / 10,
+      },
+    };
+
+    console.log('');
+    console.log(`  ${c.bold}Legacy Verification Results${c.reset}`);
+    console.log(`  ${'─'.repeat(50)}`);
+    console.log(`  Confirmed: ${c.green}${confirmedOnChain.toLocaleString()}${c.reset}`);
+    console.log(`  Failed:    ${c.red}${failedOnChain.toLocaleString()}${c.reset}`);
+    console.log(`  Dropped:   ${c.yellow}${notFound.toLocaleString()}${c.reset}`);
+    console.log(`  Peak TPS:  ${c.green}${Math.round(peakTpsVerified)}${c.reset}`);
+    console.log(`  Avg TPS:   ${Math.round(avgTpsVerified)}`);
+    console.log('');
+
+    printSuccess('Legacy verification complete');
+
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    printWarning(`Legacy verification failed: ${errMsg}`);
+  }
 }
 
 // Phase 8: Analytics and Results
@@ -635,6 +1086,24 @@ async function saveResults(status: 'completed' | 'interrupted' | 'error'): Promi
     console.log('');
   }
 
+  // Evaluate prediction if we have one
+  // IMPORTANT: Use VERIFIED stats for evaluation (ground truth)
+  if (prediction) {
+    const actualResults = {
+      peakTps: verifiedStats?.verified ? verifiedStats.peakTps : stats.peakTps,
+      avgTps: verifiedStats?.verified ? verifiedStats.avgTps : averageTps,
+      successRate: verifiedStats?.verified ? verifiedStats.successRate : parseFloat(successRate),
+      totalTransfers: verifiedStats?.verified ? verifiedStats.confirmedTransfers : stats.totalTransfers,
+    };
+
+    evaluation = evaluatePrediction(prediction, actualResults);
+
+    // Display evaluation
+    console.log(`  ${c.bold}Prediction Evaluation${c.reset} ${verifiedStats?.verified ? `${c.green}(using verified data)${c.reset}` : `${c.yellow}(unverified)${c.reset}`}`);
+    console.log(formatEvaluation(prediction, actualResults, evaluation));
+    console.log('');
+  }
+
   // Save to file
   const resultsDir = path.join(PROJECT_ROOT, 'results');
   if (!fs.existsSync(resultsDir)) {
@@ -645,14 +1114,31 @@ async function saveResults(status: 'completed' | 'interrupted' | 'error'): Promi
   const filename = `usd1-transfer-${timestamp}.json`;
   const filepath = path.join(resultsDir, filename);
 
+  // Use verified stats for summary when available (ground truth)
+  const truePeakTps = verifiedStats?.verified ? verifiedStats.peakTps : stats.peakTps;
+  const trueAvgTps = verifiedStats?.verified ? verifiedStats.avgTps : averageTps;
+  const trueSuccessRate = verifiedStats?.verified ? verifiedStats.successRate : parseFloat(successRate);
+
   const results = {
     timestamp: new Date().toISOString(),
     status,
+    // Ralphy metadata (if available)
+    ralphy: ralphyDemoId ? {
+      demoId: ralphyDemoId,
+      hashFiles: `.ralphy/hashes/${ralphyDemoId}-worker-*.jsonl`,
+      stateFile: `.ralphy/state/${ralphyDemoId}.json`,
+    } : null,
     summary: {
-      peakTps: stats.peakTps,
-      averageTps,
-      successRate: parseFloat(successRate),
+      // These are the VERIFIED numbers (ground truth)
+      peakTps: truePeakTps,
+      averageTps: trueAvgTps,
+      successRate: trueSuccessRate,
+      // Include TPS percentiles from Ralphy analytics
+      medianTps: ralphyAnalytics?.summary.medianTps,
+      p95Tps: ralphyAnalytics?.summary.p95Tps,
+      p99Tps: ralphyAnalytics?.summary.p99Tps,
       durationSec,
+      verified: verifiedStats?.verified || false,
     },
     config: {
       mode: config.mode,
@@ -662,14 +1148,54 @@ async function saveResults(status: 'completed' | 'interrupted' | 'error'): Promi
       duration: config.duration,
       rpcEndpoint: selectedEndpoint?.url,
     },
-    stats: {
+    // Server-reported stats (may over-count due to fire-and-forget)
+    serverReported: {
       totalTransfers: stats.totalTransfers,
       successfulTransfers: stats.successfulTransfers,
       failedTransfers: stats.failedTransfers,
       peakTps: stats.peakTps,
+      avgTps: averageTps,
+      successRate: parseFloat(successRate),
       tpsHistory: stats.tpsHistory,
       errors: stats.errors,
     },
+    // On-chain verified stats (ground truth)
+    verified: verifiedStats ? {
+      accountsChecked: verifiedStats.accountsChecked,
+      confirmedTransfers: verifiedStats.confirmedTransfers,
+      failedTransfers: verifiedStats.failedTransfers,
+      peakTps: verifiedStats.peakTps,
+      avgTps: verifiedStats.avgTps,
+      successRate: verifiedStats.successRate,
+      discrepancy: verifiedStats.serverVsOnChain.discrepancy,
+    } : null,
+    // Comprehensive Ralphy analytics (if available)
+    analytics: ralphyAnalytics ? {
+      latency: ralphyAnalytics.latency,
+      perWorker: ralphyAnalytics.perWorker,
+      perAccount: ralphyAnalytics.perAccount.slice(0, 20), // Top 20 accounts
+      errors: ralphyAnalytics.errors,
+      reconciliation: ralphyAnalytics.reconciliation,
+    } : null,
+    prediction: prediction ? {
+      peakTps: prediction.confidence,
+      avgTps: {
+        low: Math.round(prediction.confidence.low * 0.75),
+        expected: prediction.predicted.avgTps,
+        high: Math.round(prediction.confidence.high * 0.75),
+      },
+      successRate: prediction.predicted.successRate,
+      factors: prediction.factors,
+    } : null,
+    evaluation: evaluation ? {
+      peakTpsAccuracy: evaluation.peakTpsAccuracy,
+      avgTpsAccuracy: evaluation.avgTpsAccuracy,
+      successRateAccuracy: evaluation.successRateAccuracy,
+      overallAccuracy: evaluation.overallAccuracy,
+      withinConfidence: evaluation.withinConfidence,
+      rating: evaluation.rating,
+      deltas: evaluation.deltas,
+    } : null,
     environment: {
       nodeVersion: process.version,
       platform: process.platform,
@@ -701,6 +1227,9 @@ async function main(): Promise<void> {
     process.exit(EXIT_RPC_FAILED);
   }
 
+  // Phase 2.5: TPS Prediction
+  phase2_5Prediction();
+
   // Phase 3: Balance Validation
   if (!await phase3BalanceValidation()) {
     printError('Account balance validation failed');
@@ -724,11 +1253,14 @@ async function main(): Promise<void> {
     process.exit(EXIT_SUCCESS);
   }
 
-  // Phase 5-7: Server Lifecycle
+  // Phase 5-6: Server Lifecycle
   if (!await phase5to7ServerLifecycle()) {
     printError('Server failed');
     process.exit(EXIT_STARTUP_FAILED);
   }
+
+  // Phase 7: On-Chain Verification (verify actual confirmed transactions)
+  await phase7OnChainVerification();
 
   // Phase 8: Save results
   await saveResults('completed');

@@ -1,0 +1,108 @@
+{
+  "timestamp": "2026-01-21T21:04:24.508Z",
+  "status": "completed",
+  "summary": {
+    "peakTps": 10,
+    "averageTps": 9,
+    "successRate": 100,
+    "durationSec": 20.253,
+    "verified": true
+  },
+  "config": {
+    "mode": "dryrun",
+    "network": "testnet",
+    "accounts": 10,
+    "workers": 1,
+    "duration": 15,
+    "rpcEndpoint": "https://aptos.cash.trading/v1"
+  },
+  "serverReported": {
+    "totalTransfers": 106,
+    "successfulTransfers": 106,
+    "failedTransfers": 0,
+    "peakTps": 12,
+    "avgTps": 8,
+    "successRate": 100,
+    "tpsHistory": [
+      1,
+      1,
+      4,
+      4,
+      7,
+      7,
+      12,
+      12,
+      5,
+      5,
+      10,
+      10,
+      11,
+      11,
+      9,
+      9,
+      10,
+      10,
+      10,
+      10,
+      11,
+      11,
+      10,
+      10,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "errors": {}
+  },
+  "verified": {
+    "accountsChecked": 126,
+    "confirmedTransfers": 126,
+    "failedTransfers": 0,
+    "peakTps": 10,
+    "avgTps": 9,
+    "successRate": 100,
+    "discrepancy": -18.9
+  },
+  "prediction": {
+    "peakTps": {
+      "low": 8,
+      "expected": 13,
+      "high": 18
+    },
+    "avgTps": {
+      "low": 6,
+      "expected": 9,
+      "high": 14
+    },
+    "successRate": 100,
+    "factors": {
+      "baseline": 8,
+      "accountFactor": 1,
+      "workerFactor": 1,
+      "latencyFactor": 1.61,
+      "reliabilityFactor": 1,
+      "combined": 1.61
+    }
+  },
+  "evaluation": {
+    "peakTpsAccuracy": 0.77,
+    "avgTpsAccuracy": 1,
+    "successRateAccuracy": 1,
+    "overallAccuracy": 0.91,
+    "withinConfidence": true,
+    "rating": "GOOD",
+    "deltas": {
+      "peakTps": -23.1,
+      "avgTps": 0,
+      "successRate": 0,
+      "totalTransfers": -6.7
+    }
+  },
+  "environment": {
+    "nodeVersion": "v20.19.4",
+    "platform": "darwin"
+  }
+}

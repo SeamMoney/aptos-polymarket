@@ -1,0 +1,99 @@
+{
+  "timestamp": "2026-01-21T20:44:10.574Z",
+  "status": "completed",
+  "summary": {
+    "peakTps": 11,
+    "averageTps": 9,
+    "successRate": 100,
+    "durationSec": 19.674,
+    "verified": false
+  },
+  "config": {
+    "mode": "dryrun",
+    "network": "testnet",
+    "accounts": 10,
+    "workers": 1,
+    "duration": 15,
+    "rpcEndpoint": "https://aptos.cash.trading/v1"
+  },
+  "serverReported": {
+    "totalTransfers": 111,
+    "successfulTransfers": 111,
+    "failedTransfers": 0,
+    "peakTps": 11,
+    "avgTps": 9,
+    "successRate": 100,
+    "tpsHistory": [
+      2,
+      2,
+      4,
+      6,
+      6,
+      8,
+      8,
+      11,
+      11,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10,
+      10
+    ],
+    "errors": {}
+  },
+  "verified": null,
+  "prediction": {
+    "peakTps": {
+      "low": 9,
+      "expected": 15,
+      "high": 21
+    },
+    "avgTps": {
+      "low": 7,
+      "expected": 11,
+      "high": 16
+    },
+    "successRate": 100,
+    "factors": {
+      "baseline": 8,
+      "accountFactor": 1,
+      "workerFactor": 1,
+      "latencyFactor": 1.85,
+      "reliabilityFactor": 1,
+      "combined": 1.85
+    }
+  },
+  "evaluation": {
+    "peakTpsAccuracy": 0.73,
+    "avgTpsAccuracy": 0.82,
+    "successRateAccuracy": 1,
+    "overallAccuracy": 0.79,
+    "withinConfidence": true,
+    "rating": "FAIR",
+    "deltas": {
+      "peakTps": -26.7,
+      "avgTps": -18.2,
+      "successRate": 0,
+      "totalTransfers": -32.7
+    }
+  },
+  "environment": {
+    "nodeVersion": "v20.19.4",
+    "platform": "darwin"
+  }
+}

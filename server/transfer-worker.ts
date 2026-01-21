@@ -18,6 +18,10 @@ import {
   deriveAccount,
   validateMnemonic,
 } from '../config/seed-accounts';
+import {
+  RalphyCollector,
+  TransactionRecord,
+} from '../lib/ralphy-collector';
 
 // ANSI color codes for terminal output
 const colors = {
@@ -51,6 +55,7 @@ interface TransferWorkerConfig {
   usd1Metadata: string | null;
   transferAmount: number; // in octas
   verbose: boolean;
+  demoId?: string;                 // Ralphy collector demo ID for disk streaming
 }
 
 // Account state within worker
@@ -62,6 +67,7 @@ interface AccountState {
   failCount: number;
   isActive: boolean;
   lastTxHash: string;
+  accountIndex: number;            // Original account index from seed
 }
 
 // Worker stats for reporting to main thread
@@ -86,10 +92,14 @@ interface TransferRecord {
   latencyMs: number;
 }
 
-// Circular buffer for transfer records
+// Circular buffer for transfer records (kept for backward compatibility)
 const BUFFER_SIZE = 50000;
 const transferBuffer: TransferRecord[] = [];
 let bufferIndex = 0;
+
+// Ralphy collector for disk streaming (zero information loss)
+let ralphyCollector: RalphyCollector | null = null;
+let batchCounter = 0;
 
 // Extract config from workerData
 const config: TransferWorkerConfig = workerData;
@@ -163,13 +173,36 @@ function logTransfer(
   );
 }
 
-// Record a transfer
-function recordTransfer(record: TransferRecord): void {
+// Record a transfer to both memory buffer and disk (via Ralphy collector)
+function recordTransfer(
+  record: TransferRecord,
+  accountIndex: number,
+  error?: string
+): void {
+  // Memory buffer (for backward compatibility)
   if (transferBuffer.length < BUFFER_SIZE) {
     transferBuffer.push(record);
   } else {
     transferBuffer[bufferIndex] = record;
     bufferIndex = (bufferIndex + 1) % BUFFER_SIZE;
+  }
+
+  // Disk streaming via Ralphy collector (zero information loss)
+  if (ralphyCollector) {
+    const txRecord: TransactionRecord = {
+      hash: record.hash,
+      sender: record.sender,
+      recipient: record.recipient,
+      amount: record.amount,
+      submitTime: record.timestamp,
+      submitSuccess: record.success,
+      workerIndex: config.workerId,
+      accountIndex,
+      batchId: batchCounter,
+      latencyMs: record.latencyMs,
+      error,
+    };
+    ralphyCollector.record(txRecord);
   }
 }
 
@@ -234,6 +267,7 @@ async function initialize(): Promise<void> {
       failCount: 0,
       isActive: true,
       lastTxHash: '',
+      accountIndex: senderIndex,
     });
 
     // Progress log every 100 accounts
@@ -271,6 +305,19 @@ async function initialize(): Promise<void> {
 
   stats.accountCount = accounts.length;
   stats.activeAccounts = accounts.filter(a => a.isActive).length;
+
+  // Initialize Ralphy collector for disk streaming (if demoId provided)
+  if (config.demoId) {
+    ralphyCollector = new RalphyCollector({
+      workerId: config.workerId,
+      flushInterval: 100,
+      flushTimeoutMs: 1000,
+    });
+    await ralphyCollector.init(config.demoId);
+    console.log(
+      `${colors.cyan}[Worker ${config.workerId}]${colors.reset} Ralphy collector initialized: ${ralphyCollector.getHashFile()}`
+    );
+  }
 
   const modeStr = config.batchDelayMs === 0 ? `${colors.green}MaxLoad${colors.reset}` : `${config.batchDelayMs}ms delay`;
   console.log(
@@ -420,7 +467,7 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
         success: true,
         latencyMs: result.latencyMs || 0,
       };
-      recordTransfer(record);
+      recordTransfer(record, accState.accountIndex);
       logTransfer(
         senderAddr,
         accState.recipientAddress,
@@ -433,6 +480,19 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
       failCount++;
       stats.failedTransfers++;
       accState.failCount++;
+
+      // Record failed transfer too (for comprehensive analytics)
+      const failRecord: TransferRecord = {
+        hash: result.hash || '',
+        timestamp: Date.now(),
+        sender: senderAddr,
+        recipient: accState.recipientAddress,
+        amount: config.transferAmount,
+        success: false,
+        latencyMs: result.latencyMs || 0,
+      };
+      recordTransfer(failRecord, accState.accountIndex, result.error);
+
       logTransfer(
         senderAddr,
         accState.recipientAddress,
@@ -522,12 +582,25 @@ async function reliableTransfer(accState: AccountState): Promise<void> {
         success: true,
         latencyMs,
       };
-      recordTransfer(record);
+      recordTransfer(record, accState.accountIndex);
       logTransfer(senderAddr, accState.recipientAddress, config.transferAmount, true, latencyMs, pendingTxn.hash);
     } else {
       stats.totalTransfers++;
       stats.failedTransfers++;
       accState.failCount++;
+
+      // Record failed transfer
+      const failRecord: TransferRecord = {
+        hash: pendingTxn.hash,
+        timestamp: Date.now(),
+        sender: senderAddr,
+        recipient: accState.recipientAddress,
+        amount: config.transferAmount,
+        success: false,
+        latencyMs,
+      };
+      recordTransfer(failRecord, accState.accountIndex, 'vm_execution_failed');
+
       logTransfer(senderAddr, accState.recipientAddress, config.transferAmount, false, latencyMs);
       // Refresh sequence on failure
       await refreshSequenceNumber(accState);
@@ -537,6 +610,19 @@ async function reliableTransfer(accState: AccountState): Promise<void> {
     stats.failedTransfers++;
     accState.failCount++;
     const latencyMs = Date.now() - submitStart;
+
+    // Record failed transfer
+    const failRecord: TransferRecord = {
+      hash: '',
+      timestamp: Date.now(),
+      sender: senderAddr,
+      recipient: accState.recipientAddress,
+      amount: config.transferAmount,
+      success: false,
+      latencyMs,
+    };
+    recordTransfer(failRecord, accState.accountIndex, e.message);
+
     logTransfer(senderAddr, accState.recipientAddress, config.transferAmount, false, latencyMs);
     // Refresh sequence number on error
     await refreshSequenceNumber(accState);
@@ -599,13 +685,26 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
         amount: config.transferAmount,
         success: true,
         latencyMs,
-      });
+      }, accState.accountIndex);
       logTransfer(senderAddr, accState.recipientAddress, config.transferAmount, true, latencyMs, result.hash);
-    }).catch(() => {
+    }).catch((e: any) => {
       stats.totalTransfers++;
       stats.failedTransfers++;
       accState.failCount++;
-      logTransfer(senderAddr, accState.recipientAddress, config.transferAmount, false, Date.now() - submitStart);
+
+      const latencyMs = Date.now() - submitStart;
+      // Record failed transfer
+      recordTransfer({
+        hash: '',
+        timestamp: Date.now(),
+        sender: senderAddr,
+        recipient: accState.recipientAddress,
+        amount: config.transferAmount,
+        success: false,
+        latencyMs,
+      }, accState.accountIndex, e.message);
+
+      logTransfer(senderAddr, accState.recipientAddress, config.transferAmount, false, latencyMs);
     });
   }
 }
@@ -633,6 +732,9 @@ async function accountTransferLoop(accState: AccountState, accountIndex: number)
 
   while (isRunning && accState.isActive) {
     try {
+      // Increment batch counter for this batch
+      batchCounter++;
+
       // Reliable mode: wait for confirmation on every transaction
       if (config.fireAndForgetRatio === 0) {
         await reliableTransfer(accState);
@@ -714,6 +816,7 @@ async function startTransfers(): Promise<void> {
   stats.currentTps = 0;
   lastTpsCalcTime = Date.now();
   lastTpsCalcTransfers = 0;
+  batchCounter = 0;
 
   // Start stats reporting interval
   const statsInterval = setInterval(() => {
@@ -737,14 +840,25 @@ async function startTransfers(): Promise<void> {
 }
 
 /**
- * Stop transfers
+ * Stop transfers and flush collector
  */
-function stopTransfers(): void {
+async function stopTransfers(): Promise<void> {
   console.log(
     `${colors.yellow}[Worker ${config.workerId}]${colors.reset} Stopping...`
   );
   isRunning = false;
   accounts.forEach(a => a.isActive = false);
+
+  // Flush Ralphy collector to ensure all hashes are persisted
+  if (ralphyCollector) {
+    console.log(
+      `${colors.cyan}[Worker ${config.workerId}]${colors.reset} Flushing Ralphy collector...`
+    );
+    await ralphyCollector.flush();
+    console.log(
+      `${colors.green}[Worker ${config.workerId}]${colors.reset} Ralphy collector flushed to ${ralphyCollector.getHashFile()}`
+    );
+  }
 }
 
 /**
@@ -773,7 +887,7 @@ async function main() {
             });
             break;
           case 'stop':
-            stopTransfers();
+            await stopTransfers();
             break;
           case 'stats':
             reportStats();
