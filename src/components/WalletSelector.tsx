@@ -344,7 +344,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
 
                   {isMobileSafari && (
                     <p className="text-xs text-amber-400/80 px-1">
-                      <strong>Important:</strong> On iOS Safari, Petra Web's transaction buttons may be hidden by the browser toolbar. Use the Petra App above for the best experience.
+                      Note: Google/Apple login may not work in Safari. Use Petra App for best results.
                     </p>
                   )}
 
