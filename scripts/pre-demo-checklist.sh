@@ -26,14 +26,17 @@ WORKER3_IP="161.35.231.0"
 FULLNODE_IP="aptos.cash.trading"
 WORKER_USER="root"
 
-# Contract addresses - USD1 v2 with admin drainers (Jan 11, 2026)
-CONTRACT_ADDRESS="0xbdea15f5b0f5449ae8f3a6ae95a5e090bdeeec91be1fcac8375b2f5f37f1c134"
-# First USD1-backed market (Republican 2028)
-MARKET_ADDRESS="0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052"
+# Contract addresses - AMM-Fixed Contract (Jan 16, 2026)
+CONTRACT_ADDRESS="0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea"
+# First market from MULTI_MARKETS
+MARKET_ADDRESS="0xaf561030c7ebb22b1d8b99b727c27caab1f6944ce39c141fd2b6b0cfbf614a9e"
 # USD1 Stablecoin metadata
 USD1_METADATA="0x4e977d5ee91d77d680972a44b38b9c7a2c5694439169eeae060a48324e5c4597"
 
-# QuickNode
+# Internal VFN (fastest)
+INTERNAL_VFN="http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1"
+
+# QuickNode (backup)
 QUICKNODE_RPC="https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1"
 
 # Counters
@@ -65,10 +68,13 @@ check_warn() {
 }
 
 # ============================================
-# 1. INFRASTRUCTURE CHECKS
+# 1. INFRASTRUCTURE CHECKS (OPTIONAL - SSH to remote workers)
 # ============================================
 
-print_header "1. INFRASTRUCTURE CHECKS"
+print_header "1. INFRASTRUCTURE CHECKS (optional)"
+
+echo -e "${YELLOW}Note: SSH checks are optional. For local demos, use ./scripts/dual-demo.sh max-tps${NC}"
+echo ""
 
 # Check Worker 1
 echo -n "Worker 1 (${WORKER1_IP}): "
@@ -160,13 +166,24 @@ fi
 
 print_header "3. RPC ENDPOINT CHECKS"
 
+# Internal VFN (FASTEST - use for demos)
+echo -n "Internal VFN (fastest): "
+VFN_RESP=$(curl -s --connect-timeout 5 "${INTERNAL_VFN}" 2>/dev/null || echo "")
+if echo "$VFN_RESP" | grep -q "chain_id"; then
+    CHAIN_ID=$(echo "$VFN_RESP" | jq -r '.chain_id' 2>/dev/null || echo "unknown")
+    LEDGER=$(echo "$VFN_RESP" | jq -r '.ledger_version' 2>/dev/null || echo "unknown")
+    check_pass "Responding (chain_id: ${CHAIN_ID}, ledger: ${LEDGER})"
+else
+    check_fail "NOT responding - CRITICAL for max TPS"
+fi
+
 # QuickNode
-echo -n "QuickNode: "
+echo -n "QuickNode (backup): "
 QN_RESP=$(curl -s --connect-timeout 5 "${QUICKNODE_RPC}" 2>/dev/null || echo "")
 if echo "$QN_RESP" | grep -q "chain_id"; then
     check_pass "Responding"
 else
-    check_fail "NOT responding"
+    check_warn "NOT responding (backup only)"
 fi
 
 # Aptos Labs
@@ -257,17 +274,24 @@ fi
 print_header "6. HFT SERVER MODES"
 
 echo -e "${CYAN}Available modes:${NC}"
-echo "  🧪 dryrun  - ~10 TPS (UI testing)"
-echo "  🔄 normal  - ~1,000 TPS (light demo)"
+echo "  🧪 dryrun  - ~10 TPS (testing)"
+echo "  🔄 light   - ~2,000 TPS (light demo)"
 echo "  ⚡ turbo   - ~3,000 TPS (medium)"
-echo "  🔥 ultra   - ~10,000 TPS (high)"
-echo "  🚀 quantum - ~30,000+ TPS (DEMO DAY)"
+echo "  🚀 max-tps - 2000 accounts, orderless=false (OPTIMAL)"
 echo ""
-echo -e "${CYAN}Usage:${NC}"
-echo "  npx tsx server/hft-ultra-server.ts <mode> <duration_seconds>"
+echo -e "${CYAN}Recommended commands:${NC}"
 echo ""
-echo -e "${CYAN}Example:${NC}"
-echo "  npx tsx server/hft-ultra-server.ts quantum 60"
+echo "  Quick max TPS test (AMM only):"
+echo "    ./scripts/dual-demo.sh max-tps 60"
+echo ""
+echo "  Dual demo (AMM + transfers):"
+echo "    ./scripts/dual-demo.sh 60"
+echo ""
+echo "  Manual server start:"
+echo "    ACCOUNT_COUNT=2000 USE_ORDERLESS=false RPC_MODE=internal \\"
+echo "    npx tsx server/hft-piscina-server.ts turbo"
+echo ""
+echo -e "${YELLOW}Note: USE_ORDERLESS=false is critical - orderless=true causes ~50% failures${NC}"
 
 # ============================================
 # SUMMARY

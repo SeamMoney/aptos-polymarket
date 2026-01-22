@@ -5,12 +5,18 @@
 #
 # This script runs both demos in parallel to show combined TPS on the dashboard.
 #
-# Account Split (500 total):
-#   - AMM Trading: accounts 0-332 (333 accounts)
-#   - USD1 Transfers: accounts 333-499 (167 accounts = 83 senders + 84 recipients)
+# MODES:
+#   Default (500 accounts):
+#     - AMM Trading: accounts 0-332 (333 accounts)
+#     - USD1 Transfers: accounts 333-499 (167 accounts = 83 senders + 84 recipients)
+#
+#   Max TPS (2000 accounts, AMM only, orderless=false):
+#     - AMM Trading: accounts 0-1999 (2000 accounts)
+#     - USE_ORDERLESS=false (avoids ~50% nonce reuse failures)
 #
 # Usage:
 #   ./scripts/dual-demo.sh [duration]         # Run both demos (default: 60s)
+#   ./scripts/dual-demo.sh max-tps [duration] # Run AMM only with optimal config
 #   ./scripts/dual-demo.sh preflight          # Run pre-flight checks only
 #   ./scripts/dual-demo.sh servers            # Start servers and wait (for manual trigger)
 #   ./scripts/dual-demo.sh trigger [duration] # Trigger running servers
@@ -18,6 +24,7 @@
 #
 # Examples:
 #   ./scripts/dual-demo.sh 60                 # Run both for 60 seconds (auto-start)
+#   ./scripts/dual-demo.sh max-tps 60         # Run max TPS AMM-only for 60 seconds
 #   ./scripts/dual-demo.sh preflight          # Check everything before demo
 #   ./scripts/dual-demo.sh servers            # Start servers in standby mode
 #
@@ -41,18 +48,33 @@ TRANSFER_PORT=3002
 LOG_DIR="/tmp/dual-demo"
 
 # Account configuration - MUST NOT OVERLAP
+# Default mode (dual demo)
 AMM_ACCOUNT_COUNT=333
 AMM_ACCOUNT_START=0
 TRANSFER_ACCOUNT_COUNT=83  # 83 senders + 84 recipients = 167 accounts
 TRANSFER_ACCOUNT_START=333
 
+# Max TPS mode (AMM only, 2000 accounts, orderless=false)
+MAX_TPS_ACCOUNT_COUNT=2000
+MAX_TPS_USE_ORDERLESS=false
+
 # RPC endpoint
 VFN_URL="http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1"
 
+# Mode flag (set by command line)
+MAX_TPS_MODE=false
+
 # Default duration
 DURATION=${1:-60}
-if [[ "$1" == "servers" ]] || [[ "$1" == "trigger" ]] || [[ "$1" == "stop" ]] || [[ "$1" == "status" ]] || [[ "$1" == "preflight" ]]; then
+if [[ "$1" == "servers" ]] || [[ "$1" == "trigger" ]] || [[ "$1" == "stop" ]] || [[ "$1" == "status" ]] || [[ "$1" == "preflight" ]] || [[ "$1" == "max-tps" ]]; then
   DURATION=${2:-60}
+fi
+
+# Check for max-tps mode
+if [[ "$1" == "max-tps" ]]; then
+  MAX_TPS_MODE=true
+  AMM_ACCOUNT_COUNT=$MAX_TPS_ACCOUNT_COUNT
+  AMM_ACCOUNT_START=0
 fi
 
 # ============================================================================
@@ -549,6 +571,174 @@ cmd_run() {
 }
 
 # ============================================================================
+# MAX TPS MODE - AMM only with 2000 accounts, orderless=false
+# ============================================================================
+cmd_max_tps() {
+  echo ""
+  echo -e "${CYAN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${CYAN}║${NC}         ${BOLD}MAX TPS MODE - Optimal AMM Configuration${NC}                     ${CYAN}║${NC}"
+  echo -e "${CYAN}╠══════════════════════════════════════════════════════════════════════╣${NC}"
+  echo -e "${CYAN}║${NC}  Accounts:     ${GREEN}$MAX_TPS_ACCOUNT_COUNT${NC} (all funded)                                   ${CYAN}║${NC}"
+  echo -e "${CYAN}║${NC}  Orderless:    ${GREEN}false${NC} (avoids ~50% nonce reuse failures)               ${CYAN}║${NC}"
+  echo -e "${CYAN}║${NC}  Mode:         ${GREEN}turbo${NC}                                                  ${CYAN}║${NC}"
+  echo -e "${CYAN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+  echo ""
+
+  # Run preflight checks
+  echo -e "${BOLD}Pre-flight Checks${NC}"
+  echo "──────────────────────────────────────────────────────────────────────"
+
+  load_env
+
+  local preflight_failed=0
+  validate_mnemonic || preflight_failed=1
+  validate_rpc || preflight_failed=1
+
+  if [ $preflight_failed -eq 1 ]; then
+    print_error "Pre-flight checks failed."
+    exit 1
+  fi
+
+  echo ""
+  print_status "Starting MAX TPS demo for ${DURATION} seconds..."
+  echo ""
+
+  # Create log directory
+  mkdir -p "$LOG_DIR"
+
+  # Ensure clean state
+  pkill -f "hft-piscina-server" 2>/dev/null || true
+  sleep 2
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Start AMM server with MAX TPS config
+  # ──────────────────────────────────────────────────────────────────────────
+  echo -e "${YELLOW}Starting AMM Server (${MAX_TPS_ACCOUNT_COUNT} accounts, orderless=false)...${NC}"
+
+  SEED_MNEMONIC="$SEED_MNEMONIC" \
+  ACCOUNT_COUNT=$MAX_TPS_ACCOUNT_COUNT \
+  ACCOUNT_START_INDEX=0 \
+  USE_ORDERLESS=false \
+  PORT=$AMM_PORT \
+  RPC_MODE=internal \
+  npx tsx server/hft-piscina-server.ts turbo > "$LOG_DIR/amm.log" 2>&1 &
+  AMM_PID=$!
+  echo $AMM_PID > "$LOG_DIR/amm.pid"
+
+  # Wait for AMM server to be ready
+  if ! wait_for_server $AMM_PORT "AMM server" 90; then
+    print_error "AMM server failed to start. Last 30 lines of log:"
+    echo "────────────────────────────────────────────────────────────────────────"
+    tail -30 "$LOG_DIR/amm.log" 2>/dev/null || echo "(no log available)"
+    exit 1
+  fi
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Trigger AMM server
+  # ──────────────────────────────────────────────────────────────────────────
+  print_status "Triggering AMM Trading Server..."
+  local trigger_response=$(curl -s -X POST "http://localhost:$AMM_PORT/start?duration=$DURATION" 2>/dev/null || echo '{"success":false}')
+
+  if echo "$trigger_response" | jq -e '.success' > /dev/null 2>&1; then
+    print_success "AMM server triggered!"
+  else
+    print_error "Failed to trigger AMM server"
+    echo "$trigger_response"
+    exit 1
+  fi
+
+  echo ""
+  echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+  echo -e "${BOLD}                    MAX TPS DEMO RUNNING${NC}"
+  echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+  echo ""
+
+  # Monitor progress
+  local start_time=$(date +%s)
+  local elapsed=0
+
+  while [ $elapsed -lt $DURATION ]; do
+    sleep 5
+    elapsed=$(( $(date +%s) - start_time ))
+    [ $elapsed -gt $DURATION ] && elapsed=$DURATION
+    show_combined_stats $elapsed
+
+    # Check if AMM server is still running
+    if ! check_server $AMM_PORT; then
+      print_warn "AMM server stopped unexpectedly"
+      break
+    fi
+  done
+
+  echo ""
+  echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+  echo -e "${BOLD}                    MAX TPS DEMO COMPLETE${NC}"
+  echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+  echo ""
+
+  # Stop AMM server gracefully to collect hashes
+  print_status "Stopping AMM server and collecting transaction hashes..."
+
+  local stop_response=$(curl -s -X POST "http://localhost:$AMM_PORT/stop" 2>/dev/null || echo '{}')
+  local amm_total=$(echo "$stop_response" | jq -r '.stats.totalTrades // 0' 2>/dev/null || echo "0")
+  local amm_success=$(echo "$stop_response" | jq -r '.stats.successfulTrades // 0' 2>/dev/null || echo "0")
+  local amm_peak=$(echo "$stop_response" | jq -r '.stats.peakTps // 0' 2>/dev/null || echo "0")
+  local amm_rate=$(echo "$stop_response" | jq -r '.stats.successRate // "0"' 2>/dev/null || echo "0")
+
+  sleep 3
+
+  echo ""
+  echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+  echo -e "${BOLD}                     RESULTS SUMMARY${NC}"
+  echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+  echo ""
+  echo -e "${YELLOW}MAX TPS AMM Results:${NC}"
+  echo "  Accounts Used:   $MAX_TPS_ACCOUNT_COUNT"
+  echo "  Orderless:       false"
+  echo "  Total Trades:    $amm_total"
+  echo "  Successful:      $amm_success"
+  echo "  Peak TPS:        $amm_peak"
+  echo "  Success Rate:    $amm_rate%"
+  echo ""
+
+  # Check for hash file
+  local amm_hash_file="/tmp/hft-submitted-txns.json"
+  if [ -f "$amm_hash_file" ]; then
+    local amm_hash_count=$(jq '.transactions | length' "$amm_hash_file" 2>/dev/null || echo "0")
+    echo -e "  ${GREEN}Hash File:${NC} $amm_hash_file"
+    echo "  Hashes Saved:    $amm_hash_count"
+  fi
+
+  echo ""
+  echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+  echo -e "${BOLD}POST-RUN ANALYTICS${NC}"
+  echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+  echo ""
+  echo -e "${YELLOW}1. On-chain TPS verification:${NC}"
+  echo "   npx tsx scripts/analyze-tps.ts --minutes 3"
+  echo ""
+  echo -e "${YELLOW}2. AMM transaction verification:${NC}"
+  echo "   npx tsx scripts/analyze-submitted-txns.ts"
+  echo ""
+
+  # Show sample explorer link
+  if [ -f "$amm_hash_file" ]; then
+    local sample_hash=$(jq -r '.transactions[0].hash // empty' "$amm_hash_file" 2>/dev/null)
+    if [ -n "$sample_hash" ]; then
+      echo -e "${YELLOW}3. Explorer link (sample):${NC}"
+      echo "   https://explorer.aptoslabs.com/txn/$sample_hash?network=testnet"
+    fi
+  fi
+
+  echo ""
+  echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+  echo ""
+
+  # Disable cleanup trap
+  trap - EXIT
+}
+
+# ============================================================================
 # Start servers in standby mode (for manual triggering)
 # ============================================================================
 cmd_servers() {
@@ -666,6 +856,7 @@ cmd_help() {
 
   echo "Usage:"
   echo "  ./scripts/dual-demo.sh [duration]         Run both demos (default: 60s)"
+  echo "  ./scripts/dual-demo.sh max-tps [duration] Run AMM only with optimal config (2000 accounts, orderless=false)"
   echo "  ./scripts/dual-demo.sh preflight          Run pre-flight checks only"
   echo "  ./scripts/dual-demo.sh servers            Start AMM server in standby"
   echo "  ./scripts/dual-demo.sh trigger [duration] Trigger running server"
@@ -675,11 +866,17 @@ cmd_help() {
   echo ""
   echo "Quick Start:"
   echo "  ./scripts/dual-demo.sh preflight    # Check everything first"
-  echo "  ./scripts/dual-demo.sh 60           # Run for 60 seconds"
+  echo "  ./scripts/dual-demo.sh 60           # Run dual demo for 60 seconds"
+  echo "  ./scripts/dual-demo.sh max-tps 60   # Run MAX TPS AMM-only for 60 seconds"
   echo ""
-  echo "Account Split:"
-  echo "  - AMM Trading:    accounts $AMM_ACCOUNT_START-$((AMM_ACCOUNT_START + AMM_ACCOUNT_COUNT - 1))    ($AMM_ACCOUNT_COUNT accounts)"
-  echo "  - USD1 Transfers: accounts $TRANSFER_ACCOUNT_START-$((TRANSFER_ACCOUNT_START + TRANSFER_ACCOUNT_COUNT * 2 - 1))  ($TRANSFER_ACCOUNT_COUNT senders + $((TRANSFER_ACCOUNT_COUNT + 1)) recipients)"
+  echo "Modes:"
+  echo "  Default (dual demo):"
+  echo "    - AMM Trading:    accounts 0-332 (333 accounts)"
+  echo "    - USD1 Transfers: accounts 333-499 (167 accounts)"
+  echo ""
+  echo "  max-tps (optimal AMM-only):"
+  echo "    - AMM Trading:    accounts 0-1999 (2000 accounts)"
+  echo "    - USE_ORDERLESS:  false (avoids nonce reuse failures)"
   echo ""
   echo "Logs:"
   echo "  $LOG_DIR/amm.log"
@@ -693,6 +890,7 @@ cmd_help() {
 # Main
 # ============================================================================
 case "${1:-}" in
+  max-tps)   cmd_max_tps ;;
   preflight) cmd_preflight ;;
   servers)   cmd_servers ;;
   trigger)   cmd_trigger ;;

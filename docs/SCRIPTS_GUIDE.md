@@ -11,9 +11,10 @@ Comprehensive guide to all scripts in this repository. Last audited: **January 2
 | **Run TPS demo** | `run-usd1-tps-demo.ts` | `npx tsx scripts/run-usd1-tps-demo.ts turbo` |
 | **Run market trading demo** | `orchestrator.sh` | `./scripts/orchestrator.sh demo` |
 | **Run dual demo (AMM + transfers)** | `dual-demo.sh` | `./scripts/dual-demo.sh 60` |
+| **Run MAX TPS AMM demo** | `dual-demo.sh` | `./scripts/dual-demo.sh max-tps 60` |
 | **Pre-flight check** | `pre-demo-checklist.sh` | `./scripts/pre-demo-checklist.sh` |
 | **Verify TPS results** | `analyze-tps.ts` | `npx tsx scripts/analyze-tps.ts` |
-| **Fund 500 accounts** | `fund-seed-accounts.ts` | `npx tsx scripts/fund-seed-accounts.ts` |
+| **Fund 2000 accounts** | `fund-seed-accounts.ts` | `ACCOUNT_COUNT=2000 npx tsx scripts/fund-seed-accounts.ts` |
 | **Generate accounts** | `generate-seed-accounts.ts` | `npx tsx scripts/generate-seed-accounts.ts` |
 | **Create markets** | `create-demo-markets.ts` | `npx tsx scripts/create-demo-markets.ts` |
 | **Resume verification** | `ralphy-resume.ts` | `npx tsx scripts/ralphy-resume.ts --latest` |
@@ -63,6 +64,38 @@ Comprehensive guide to all scripts in this repository. Last audited: **January 2
 - Pure FA transfers (no AMM logic)
 - **16K+ TPS target**
 - Scripts: `run-usd1-tps-demo.ts`, `transfer-tps-server.ts`
+
+### Phase 9: Optimal Config Discovery (Jan 21, 2026)
+- 2000 accounts funded
+- `USE_ORDERLESS=false` (avoids ~50% nonce reuse failures)
+- Balaji Arun feedback: orderless transactions cause nonce conflicts
+- **Untested optimal config ready**
+
+---
+
+## Optimal TPS Configuration
+
+> **IMPORTANT:** Based on Balaji Arun's feedback, `USE_ORDERLESS=true` causes ~50% transaction failures due to nonce reuse. The optimal config uses `USE_ORDERLESS=false`.
+
+### Optimal AMM Config (Untested)
+```bash
+SEED_MNEMONIC="..." \
+ACCOUNT_COUNT=2000 \
+USE_ORDERLESS=false \
+RPC_MODE=internal \
+npx tsx server/hft-piscina-server.ts turbo
+```
+
+### Quick Command
+```bash
+./scripts/dual-demo.sh max-tps 60
+```
+
+This runs AMM trading with:
+- **2000 accounts** (all funded with APT + USD1)
+- **USE_ORDERLESS=false** (sequential sequence numbers)
+- **turbo mode** (batch=30, delay=40ms)
+- **Internal VFN** (fastest RPC)
 
 ---
 
@@ -117,7 +150,7 @@ Comprehensive guide to all scripts in this repository. Last audited: **January 2
 | Script | Purpose | Usage |
 |--------|---------|-------|
 | `orchestrator.sh` | Master 3-worker controller | `./scripts/orchestrator.sh [standby\|demo\|dryrun\|status\|stop]` |
-| `dual-demo.sh` | Run AMM + USD1 transfers simultaneously | `./scripts/dual-demo.sh 60` |
+| `dual-demo.sh` | Run AMM + USD1 transfers simultaneously | `./scripts/dual-demo.sh 60` or `./scripts/dual-demo.sh max-tps 60` |
 | `pre-demo-checklist.sh` | Full infrastructure validation | **Run before every demo** |
 | `demo-morning.sh` | Morning startup workflow | Two-key activation |
 | `transfer-preflight.sh` | Transfer demo pre-flight | Quick checks |
@@ -159,7 +192,7 @@ npx tsx scripts/ralphy-resume.ts --latest --analytics
 
 | Server | Architecture | Accounts | Peak TPS | Use Case |
 |--------|-------------|----------|----------|----------|
-| `hft-piscina-server.ts` | Worker threads | 500 | **3,180** | Market trading |
+| `hft-piscina-server.ts` | Worker threads | 2000 | **TBD** | Market trading |
 | `transfer-tps-server.ts` | Worker threads | 2000 | **16K target** | Token transfers |
 | `hft-ultra-server.ts` | Single process | 25 | 4,441* | Legacy |
 | `hft-server.ts` | Single account | 1 | 0.6 | Production safe |
@@ -168,10 +201,15 @@ npx tsx scripts/ralphy-resume.ts --latest --analytics
 
 ### Which Server to Use
 
-**For market trading demos:** `hft-piscina-server.ts`
+**For MAX TPS market trading (recommended):**
 ```bash
-SEED_MNEMONIC="..." ACCOUNT_COUNT=500 RPC_MODE=internal \
+SEED_MNEMONIC="..." ACCOUNT_COUNT=2000 USE_ORDERLESS=false RPC_MODE=internal \
 npx tsx server/hft-piscina-server.ts turbo
+```
+
+Or use the shortcut:
+```bash
+./scripts/dual-demo.sh max-tps 60
 ```
 
 **For token transfer TPS:** `transfer-tps-server.ts`
@@ -203,7 +241,7 @@ These query on-chain data:
 ### Required for TPS Demos
 ```bash
 SEED_MNEMONIC="your 12/24 word mnemonic"
-ACCOUNT_COUNT=500
+ACCOUNT_COUNT=2000         # 2000 accounts funded
 ```
 
 ### Optional Configuration
@@ -213,7 +251,17 @@ TOKEN_TYPE=apt             # apt|usd1
 DURATION=60                # seconds
 MODE=turbo                 # dryrun|light|turbo|quantum|hyper
 CONTRACT_ADDRESS=0x...     # Override default
+USE_ORDERLESS=false        # IMPORTANT: false avoids ~50% nonce failures
 ```
+
+### USE_ORDERLESS Explained
+
+| Value | Behavior | Recommendation |
+|-------|----------|----------------|
+| `true` (default) | Random nonces (AIP-123) | **NOT recommended** - ~50% failures |
+| `false` | Sequential sequence numbers | **Recommended for max TPS** |
+
+Balaji Arun's feedback: "You actually submitted at 2k TPS but about half failed because the orderless txn nonce was reused."
 
 ### RPC Endpoints
 ```
@@ -257,9 +305,11 @@ http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1
 3. Verify RPC endpoint: `./scripts/pre-demo-checklist.sh`
 
 ### Sequence number errors
-- Enable orderless transactions (AIP-123)
+- **DISABLE** orderless transactions (`USE_ORDERLESS=false`)
 - Reduce batch size
 - Increase batch delay
+
+> **Note:** Orderless transactions (AIP-123) were found to cause ~50% failures due to nonce reuse. Use `USE_ORDERLESS=false` for reliable TPS.
 
 ### Verifying actual TPS
 Always run post-analysis:
@@ -280,4 +330,4 @@ npx tsx scripts/deep-tps-analysis.ts
 
 ---
 
-*Last updated: January 21, 2026*
+*Last updated: January 22, 2026*
