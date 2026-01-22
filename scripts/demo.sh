@@ -537,6 +537,112 @@ cmd_logs() {
 }
 
 # ============================================
+# COLLECT COMMAND - Gather results from all workers
+# ============================================
+
+cmd_collect() {
+    print_header "COLLECTING RESULTS FROM ALL WORKERS"
+
+    TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+    OUTPUT_DIR="results/${TIMESTAMP}"
+    mkdir -p "$OUTPUT_DIR"
+
+    echo "Output directory: $OUTPUT_DIR"
+    echo ""
+
+    # Collect AMM results
+    echo "Collecting AMM transaction hashes..."
+    for i in 1 2 3; do
+        eval "IP=\${WORKER${i}_IP}"
+        echo -n "  Worker $i ($IP): "
+
+        scp -o ConnectTimeout=5 ${WORKER_USER}@${IP}:/tmp/hft-submitted-txns.json "${OUTPUT_DIR}/amm-worker${i}.json" 2>/dev/null
+        if [ -f "${OUTPUT_DIR}/amm-worker${i}.json" ]; then
+            COUNT=$(grep -o '"hash"' "${OUTPUT_DIR}/amm-worker${i}.json" 2>/dev/null | wc -l | tr -d ' ')
+            echo -e "${GREEN}Downloaded${NC} ($COUNT hashes)"
+        else
+            echo -e "${YELLOW}No file${NC}"
+        fi
+    done
+
+    # Collect Transfer results
+    echo ""
+    echo "Collecting Transfer transaction hashes..."
+    for i in 1 2 3; do
+        eval "IP=\${WORKER${i}_IP}"
+        echo -n "  Worker $i ($IP): "
+
+        scp -o ConnectTimeout=5 ${WORKER_USER}@${IP}:/tmp/transfer-submitted-txns.json "${OUTPUT_DIR}/transfer-worker${i}.json" 2>/dev/null
+        if [ -f "${OUTPUT_DIR}/transfer-worker${i}.json" ]; then
+            COUNT=$(grep -o '"hash"' "${OUTPUT_DIR}/transfer-worker${i}.json" 2>/dev/null | wc -l | tr -d ' ')
+            echo -e "${GREEN}Downloaded${NC} ($COUNT hashes)"
+        else
+            echo -e "${YELLOW}No file${NC}"
+        fi
+    done
+
+    # Merge all results
+    echo ""
+    echo "Merging results..."
+
+    # Create merged AMM file
+    AMM_TOTAL=0
+    echo '{"transactions":[' > "${OUTPUT_DIR}/all-amm.json"
+    FIRST=true
+    for f in "${OUTPUT_DIR}"/amm-worker*.json; do
+        if [ -f "$f" ]; then
+            TXNS=$(cat "$f" | grep -o '"transactions":\[.*\]' | sed 's/"transactions":\[//' | sed 's/\]$//' || echo "")
+            if [ -n "$TXNS" ] && [ "$TXNS" != "null" ]; then
+                if [ "$FIRST" = true ]; then
+                    FIRST=false
+                else
+                    echo "," >> "${OUTPUT_DIR}/all-amm.json"
+                fi
+                echo "$TXNS" >> "${OUTPUT_DIR}/all-amm.json"
+            fi
+        fi
+    done
+    echo ']}' >> "${OUTPUT_DIR}/all-amm.json"
+
+    # Create merged Transfer file
+    echo '{"transactions":[' > "${OUTPUT_DIR}/all-transfers.json"
+    FIRST=true
+    for f in "${OUTPUT_DIR}"/transfer-worker*.json; do
+        if [ -f "$f" ]; then
+            TXNS=$(cat "$f" | grep -o '"transactions":\[.*\]' | sed 's/"transactions":\[//' | sed 's/\]$//' || echo "")
+            if [ -n "$TXNS" ] && [ "$TXNS" != "null" ]; then
+                if [ "$FIRST" = true ]; then
+                    FIRST=false
+                else
+                    echo "," >> "${OUTPUT_DIR}/all-transfers.json"
+                fi
+                echo "$TXNS" >> "${OUTPUT_DIR}/all-transfers.json"
+            fi
+        fi
+    done
+    echo ']}' >> "${OUTPUT_DIR}/all-transfers.json"
+
+    echo -e "  ${GREEN}Done${NC}"
+
+    # Summary
+    echo ""
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${BOLD}                     RESULTS COLLECTED${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo "Files saved to: $OUTPUT_DIR/"
+    ls -la "$OUTPUT_DIR/"
+    echo ""
+    echo "Run analytics:"
+    echo "  1. On-chain TPS (recommended):"
+    echo "     npx tsx scripts/analyze-tps.ts --minutes 5"
+    echo ""
+    echo "  2. Hash-based analysis:"
+    echo "     npx tsx scripts/analyze-submitted-txns.ts ${OUTPUT_DIR}/all-amm.json"
+    echo ""
+}
+
+# ============================================
 # DEPLOY COMMAND
 # ============================================
 
@@ -608,6 +714,9 @@ case "${ARGS[0]:-help}" in
     logs)
         cmd_logs
         ;;
+    collect)
+        cmd_collect
+        ;;
     deploy)
         cmd_deploy
         ;;
@@ -623,15 +732,14 @@ case "${ARGS[0]:-help}" in
         echo "  stop                 Stop all workers"
         echo "  status               Check worker status"
         echo "  logs                 View worker logs"
+        echo "  collect              Collect results from all workers"
         echo "  deploy               Deploy latest code to VMs"
-        echo ""
-        echo "Demo Workflow (AMM only):"
-        echo "  1. ./scripts/demo.sh standby"
-        echo "  2. ./scripts/demo.sh launch 60"
         echo ""
         echo "Demo Workflow (Dual - MAX TPS):"
         echo "  1. ./scripts/demo.sh standby --dual"
         echo "  2. ./scripts/demo.sh launch 60 --dual"
+        echo "  3. ./scripts/demo.sh collect"
+        echo "  4. npx tsx scripts/analyze-tps.ts --minutes 5"
         echo ""
         ;;
 esac
