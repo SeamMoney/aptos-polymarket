@@ -111,6 +111,7 @@ const MODE_CONFIG = MODE_CONFIGS[RUN_MODE];
 
 // Account configuration
 const ACCOUNT_COUNT = parseInt(process.env.ACCOUNT_COUNT || '500');
+const ACCOUNT_START_INDEX = parseInt(process.env.ACCOUNT_START_INDEX || '0'); // Offset for parallel demos
 const WORKER_COUNT = parseInt(process.env.WORKER_COUNT || '4');
 const USE_ORDERLESS = process.env.USE_ORDERLESS !== 'false'; // Default true
 const USE_USD1 = process.env.USE_USD1 === 'true';
@@ -248,7 +249,7 @@ function getWorkerAccountRanges(): Array<{ workerId: number; startIndex: number;
   const rpcEndpoints = getRpcEndpoints();
 
   const ranges: Array<{ workerId: number; startIndex: number; count: number; rpcEndpoint: string }> = [];
-  let currentIndex = 0;
+  let currentIndex = ACCOUNT_START_INDEX; // Start from offset for parallel demos
 
   for (let i = 0; i < WORKER_COUNT; i++) {
     // Distribute remainder across first few workers
@@ -360,7 +361,8 @@ async function initializeWorkers(): Promise<void> {
   console.log(`Mode: ${RUN_MODE}`);
   console.log(`RPC Mode: ${RPC_MODE}`);
   console.log(`RPC Endpoints: ${getRpcEndpoints().join(', ')}`);
-  console.log(`Total Accounts: ${ACCOUNT_COUNT}`);
+  console.log(`Total Accounts: ${ACCOUNT_COUNT}${ACCOUNT_START_INDEX > 0 ? ` (starting at index ${ACCOUNT_START_INDEX})` : ''}`);
+  console.log(`Account Range: ${ACCOUNT_START_INDEX} - ${ACCOUNT_START_INDEX + ACCOUNT_COUNT - 1}`);
   console.log(`Worker Threads: ${WORKER_COUNT}`);
   console.log(`Accounts per Worker: ~${Math.floor(ACCOUNT_COUNT / WORKER_COUNT)}`);
   console.log(`Use Orderless: ${USE_ORDERLESS}`);

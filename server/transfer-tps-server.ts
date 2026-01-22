@@ -166,6 +166,7 @@ const config = {
   verbose: process.env.VERBOSE === 'true',
   customRpc: process.env.RPC_URL || null,
   vfnUrl: process.env.VFN_URL || null,
+  accountStartIndex: parseInt(process.env.ACCOUNT_START_INDEX || '0', 10), // Offset for parallel demos
 };
 
 // Get mode config
@@ -366,14 +367,16 @@ function getWorkerRanges(modeConfig: ModeConfig, endpoints: RpcEndpoint[]): Arra
     rpcEndpoint: string;
   }> = [];
 
-  let currentIndex = 0;
+  // Start from offset for parallel demos
+  let currentIndex = config.accountStartIndex;
 
   for (let i = 0; i < modeConfig.workers; i++) {
     const count = accountsPerWorker + (i < remainder ? 1 : 0);
     ranges.push({
       workerId: i,
       startIndex: currentIndex,
-      recipientStartIndex: modeConfig.accounts + currentIndex,
+      // Recipients are at offset + accounts + currentWorkerOffset
+      recipientStartIndex: config.accountStartIndex + modeConfig.accounts + (currentIndex - config.accountStartIndex),
       count,
       rpcEndpoint: endpoints[i % endpoints.length].url,
     });
@@ -522,7 +525,8 @@ async function main(): Promise<void> {
   }
 
   console.log(`${c.cyan}[CONFIG]${c.reset} Settings:`);
-  console.log(`  ${c.dim}Accounts:${c.reset}     ${modeConfig.accounts}`);
+  console.log(`  ${c.dim}Accounts:${c.reset}     ${modeConfig.accounts}${config.accountStartIndex > 0 ? ` (starting at index ${config.accountStartIndex})` : ''}`);
+  console.log(`  ${c.dim}Account Range:${c.reset} ${config.accountStartIndex}-${config.accountStartIndex + modeConfig.accounts * 2 - 1} (senders + recipients)`);
   console.log(`  ${c.dim}Workers:${c.reset}      ${modeConfig.workers}`);
   console.log(`  ${c.dim}Batch Size:${c.reset}   ${modeConfig.batchSize} txns/account`);
   console.log(`  ${c.dim}Batch Delay:${c.reset}  ${modeConfig.batchDelayMs === 0 ? `${c.green}0ms (MaxLoad)${c.reset}` : `${modeConfig.batchDelayMs}ms`}`);
