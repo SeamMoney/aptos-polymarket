@@ -10,6 +10,7 @@ Comprehensive guide to all scripts in this repository. Last audited: **January 2
 |------|--------|---------|
 | **Run TPS demo** | `run-usd1-tps-demo.ts` | `npx tsx scripts/run-usd1-tps-demo.ts turbo` |
 | **Run market trading demo** | `orchestrator.sh` | `./scripts/orchestrator.sh demo` |
+| **Run dual demo (AMM + transfers)** | `dual-demo.sh` | `./scripts/dual-demo.sh 60` |
 | **Pre-flight check** | `pre-demo-checklist.sh` | `./scripts/pre-demo-checklist.sh` |
 | **Verify TPS results** | `analyze-tps.ts` | `npx tsx scripts/analyze-tps.ts` |
 | **Fund 500 accounts** | `fund-seed-accounts.ts` | `npx tsx scripts/fund-seed-accounts.ts` |
@@ -116,6 +117,7 @@ Comprehensive guide to all scripts in this repository. Last audited: **January 2
 | Script | Purpose | Usage |
 |--------|---------|-------|
 | `orchestrator.sh` | Master 3-worker controller | `./scripts/orchestrator.sh [standby\|demo\|dryrun\|status\|stop]` |
+| `dual-demo.sh` | Run AMM + USD1 transfers simultaneously | `./scripts/dual-demo.sh 60` |
 | `pre-demo-checklist.sh` | Full infrastructure validation | **Run before every demo** |
 | `demo-morning.sh` | Morning startup workflow | Two-key activation |
 | `transfer-preflight.sh` | Transfer demo pre-flight | Quick checks |
