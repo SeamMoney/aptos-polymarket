@@ -5,15 +5,19 @@
 # Simplified demo script for 2000-account high TPS demos
 #
 # Usage:
-#   ./scripts/demo.sh standby     # Start all workers in standby mode
-#   ./scripts/demo.sh launch N    # Trigger N-second demo
-#   ./scripts/demo.sh stop        # Stop all workers
-#   ./scripts/demo.sh status      # Check all workers
-#   ./scripts/demo.sh logs        # View worker logs
-#   ./scripts/demo.sh deploy      # Deploy latest code to VMs
+#   ./scripts/demo.sh standby           # AMM only (2000 accounts)
+#   ./scripts/demo.sh standby --dual    # AMM + USD1 transfers (1500 + 500)
+#   ./scripts/demo.sh launch N          # Trigger N-second demo
+#   ./scripts/demo.sh stop              # Stop all workers
+#   ./scripts/demo.sh status            # Check all workers
+#   ./scripts/demo.sh logs              # View worker logs
+#   ./scripts/demo.sh deploy            # Deploy latest code to VMs
 #
 
 set -e
+
+# Dual mode flag (set by --dual argument)
+DUAL_MODE=false
 
 # ============================================
 # CONFIGURATION
@@ -25,14 +29,31 @@ WORKER2_IP="147.182.237.239"
 WORKER3_IP="161.35.231.0"
 WORKER_USER="root"
 
-# Account Distribution (2000 total)
+# Account Distribution - AMM Only (2000 total)
 # Each worker gets ~667 accounts to avoid nonce conflicts
-WORKER1_START=0
-WORKER1_COUNT=667
-WORKER2_START=667
-WORKER2_COUNT=667
-WORKER3_START=1334
-WORKER3_COUNT=666
+WORKER1_AMM_START=0
+WORKER1_AMM_COUNT=667
+WORKER2_AMM_START=667
+WORKER2_AMM_COUNT=667
+WORKER3_AMM_START=1334
+WORKER3_AMM_COUNT=666
+
+# Account Distribution - Dual Mode (AMM 1500 + Transfers 500)
+# AMM: accounts 0-1499 (500 per worker)
+# Transfers: accounts 1500-1999 (~167 per worker)
+WORKER1_AMM_DUAL_START=0
+WORKER1_AMM_DUAL_COUNT=500
+WORKER2_AMM_DUAL_START=500
+WORKER2_AMM_DUAL_COUNT=500
+WORKER3_AMM_DUAL_START=1000
+WORKER3_AMM_DUAL_COUNT=500
+
+WORKER1_TRANSFER_START=1500
+WORKER1_TRANSFER_COUNT=167
+WORKER2_TRANSFER_START=1667
+WORKER2_TRANSFER_COUNT=167
+WORKER3_TRANSFER_START=1834
+WORKER3_TRANSFER_COUNT=166
 
 # Contract Configuration
 CONTRACT_ADDRESS="0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea"
@@ -84,7 +105,8 @@ check_ssh() {
 
 check_server() {
     local ip=$1
-    curl -s --connect-timeout 3 "http://${ip}:3001/health" 2>/dev/null | grep -q "ok"
+    local port=${2:-3001}
+    curl -s --connect-timeout 3 "http://${ip}:${port}/health" 2>/dev/null | grep -q "ok"
 }
 
 get_seed_mnemonic() {
@@ -166,42 +188,57 @@ cmd_status() {
 
 cmd_standby() {
     print_banner
-    print_header "STARTING WORKERS IN STANDBY MODE"
+
+    if [ "$DUAL_MODE" = true ]; then
+        print_header "STARTING WORKERS IN DUAL MODE (AMM + TRANSFERS)"
+        echo "Configuration:"
+        echo "  - AMM Accounts: 1500 (500 per worker)"
+        echo "  - Transfer Accounts: 500 (~167 per worker)"
+        echo "  - Total: 2000 accounts"
+    else
+        print_header "STARTING WORKERS IN STANDBY MODE (AMM ONLY)"
+        echo "Configuration:"
+        echo "  - Accounts: 2000 total (split across 3 workers)"
+    fi
+
+    echo "  - Mode: ${DEFAULT_MODE}"
+    echo "  - USE_ORDERLESS: false (avoids ~50% nonce failures)"
+    echo "  - RPC: Internal VFN"
+    echo ""
 
     # Get seed mnemonic
     if ! get_seed_mnemonic; then
         exit 1
     fi
 
-    echo "Configuration:"
-    echo "  - Accounts: 2000 total (split across 3 workers)"
-    echo "  - Mode: ${DEFAULT_MODE}"
-    echo "  - USE_ORDERLESS: false (avoids ~50% nonce failures)"
-    echo "  - RPC: Internal VFN"
-    echo ""
-
     # Stop any existing workers
-    echo "[1/4] Stopping existing workers..."
+    echo "[1/5] Stopping existing workers..."
     for i in 1 2 3; do
         eval "IP=\${WORKER${i}_IP}"
-        ssh ${WORKER_USER}@${IP} "pkill -f hft-piscina-server 2>/dev/null; screen -S hft -X quit 2>/dev/null" 2>/dev/null || true
+        ssh ${WORKER_USER}@${IP} "pkill -f hft-piscina-server 2>/dev/null; pkill -f transfer-tps-server 2>/dev/null; screen -S hft -X quit 2>/dev/null; screen -S transfer -X quit 2>/dev/null" 2>/dev/null || true
     done
     sleep 1
     echo -e "  ${GREEN}Done${NC}"
 
-    # Start workers with account ranges
+    # Start AMM workers
     echo ""
     for i in 1 2 3; do
         eval "IP=\${WORKER${i}_IP}"
-        eval "START=\${WORKER${i}_START}"
-        eval "COUNT=\${WORKER${i}_COUNT}"
 
-        echo "[$(($i+1))/4] Starting Worker $i ($IP) - accounts $START to $((START + COUNT - 1))..."
+        if [ "$DUAL_MODE" = true ]; then
+            eval "AMM_START=\${WORKER${i}_AMM_DUAL_START}"
+            eval "AMM_COUNT=\${WORKER${i}_AMM_DUAL_COUNT}"
+        else
+            eval "AMM_START=\${WORKER${i}_AMM_START}"
+            eval "AMM_COUNT=\${WORKER${i}_AMM_COUNT}"
+        fi
+
+        echo "[$(($i+1))/5] Starting AMM Worker $i ($IP) - accounts $AMM_START to $((AMM_START + AMM_COUNT - 1))..."
 
         ssh ${WORKER_USER}@${IP} "
             export SEED_MNEMONIC='${SEED_MNEMONIC}'
-            export ACCOUNT_START_INDEX=${START}
-            export ACCOUNT_COUNT=${COUNT}
+            export ACCOUNT_START_INDEX=${AMM_START}
+            export ACCOUNT_COUNT=${AMM_COUNT}
             export USE_ORDERLESS=false
             export RPC_MODE=internal
             export CONTRACT_ADDRESS='${CONTRACT_ADDRESS}'
@@ -209,45 +246,108 @@ cmd_standby() {
             export MULTI_MARKETS='${MULTI_MARKETS}'
             export PORT=3001
             cd /opt/aptos-hft
-            screen -dmS hft bash -c 'npx tsx server/hft-piscina-server.ts ${DEFAULT_MODE} > /tmp/hft-worker.log 2>&1'
+            screen -dmS hft bash -c 'npx tsx server/hft-piscina-server.ts ${DEFAULT_MODE} > /tmp/hft-amm.log 2>&1'
         " 2>/dev/null
 
-        echo -e "  ${GREEN}Started${NC}"
+        echo -e "  ${GREEN}Started on port 3001${NC}"
     done
+
+    # Start Transfer workers (dual mode only)
+    if [ "$DUAL_MODE" = true ]; then
+        echo ""
+        for i in 1 2 3; do
+            eval "IP=\${WORKER${i}_IP}"
+            eval "TRANSFER_START=\${WORKER${i}_TRANSFER_START}"
+            eval "TRANSFER_COUNT=\${WORKER${i}_TRANSFER_COUNT}"
+
+            echo "[$(($i+4))/7] Starting Transfer Worker $i ($IP) - accounts $TRANSFER_START to $((TRANSFER_START + TRANSFER_COUNT - 1))..."
+
+            ssh ${WORKER_USER}@${IP} "
+                export SEED_MNEMONIC='${SEED_MNEMONIC}'
+                export ACCOUNT_START_INDEX=${TRANSFER_START}
+                export ACCOUNT_COUNT=${TRANSFER_COUNT}
+                export USE_ORDERLESS=false
+                export RPC_MODE=internal
+                export USD1_METADATA='${USD1_METADATA}'
+                export PORT=3002
+                cd /opt/aptos-hft
+                screen -dmS transfer bash -c 'npx tsx server/transfer-tps-server.ts ${DEFAULT_MODE} > /tmp/hft-transfer.log 2>&1'
+            " 2>/dev/null
+
+            echo -e "  ${GREEN}Started on port 3002${NC}"
+        done
+    fi
 
     # Wait for servers to be ready
     echo ""
     echo "Waiting for servers to initialize..."
     sleep 5
 
-    # Verify
+    # Verify AMM servers
     echo ""
-    echo "Verifying workers..."
-    ALL_READY=true
+    echo "Verifying AMM workers..."
+    AMM_READY=true
+    TOTAL_AMM_ACCOUNTS=0
     for i in 1 2 3; do
         eval "IP=\${WORKER${i}_IP}"
-        echo -n "  Worker $i ($IP): "
+        echo -n "  AMM Worker $i ($IP:3001): "
 
-        if check_server $IP; then
+        if check_server $IP 3001; then
             STATUS=$(curl -s "http://${IP}:3001/status" 2>/dev/null)
             ACCOUNTS=$(echo "$STATUS" | grep -o '"total":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
+            TOTAL_AMM_ACCOUNTS=$((TOTAL_AMM_ACCOUNTS + ACCOUNTS))
             echo -e "${GREEN}READY${NC} ($ACCOUNTS accounts)"
         else
             echo -e "${RED}NOT READY${NC}"
-            ALL_READY=false
+            AMM_READY=false
         fi
     done
 
+    # Verify Transfer servers (dual mode only)
+    TRANSFER_READY=true
+    TOTAL_TRANSFER_ACCOUNTS=0
+    if [ "$DUAL_MODE" = true ]; then
+        echo ""
+        echo "Verifying Transfer workers..."
+        for i in 1 2 3; do
+            eval "IP=\${WORKER${i}_IP}"
+            echo -n "  Transfer Worker $i ($IP:3002): "
+
+            if check_server $IP 3002; then
+                STATUS=$(curl -s "http://${IP}:3002/status" 2>/dev/null)
+                ACCOUNTS=$(echo "$STATUS" | grep -o '"total":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
+                TOTAL_TRANSFER_ACCOUNTS=$((TOTAL_TRANSFER_ACCOUNTS + ACCOUNTS))
+                echo -e "${GREEN}READY${NC} ($ACCOUNTS accounts)"
+            else
+                echo -e "${RED}NOT READY${NC}"
+                TRANSFER_READY=false
+            fi
+        done
+    fi
+
     echo ""
+    ALL_READY=true
+    if [ "$AMM_READY" != true ]; then ALL_READY=false; fi
+    if [ "$DUAL_MODE" = true ] && [ "$TRANSFER_READY" != true ]; then ALL_READY=false; fi
+
     if [ "$ALL_READY" = true ]; then
-        echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║                    ALL WORKERS READY - STANDBY MODE                   ║${NC}"
-        echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+        if [ "$DUAL_MODE" = true ]; then
+            echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${GREEN}║              ALL WORKERS READY - DUAL MODE (AMM + TRANSFERS)          ║${NC}"
+            echo -e "${GREEN}╠══════════════════════════════════════════════════════════════════════╣${NC}"
+            echo -e "${GREEN}║  AMM:       $TOTAL_AMM_ACCOUNTS accounts on port 3001                              ║${NC}"
+            echo -e "${GREEN}║  Transfers: $TOTAL_TRANSFER_ACCOUNTS accounts on port 3002                              ║${NC}"
+            echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+        else
+            echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${GREEN}║                    ALL WORKERS READY - STANDBY MODE                   ║${NC}"
+            echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+        fi
         echo ""
         echo "Next steps:"
         echo "  1. Open browser: http://localhost:5173/demo-day"
         echo "  2. Verify ARM button shows all green"
-        echo "  3. Start live feed: npx tsx scripts/live-feed.ts"
+        echo "  3. Start live feed: npx tsx scripts/live-feed.ts --workers"
         echo "  4. Launch demo: ./scripts/demo.sh launch 60"
         echo ""
     else
@@ -264,11 +364,18 @@ cmd_launch() {
     DURATION=${1:-60}
 
     print_banner
-    print_header "LAUNCHING DEMO - ${DURATION} SECONDS"
 
-    echo "Triggering all workers..."
+    if [ "$DUAL_MODE" = true ]; then
+        print_header "LAUNCHING DUAL DEMO - ${DURATION} SECONDS"
+        echo "Triggering AMM + Transfer workers..."
+    else
+        print_header "LAUNCHING DEMO - ${DURATION} SECONDS"
+        echo "Triggering AMM workers..."
+    fi
     echo ""
 
+    # Start AMM servers
+    echo "AMM Servers (port 3001):"
     for i in 1 2 3; do
         eval "IP=\${WORKER${i}_IP}"
         echo -n "  Worker $i ($IP): "
@@ -281,15 +388,36 @@ cmd_launch() {
         fi
     done
 
+    # Start Transfer servers (dual mode only)
+    if [ "$DUAL_MODE" = true ]; then
+        echo ""
+        echo "Transfer Servers (port 3002):"
+        for i in 1 2 3; do
+            eval "IP=\${WORKER${i}_IP}"
+            echo -n "  Worker $i ($IP): "
+
+            RESPONSE=$(curl -s -X POST "http://${IP}:3002/start?duration=${DURATION}" 2>/dev/null)
+            if echo "$RESPONSE" | grep -q "started\|ok"; then
+                echo -e "${GREEN}STARTED${NC}"
+            else
+                echo -e "${RED}FAILED${NC}"
+            fi
+        done
+    fi
+
     echo ""
     echo -e "${CYAN}══════════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${BOLD}                         DEMO RUNNING${NC}"
+    if [ "$DUAL_MODE" = true ]; then
+        echo -e "${BOLD}                    DUAL DEMO RUNNING (AMM + TRANSFERS)${NC}"
+    else
+        echo -e "${BOLD}                         DEMO RUNNING${NC}"
+    fi
     echo -e "${CYAN}══════════════════════════════════════════════════════════════════════${NC}"
     echo ""
     echo "Duration: ${DURATION} seconds"
     echo ""
     echo "Watch progress:"
-    echo "  - Live feed: npx tsx scripts/live-feed.ts"
+    echo "  - Live feed: npx tsx scripts/live-feed.ts --workers"
     echo "  - Browser: http://localhost:5173/demo-day"
     echo "  - Stats: https://aptos-consensus-visualizer.vercel.app/polymarket-demo"
     echo ""
@@ -298,19 +426,39 @@ cmd_launch() {
     for ((t=5; t<=${DURATION}; t+=5)); do
         sleep 5
 
-        TOTAL_TPS=0
-        TOTAL_TRADES=0
+        AMM_TPS=0
+        AMM_TRADES=0
+        TRANSFER_TPS=0
+        TRANSFER_TRADES=0
 
         for i in 1 2 3; do
             eval "IP=\${WORKER${i}_IP}"
+
+            # AMM stats
             STATUS=$(curl -s "http://${IP}:3001/stats" 2>/dev/null)
             TPS=$(echo "$STATUS" | grep -o '"currentTps":[0-9]*' | grep -o '[0-9]*' || echo "0")
             TRADES=$(echo "$STATUS" | grep -o '"totalTrades":[0-9]*' | grep -o '[0-9]*' || echo "0")
-            TOTAL_TPS=$((TOTAL_TPS + TPS))
-            TOTAL_TRADES=$((TOTAL_TRADES + TRADES))
+            AMM_TPS=$((AMM_TPS + TPS))
+            AMM_TRADES=$((AMM_TRADES + TRADES))
+
+            # Transfer stats (dual mode)
+            if [ "$DUAL_MODE" = true ]; then
+                STATUS=$(curl -s "http://${IP}:3002/stats" 2>/dev/null)
+                TPS=$(echo "$STATUS" | grep -o '"currentTps":[0-9]*' | grep -o '[0-9]*' || echo "0")
+                TRADES=$(echo "$STATUS" | grep -o '"totalTrades":[0-9]*' | grep -o '[0-9]*' || echo "0")
+                TRANSFER_TPS=$((TRANSFER_TPS + TPS))
+                TRANSFER_TRADES=$((TRANSFER_TRADES + TRADES))
+            fi
         done
 
-        printf "[%3ds] TPS: %5d | Total Trades: %d\n" "$t" "$TOTAL_TPS" "$TOTAL_TRADES"
+        TOTAL_TPS=$((AMM_TPS + TRANSFER_TPS))
+        TOTAL_TRADES=$((AMM_TRADES + TRANSFER_TRADES))
+
+        if [ "$DUAL_MODE" = true ]; then
+            printf "[%3ds] ${GREEN}AMM: %5d TPS${NC} | ${CYAN}Transfer: %5d TPS${NC} | ${BOLD}TOTAL: %5d TPS${NC} | Trades: %d\n" "$t" "$AMM_TPS" "$TRANSFER_TPS" "$TOTAL_TPS" "$TOTAL_TRADES"
+        else
+            printf "[%3ds] TPS: %5d | Total Trades: %d\n" "$t" "$TOTAL_TPS" "$TOTAL_TRADES"
+        fi
     done
 
     echo ""
@@ -318,6 +466,8 @@ cmd_launch() {
 
     # Final stats
     echo "Final Results:"
+    echo ""
+    echo "AMM Trading:"
     for i in 1 2 3; do
         eval "IP=\${WORKER${i}_IP}"
         STATUS=$(curl -s "http://${IP}:3001/stats" 2>/dev/null)
@@ -326,6 +476,19 @@ cmd_launch() {
         PEAK=$(echo "$STATUS" | grep -o '"peakTps":[0-9]*' | grep -o '[0-9]*' || echo "0")
         echo "  Worker $i: $TRADES trades | $SUCCESS successful | Peak: $PEAK TPS"
     done
+
+    if [ "$DUAL_MODE" = true ]; then
+        echo ""
+        echo "USD1 Transfers:"
+        for i in 1 2 3; do
+            eval "IP=\${WORKER${i}_IP}"
+            STATUS=$(curl -s "http://${IP}:3002/stats" 2>/dev/null)
+            TRADES=$(echo "$STATUS" | grep -o '"totalTrades":[0-9]*' | grep -o '[0-9]*' || echo "0")
+            SUCCESS=$(echo "$STATUS" | grep -o '"successfulTrades":[0-9]*' | grep -o '[0-9]*' || echo "0")
+            PEAK=$(echo "$STATUS" | grep -o '"peakTps":[0-9]*' | grep -o '[0-9]*' || echo "0")
+            echo "  Worker $i: $TRADES transfers | $SUCCESS successful | Peak: $PEAK TPS"
+        done
+    fi
     echo ""
 }
 
@@ -340,11 +503,12 @@ cmd_stop() {
         eval "IP=\${WORKER${i}_IP}"
         echo -n "  Worker $i ($IP): "
 
-        # Stop via API first
+        # Stop via API first (both servers)
         curl -s -X POST "http://${IP}:3001/stop" 2>/dev/null || true
+        curl -s -X POST "http://${IP}:3002/stop" 2>/dev/null || true
 
-        # Then kill process
-        ssh ${WORKER_USER}@${IP} "pkill -f hft-piscina-server 2>/dev/null; screen -S hft -X quit 2>/dev/null" 2>/dev/null || true
+        # Then kill processes
+        ssh ${WORKER_USER}@${IP} "pkill -f hft-piscina-server 2>/dev/null; pkill -f transfer-tps-server 2>/dev/null; screen -S hft -X quit 2>/dev/null; screen -S transfer -X quit 2>/dev/null" 2>/dev/null || true
 
         echo -e "${GREEN}Stopped${NC}"
     done
@@ -362,8 +526,12 @@ cmd_logs() {
 
     for i in 1 2 3; do
         eval "IP=\${WORKER${i}_IP}"
-        echo "=== Worker $i ($IP) ==="
-        ssh ${WORKER_USER}@${IP} "tail -30 /tmp/hft-worker.log 2>/dev/null" || echo "No logs"
+        echo "=== Worker $i ($IP) - AMM ==="
+        ssh ${WORKER_USER}@${IP} "tail -20 /tmp/hft-amm.log 2>/dev/null" || echo "No AMM logs"
+        echo ""
+
+        echo "=== Worker $i ($IP) - Transfers ==="
+        ssh ${WORKER_USER}@${IP} "tail -20 /tmp/hft-transfer.log 2>/dev/null" || echo "No transfer logs"
         echo ""
     done
 }
@@ -409,12 +577,27 @@ cmd_deploy() {
 # MAIN
 # ============================================
 
-case "${1:-help}" in
+# Check for --dual flag in any position
+for arg in "$@"; do
+    if [ "$arg" = "--dual" ]; then
+        DUAL_MODE=true
+    fi
+done
+
+# Remove --dual from args for command parsing
+ARGS=()
+for arg in "$@"; do
+    if [ "$arg" != "--dual" ]; then
+        ARGS+=("$arg")
+    fi
+done
+
+case "${ARGS[0]:-help}" in
     standby)
         cmd_standby
         ;;
     launch)
-        cmd_launch "${2:-60}"
+        cmd_launch "${ARGS[1]:-60}"
         ;;
     stop)
         cmd_stop
@@ -433,18 +616,22 @@ case "${1:-help}" in
         echo "Usage: ./scripts/demo.sh <command> [options]"
         echo ""
         echo "Commands:"
-        echo "  standby       Start all workers in standby mode (2000 accounts)"
-        echo "  launch [N]    Trigger N-second demo (default: 60)"
-        echo "  stop          Stop all workers"
-        echo "  status        Check worker status"
-        echo "  logs          View worker logs"
-        echo "  deploy        Deploy latest code to VMs"
+        echo "  standby              Start AMM workers (2000 accounts)"
+        echo "  standby --dual       Start AMM + Transfer workers (1500 + 500)"
+        echo "  launch [N]           Trigger N-second demo (default: 60)"
+        echo "  launch [N] --dual    Trigger dual demo (AMM + transfers)"
+        echo "  stop                 Stop all workers"
+        echo "  status               Check worker status"
+        echo "  logs                 View worker logs"
+        echo "  deploy               Deploy latest code to VMs"
         echo ""
-        echo "Demo Workflow:"
-        echo "  1. ./scripts/demo.sh standby     # Start workers"
-        echo "  2. npm run dev                   # Start frontend"
-        echo "  3. npx tsx scripts/live-feed.ts # Start live feed"
-        echo "  4. ./scripts/demo.sh launch 60  # Run 60s demo"
+        echo "Demo Workflow (AMM only):"
+        echo "  1. ./scripts/demo.sh standby"
+        echo "  2. ./scripts/demo.sh launch 60"
+        echo ""
+        echo "Demo Workflow (Dual - MAX TPS):"
+        echo "  1. ./scripts/demo.sh standby --dual"
+        echo "  2. ./scripts/demo.sh launch 60 --dual"
         echo ""
         ;;
 esac
