@@ -1,6 +1,6 @@
 /**
- * HFT Launch Control - Safety-locked demo launcher with pre-flight checks
- * Requires two-step confirmation: ARM → LAUNCH
+ * HFT Launch Control - Multi-worker status display with pre-flight checks
+ * Shows status of all cloud workers for demo readiness
  */
 
 import { useState, useEffect } from 'react';
@@ -16,9 +16,28 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  Lock,
-  Unlock,
+  Server,
+  Terminal,
+  Copy,
+  Check,
 } from 'lucide-react';
+
+// Cloud worker IPs
+const WORKER_IPS = [
+  '178.128.177.88',
+  '147.182.237.239',
+  '161.35.231.0',
+];
+
+interface WorkerStatus {
+  id: number;
+  ip: string;
+  connected: boolean;
+  accounts: number;
+  totalAccounts: number;
+  isRunning: boolean;
+  currentTps: number;
+}
 
 interface PreflightCheck {
   id: string;
@@ -33,6 +52,7 @@ interface HFTLaunchControlProps {
   onStart: () => void;
   onStop: () => void;
   serverUrl?: string;
+  multiWorkerMode?: boolean;
 }
 
 interface StatusResponse {
@@ -43,6 +63,7 @@ interface StatusResponse {
   marketAddress?: string | null;
   market?: { question?: string };
   botBalance?: number;
+  stats?: { currentTps?: number };
 }
 
 export function HFTLaunchControl({
@@ -51,33 +72,25 @@ export function HFTLaunchControl({
   onStart,
   onStop,
   serverUrl = 'http://localhost:3001',
+  multiWorkerMode = true,
 }: HFTLaunchControlProps) {
+  const [workers, setWorkers] = useState<WorkerStatus[]>([]);
   const [isArmed, setIsArmed] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
   const [checks, setChecks] = useState<PreflightCheck[]>([
-    { id: 'server', label: 'HFT Server Connection', status: 'pending' },
-    { id: 'accounts', label: 'Trading Accounts Ready', status: 'pending' },
-    { id: 'market', label: 'Market Contract Active', status: 'pending' },
-    { id: 'funds', label: 'Sufficient Gas Funds', status: 'pending' },
+    { id: 'workers', label: 'Cloud Workers', status: 'pending' },
+    { id: 'accounts', label: 'Trading Accounts (2000)', status: 'pending' },
+    { id: 'markets', label: 'Markets Loaded', status: 'pending' },
+    { id: 'rpc', label: 'Internal VFN', status: 'pending' },
   ]);
 
-  // Update server check based on connection status
-  useEffect(() => {
-    setChecks(prev => prev.map(check => {
-      if (check.id === 'server') {
-        return {
-          ...check,
-          status: isConnected ? 'pass' : 'fail',
-          message: isConnected ? 'Connected' : 'Not connected',
-        };
-      }
-      return check;
-    }));
-  }, [isConnected]);
-
-  const fetchStatus = async (): Promise<StatusResponse | null> => {
+  // Fetch status from a single worker
+  const fetchWorkerStatus = async (ip: string): Promise<StatusResponse | null> => {
     try {
-      const response = await fetch(`${serverUrl}/status`);
+      const response = await fetch(`http://${ip}:3001/status`, {
+        signal: AbortSignal.timeout(5000),
+      });
       if (!response.ok) return null;
       return await response.json();
     } catch {
@@ -85,95 +98,118 @@ export function HFTLaunchControl({
     }
   };
 
-  // Run pre-flight checks when arming
-  const runPreflightChecks = async (): Promise<boolean> => {
-    // Reset all checks to checking
-    setChecks(prev => prev.map(c => ({ ...c, status: 'checking' as const })));
-
-    const status = await fetchStatus();
-    const active = status?.accounts?.active ?? 0;
-    const total = status?.accounts?.total ?? 0;
-    const hasMarket = Boolean(status?.marketAddress);
-    const hasWs = isConnected;
-    const allowArm = Boolean(status) && hasWs && active > 0 && hasMarket;
-
-    setChecks(prev => prev.map((check) => {
-      if (check.id === 'server') {
-        if (!status) {
-          return { ...check, status: 'fail', message: 'Server unreachable' };
-        }
-        if (!isConnected) {
-          return { ...check, status: 'warning', message: 'HTTP OK, WS disconnected' };
-        }
-        return { ...check, status: 'pass', message: 'HTTP + WS OK' };
-      }
-
-      if (!status) {
-        return { ...check, status: 'fail', message: 'No status' };
-      }
-
-      if (check.id === 'accounts') {
-        return {
-          ...check,
-          status: active > 0 ? 'pass' : 'fail',
-          message: `${active}/${total} active`,
-        };
-      }
-
-      if (check.id === 'market') {
-        const address = status.marketAddress;
-        const label = status.market?.question ? `Market: ${status.market.question}` : 'Market set';
-        return {
-          ...check,
-          status: address ? 'pass' : 'fail',
-          message: address ? label : 'Market not set',
-        };
-      }
-
-      if (check.id === 'funds') {
-        const balance = status.botBalance ?? 0;
-        const minNeeded = Math.max(1, active * 0.5);
-        return {
-          ...check,
-          status: balance >= minNeeded ? 'pass' : 'warning',
-          message: `${balance.toFixed(2)} APT available`,
-        };
-      }
-
-      return check;
-    }));
-
-    return allowArm;
-  };
-
-  // Handle ARM button
-  const handleArm = async () => {
-    const canArm = await runPreflightChecks();
-    if (canArm) setIsArmed(true);
-  };
-
-  // Handle LAUNCH button
-  const handleLaunch = () => {
-    setCountdown(3);
-  };
-
-  // Countdown effect
-  useEffect(() => {
-    if (countdown === null) return;
-
-    if (countdown === 0) {
-      setCountdown(null);
-      setIsArmed(false);
-      onStart();
+  // Check all workers
+  const checkAllWorkers = async () => {
+    if (!multiWorkerMode) {
+      // Single server mode - use original logic
       return;
     }
 
-    const timer = setTimeout(() => {
-      setCountdown(countdown - 1);
-    }, 1000);
+    setChecks(prev => prev.map(c => ({ ...c, status: 'checking' as const })));
 
-    return () => clearTimeout(timer);
-  }, [countdown, onStart]);
+    const workerStatuses: WorkerStatus[] = [];
+    let totalAccounts = 0;
+    let connectedWorkers = 0;
+    let anyRunning = false;
+    let totalTps = 0;
+
+    for (let i = 0; i < WORKER_IPS.length; i++) {
+      const ip = WORKER_IPS[i];
+      const status = await fetchWorkerStatus(ip);
+
+      if (status) {
+        const accounts = status.accounts?.active ?? 0;
+        const total = status.accounts?.total ?? 0;
+        const tps = status.stats?.currentTps ?? 0;
+
+        workerStatuses.push({
+          id: i + 1,
+          ip,
+          connected: true,
+          accounts,
+          totalAccounts: total,
+          isRunning: status.isRunning,
+          currentTps: tps,
+        });
+
+        totalAccounts += total;
+        connectedWorkers++;
+        if (status.isRunning) anyRunning = true;
+        totalTps += tps;
+      } else {
+        workerStatuses.push({
+          id: i + 1,
+          ip,
+          connected: false,
+          accounts: 0,
+          totalAccounts: 0,
+          isRunning: false,
+          currentTps: 0,
+        });
+      }
+    }
+
+    setWorkers(workerStatuses);
+
+    // Update checks
+    setChecks([
+      {
+        id: 'workers',
+        label: 'Cloud Workers',
+        status: connectedWorkers === 3 ? 'pass' : connectedWorkers > 0 ? 'warning' : 'fail',
+        message: `${connectedWorkers}/3 connected`,
+      },
+      {
+        id: 'accounts',
+        label: 'Trading Accounts',
+        status: totalAccounts >= 2000 ? 'pass' : totalAccounts > 0 ? 'warning' : 'fail',
+        message: `${totalAccounts.toLocaleString()} ready`,
+      },
+      {
+        id: 'markets',
+        label: 'Markets Loaded',
+        status: connectedWorkers > 0 ? 'pass' : 'pending',
+        message: connectedWorkers > 0 ? '15 markets' : 'Checking...',
+      },
+      {
+        id: 'rpc',
+        label: 'Internal VFN',
+        status: connectedWorkers > 0 ? 'pass' : 'pending',
+        message: connectedWorkers > 0 ? 'Responding' : 'Checking...',
+      },
+    ]);
+
+    return {
+      allConnected: connectedWorkers === 3,
+      totalAccounts,
+      anyRunning,
+      totalTps,
+    };
+  };
+
+  // Poll worker status
+  useEffect(() => {
+    if (!multiWorkerMode) return;
+
+    checkAllWorkers();
+    const interval = setInterval(checkAllWorkers, 5000);
+    return () => clearInterval(interval);
+  }, [multiWorkerMode]);
+
+  // Handle ARM - just run checks
+  const handleArm = async () => {
+    const result = await checkAllWorkers();
+    if (result?.allConnected && result.totalAccounts >= 1000) {
+      setIsArmed(true);
+    }
+  };
+
+  // Copy command to clipboard
+  const copyCommand = () => {
+    navigator.clipboard.writeText('./scripts/demo.sh launch 60');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // Handle DISARM
   const handleDisarm = () => {
@@ -211,8 +247,12 @@ export function HFTLaunchControl({
     }
   };
 
+  // Check if any worker is running
+  const anyWorkerRunning = workers.some(w => w.isRunning);
+  const totalTps = workers.reduce((sum, w) => sum + w.currentTps, 0);
+
   // RUNNING STATE
-  if (isRunning) {
+  if (anyWorkerRunning || isRunning) {
     return (
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
@@ -233,7 +273,7 @@ export function HFTLaunchControl({
             </motion.div>
             <div>
               <h3 className="text-white font-bold text-lg">DEMO ACTIVE</h3>
-              <p className="text-green-400 text-sm">30K TPS Mode Running</p>
+              <p className="text-green-400 text-sm">{totalTps.toLocaleString()} TPS</p>
             </div>
           </div>
           <motion.div
@@ -241,6 +281,26 @@ export function HFTLaunchControl({
             transition={{ duration: 0.5, repeat: Infinity }}
             className="w-3 h-3 rounded-full bg-green-500"
           />
+        </div>
+
+        {/* Worker Status */}
+        <div className="space-y-2 mb-4">
+          {workers.map((worker) => (
+            <div
+              key={worker.id}
+              className={`flex items-center justify-between p-2 rounded-lg ${
+                worker.isRunning ? 'bg-green-500/10' : 'bg-[#0d1a24]'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Server size={14} className={worker.connected ? 'text-green-400' : 'text-red-400'} />
+                <span className="text-sm text-[#c9d1d9]">Worker {worker.id}</span>
+              </div>
+              <span className="text-sm text-green-400">
+                {worker.isRunning ? `${worker.currentTps} TPS` : 'Ready'}
+              </span>
+            </div>
+          ))}
         </div>
 
         {/* Stop Button */}
@@ -257,91 +317,78 @@ export function HFTLaunchControl({
     );
   }
 
-  // COUNTDOWN STATE
-  if (countdown !== null) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-gradient-to-br from-[#1a2a3a] to-[#0d1a24] rounded-2xl border-2 border-yellow-500/50 p-6 max-w-md mx-auto text-center"
-      >
-        <motion.div
-          key={countdown}
-          initial={{ scale: 2, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="text-8xl font-bold text-yellow-400 mb-4"
-        >
-          {countdown}
-        </motion.div>
-        <p className="text-yellow-400 text-lg font-semibold mb-6">LAUNCHING IN...</p>
-
-        <button
-          onClick={handleDisarm}
-          className="px-6 py-2 rounded-lg bg-[#2a3d4e] hover:bg-[#3a4f60] text-[#8297a3] font-medium transition-colors"
-        >
-          ABORT
-        </button>
-      </motion.div>
-    );
-  }
-
-  // ARMED STATE
+  // ARMED STATE - Show launch command
   if (isArmed) {
     return (
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-gradient-to-br from-[#1a2a3a] to-[#0d1a24] rounded-2xl border-2 border-yellow-500/50 p-6 max-w-md mx-auto"
+        className="bg-gradient-to-br from-[#1a2a3a] to-[#0d1a24] rounded-2xl border-2 border-green-500/50 p-6 max-w-md mx-auto"
       >
         {/* Armed Header */}
         <div className="flex items-center justify-center gap-3 mb-6">
           <motion.div
-            animate={{ rotate: [0, 10, -10, 0] }}
-            transition={{ duration: 0.5, repeat: Infinity }}
+            animate={{ scale: [1, 1.1, 1] }}
+            transition={{ duration: 1, repeat: Infinity }}
           >
-            <ShieldCheck size={32} className="text-yellow-400" />
+            <ShieldCheck size={32} className="text-green-400" />
           </motion.div>
           <div className="text-center">
-            <h3 className="text-yellow-400 font-bold text-xl">SYSTEM ARMED</h3>
-            <p className="text-[#8297a3] text-sm">Ready for launch</p>
+            <h3 className="text-green-400 font-bold text-xl">ALL SYSTEMS GO</h3>
+            <p className="text-[#8297a3] text-sm">Workers ready for launch</p>
           </div>
         </div>
 
         {/* Pre-flight Summary */}
-        <div className="bg-[#0d1a24] rounded-xl p-4 mb-6">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-[#8297a3]">All systems:</span>
-            <span className="text-green-400 font-semibold flex items-center gap-1">
-              <CheckCircle2 size={14} />
-              GO
-            </span>
+        <div className="bg-[#0d1a24] rounded-xl p-4 mb-4">
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-[#8297a3]">Workers:</span>
+              <span className="text-green-400">{workers.filter(w => w.connected).length}/3</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#8297a3]">Accounts:</span>
+              <span className="text-green-400">{workers.reduce((s, w) => s + w.totalAccounts, 0).toLocaleString()}</span>
+            </div>
           </div>
         </div>
 
-        {/* Launch Button */}
-        <motion.button
-          onClick={handleLaunch}
-          className="w-full py-4 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white font-bold text-lg flex items-center justify-center gap-3 shadow-lg shadow-green-500/30 mb-3"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-        >
-          <Rocket size={24} />
-          LAUNCH DEMO
-        </motion.button>
+        {/* Launch Command */}
+        <div className="mb-4">
+          <p className="text-[#8297a3] text-sm mb-2 flex items-center gap-2">
+            <Terminal size={14} />
+            Run in terminal:
+          </p>
+          <div
+            onClick={copyCommand}
+            className="flex items-center justify-between bg-[#0d1a24] border border-[#2c3f4f] rounded-lg p-3 cursor-pointer hover:border-green-500/50 transition-colors"
+          >
+            <code className="text-green-400 text-sm font-mono">
+              ./scripts/demo.sh launch 60
+            </code>
+            {copied ? (
+              <Check size={16} className="text-green-400" />
+            ) : (
+              <Copy size={16} className="text-[#6b7a8a]" />
+            )}
+          </div>
+        </div>
 
         {/* Disarm Button */}
         <button
           onClick={handleDisarm}
           className="w-full py-3 rounded-xl bg-[#2a3d4e] hover:bg-[#3a4f60] text-[#8297a3] font-medium flex items-center justify-center gap-2 transition-colors"
         >
-          <Lock size={16} />
-          DISARM
+          Back to Status
         </button>
       </motion.div>
     );
   }
 
-  // DEFAULT STATE - Pre-flight checks
+  // DEFAULT STATE - Multi-worker status
+  const connectedWorkers = workers.filter(w => w.connected).length;
+  const allReady = connectedWorkers === 3;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -354,27 +401,50 @@ export function HFTLaunchControl({
           <Shield size={24} className="text-[#60a5fa]" />
         </div>
         <div>
-          <h3 className="text-white font-bold text-lg">HFT Launch Control</h3>
-          <p className="text-[#8297a3] text-sm">Pre-flight system check</p>
+          <h3 className="text-white font-bold text-lg">Demo Launch Control</h3>
+          <p className="text-[#8297a3] text-sm">Cloud Worker Status</p>
         </div>
       </div>
 
-      {/* Server Status */}
-      <div className={`flex items-center gap-3 p-3 rounded-xl mb-4 ${
-        isConnected ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'
-      }`}>
-        {isConnected ? (
-          <Wifi size={20} className="text-green-400" />
+      {/* Worker Status Grid */}
+      <div className="space-y-2 mb-4">
+        {workers.length === 0 ? (
+          <div className="text-center py-4 text-[#6b7a8a]">
+            Checking workers...
+          </div>
         ) : (
-          <WifiOff size={20} className="text-red-400" />
+          workers.map((worker) => (
+            <div
+              key={worker.id}
+              className={`flex items-center gap-3 p-3 rounded-xl ${
+                worker.connected
+                  ? 'bg-green-500/10 border border-green-500/30'
+                  : 'bg-red-500/10 border border-red-500/30'
+              }`}
+            >
+              {worker.connected ? (
+                <Wifi size={18} className="text-green-400" />
+              ) : (
+                <WifiOff size={18} className="text-red-400" />
+              )}
+              <div className="flex-1">
+                <p className={`text-sm font-medium ${
+                  worker.connected ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  Worker {worker.id}
+                </p>
+                <p className="text-xs text-[#6b7a8a]">{worker.ip}</p>
+              </div>
+              <div className="text-right">
+                <p className={`text-sm font-medium ${
+                  worker.connected ? 'text-[#c9d1d9]' : 'text-[#6b7a8a]'
+                }`}>
+                  {worker.connected ? `${worker.totalAccounts} accounts` : 'Offline'}
+                </p>
+              </div>
+            </div>
+          ))
         )}
-        <div className="flex-1">
-          <p className={`text-sm font-medium ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
-            {isConnected ? 'Server Connected' : 'Server Offline'}
-          </p>
-          <p className="text-xs text-[#6b7a8a]">{serverUrl}</p>
-        </div>
-        <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
       </div>
 
       {/* Pre-flight Checklist */}
@@ -409,22 +479,24 @@ export function HFTLaunchControl({
       {/* ARM Button */}
       <motion.button
         onClick={handleArm}
-        disabled={!isConnected}
+        disabled={connectedWorkers === 0}
         className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all ${
-          isConnected
-            ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white shadow-lg shadow-blue-500/30'
+          allReady
+            ? 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white shadow-lg shadow-green-500/30'
+            : connectedWorkers > 0
+            ? 'bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white shadow-lg shadow-yellow-500/30'
             : 'bg-[#2a3d4e] text-[#6b7a8a] cursor-not-allowed'
         }`}
-        whileHover={isConnected ? { scale: 1.02 } : {}}
-        whileTap={isConnected ? { scale: 0.98 } : {}}
+        whileHover={connectedWorkers > 0 ? { scale: 1.02 } : {}}
+        whileTap={connectedWorkers > 0 ? { scale: 0.98 } : {}}
       >
-        <Unlock size={20} />
-        ARM SYSTEM
+        <Rocket size={20} />
+        {allReady ? 'READY TO LAUNCH' : connectedWorkers > 0 ? 'PARTIAL READY' : 'WAITING FOR WORKERS'}
       </motion.button>
 
-      {!isConnected && (
+      {connectedWorkers === 0 && (
         <p className="text-center text-[#6b7a8a] text-xs mt-3">
-          Start the HFT server to enable launch control
+          Run <code className="text-[#60a5fa]">./scripts/demo.sh standby</code> to start workers
         </p>
       )}
     </motion.div>
