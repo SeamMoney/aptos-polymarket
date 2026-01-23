@@ -252,30 +252,11 @@ cmd_standby() {
         echo -e "  ${GREEN}Started on port 3001${NC}"
     done
 
-    # Start Transfer workers (dual mode only)
+    # Note: Transfer workers are started by 'launch --dual' command, not standby
+    # (Transfer server doesn't have HTTP standby mode - it runs for a duration)
     if [ "$DUAL_MODE" = true ]; then
         echo ""
-        for i in 1 2 3; do
-            eval "IP=\${WORKER${i}_IP}"
-            eval "TRANSFER_START=\${WORKER${i}_TRANSFER_START}"
-            eval "TRANSFER_COUNT=\${WORKER${i}_TRANSFER_COUNT}"
-
-            echo "[$(($i+4))/7] Starting Transfer Worker $i ($IP) - accounts $TRANSFER_START to $((TRANSFER_START + TRANSFER_COUNT - 1))..."
-
-            ssh ${WORKER_USER}@${IP} "
-                export SEED_MNEMONIC='${SEED_MNEMONIC}'
-                export ACCOUNT_START_INDEX=${TRANSFER_START}
-                export ACCOUNT_COUNT=${TRANSFER_COUNT}
-                export USE_ORDERLESS=false
-                export RPC_MODE=internal
-                export USD1_METADATA='${USD1_METADATA}'
-                export PORT=3002
-                cd /opt/aptos-hft
-                screen -dmS transfer bash -c 'npx tsx server/transfer-tps-server.ts ${DEFAULT_MODE} > /tmp/hft-transfer.log 2>&1'
-            " 2>/dev/null
-
-            echo -e "  ${GREEN}Started on port 3002${NC}"
-        done
+        echo -e "${YELLOW}Note:${NC} Transfer servers will be started when you run 'launch --dual'"
     fi
 
     # Wait for servers to be ready
@@ -303,40 +284,16 @@ cmd_standby() {
         fi
     done
 
-    # Verify Transfer servers (dual mode only)
-    TRANSFER_READY=true
-    TOTAL_TRANSFER_ACCOUNTS=0
-    if [ "$DUAL_MODE" = true ]; then
-        echo ""
-        echo "Verifying Transfer workers..."
-        for i in 1 2 3; do
-            eval "IP=\${WORKER${i}_IP}"
-            echo -n "  Transfer Worker $i ($IP:3002): "
-
-            if check_server $IP 3002; then
-                STATUS=$(curl -s "http://${IP}:3002/status" 2>/dev/null)
-                ACCOUNTS=$(echo "$STATUS" | grep -o '"total":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
-                TOTAL_TRANSFER_ACCOUNTS=$((TOTAL_TRANSFER_ACCOUNTS + ACCOUNTS))
-                echo -e "${GREEN}READY${NC} ($ACCOUNTS accounts)"
-            else
-                echo -e "${RED}NOT READY${NC}"
-                TRANSFER_READY=false
-            fi
-        done
-    fi
-
     echo ""
-    ALL_READY=true
-    if [ "$AMM_READY" != true ]; then ALL_READY=false; fi
-    if [ "$DUAL_MODE" = true ] && [ "$TRANSFER_READY" != true ]; then ALL_READY=false; fi
+    ALL_READY=$AMM_READY
 
     if [ "$ALL_READY" = true ]; then
         if [ "$DUAL_MODE" = true ]; then
             echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
-            echo -e "${GREEN}║              ALL WORKERS READY - DUAL MODE (AMM + TRANSFERS)          ║${NC}"
+            echo -e "${GREEN}║              AMM WORKERS READY - DUAL MODE                            ║${NC}"
             echo -e "${GREEN}╠══════════════════════════════════════════════════════════════════════╣${NC}"
-            echo -e "${GREEN}║  AMM:       $TOTAL_AMM_ACCOUNTS accounts on port 3001                              ║${NC}"
-            echo -e "${GREEN}║  Transfers: $TOTAL_TRANSFER_ACCOUNTS accounts on port 3002                              ║${NC}"
+            echo -e "${GREEN}║  AMM:       $TOTAL_AMM_ACCOUNTS accounts ready (port 3001)                         ║${NC}"
+            echo -e "${GREEN}║  Transfers: Will start with 'launch --dual' command                  ║${NC}"
             echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
         else
             echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
@@ -374,7 +331,14 @@ cmd_launch() {
     fi
     echo ""
 
-    # Start AMM servers
+    # Get seed mnemonic for transfer servers
+    if [ "$DUAL_MODE" = true ]; then
+        if ! get_seed_mnemonic; then
+            exit 1
+        fi
+    fi
+
+    # Start AMM servers (via HTTP API)
     echo "AMM Servers (port 3001):"
     for i in 1 2 3; do
         eval "IP=\${WORKER${i}_IP}"
@@ -388,20 +352,30 @@ cmd_launch() {
         fi
     done
 
-    # Start Transfer servers (dual mode only)
+    # Start Transfer servers (dual mode only - via SSH, no HTTP API)
     if [ "$DUAL_MODE" = true ]; then
         echo ""
-        echo "Transfer Servers (port 3002):"
+        echo "Transfer Servers (starting via SSH):"
         for i in 1 2 3; do
             eval "IP=\${WORKER${i}_IP}"
+            eval "TRANSFER_START=\${WORKER${i}_TRANSFER_START}"
+            eval "TRANSFER_COUNT=\${WORKER${i}_TRANSFER_COUNT}"
             echo -n "  Worker $i ($IP): "
 
-            RESPONSE=$(curl -s -X POST "http://${IP}:3002/start?duration=${DURATION}" 2>/dev/null)
-            if echo "$RESPONSE" | grep -q "started\|ok"; then
-                echo -e "${GREEN}STARTED${NC}"
-            else
-                echo -e "${RED}FAILED${NC}"
-            fi
+            # Start transfer server via SSH (it runs for DURATION and exits)
+            ssh ${WORKER_USER}@${IP} "
+                export SEED_MNEMONIC='${SEED_MNEMONIC}'
+                export ACCOUNT_START_INDEX=${TRANSFER_START}
+                export ACCOUNT_COUNT=${TRANSFER_COUNT}
+                export USE_ORDERLESS=false
+                export RPC_MODE=internal
+                export USD1_METADATA='${USD1_METADATA}'
+                export DURATION=${DURATION}
+                cd /opt/aptos-hft
+                nohup npx tsx server/transfer-tps-server.ts turbo > /tmp/hft-transfer.log 2>&1 &
+            " 2>/dev/null
+
+            echo -e "${GREEN}STARTED${NC} (accounts ${TRANSFER_START}-$((TRANSFER_START + TRANSFER_COUNT - 1)))"
         done
     fi
 
@@ -428,36 +402,23 @@ cmd_launch() {
 
         AMM_TPS=0
         AMM_TRADES=0
-        TRANSFER_TPS=0
-        TRANSFER_TRADES=0
 
         for i in 1 2 3; do
             eval "IP=\${WORKER${i}_IP}"
 
-            # AMM stats
+            # AMM stats (via HTTP API)
             STATUS=$(curl -s "http://${IP}:3001/stats" 2>/dev/null)
             TPS=$(echo "$STATUS" | grep -o '"currentTps":[0-9]*' | grep -o '[0-9]*' || echo "0")
             TRADES=$(echo "$STATUS" | grep -o '"totalTrades":[0-9]*' | grep -o '[0-9]*' || echo "0")
             AMM_TPS=$((AMM_TPS + TPS))
             AMM_TRADES=$((AMM_TRADES + TRADES))
-
-            # Transfer stats (dual mode)
-            if [ "$DUAL_MODE" = true ]; then
-                STATUS=$(curl -s "http://${IP}:3002/stats" 2>/dev/null)
-                TPS=$(echo "$STATUS" | grep -o '"currentTps":[0-9]*' | grep -o '[0-9]*' || echo "0")
-                TRADES=$(echo "$STATUS" | grep -o '"totalTrades":[0-9]*' | grep -o '[0-9]*' || echo "0")
-                TRANSFER_TPS=$((TRANSFER_TPS + TPS))
-                TRANSFER_TRADES=$((TRANSFER_TRADES + TRADES))
-            fi
         done
 
-        TOTAL_TPS=$((AMM_TPS + TRANSFER_TPS))
-        TOTAL_TRADES=$((AMM_TRADES + TRANSFER_TRADES))
-
         if [ "$DUAL_MODE" = true ]; then
-            printf "[%3ds] ${GREEN}AMM: %5d TPS${NC} | ${CYAN}Transfer: %5d TPS${NC} | ${BOLD}TOTAL: %5d TPS${NC} | Trades: %d\n" "$t" "$AMM_TPS" "$TRANSFER_TPS" "$TOTAL_TPS" "$TOTAL_TRADES"
+            # Transfer servers don't have HTTP stats - running in background
+            printf "[%3ds] ${GREEN}AMM: %5d TPS${NC} | ${CYAN}Transfers: running${NC} | AMM Trades: %d\n" "$t" "$AMM_TPS" "$AMM_TRADES"
         else
-            printf "[%3ds] TPS: %5d | Total Trades: %d\n" "$t" "$TOTAL_TPS" "$TOTAL_TRADES"
+            printf "[%3ds] TPS: %5d | Total Trades: %d\n" "$t" "$AMM_TPS" "$AMM_TRADES"
         fi
     done
 
@@ -468,27 +429,36 @@ cmd_launch() {
     echo "Final Results:"
     echo ""
     echo "AMM Trading:"
+    TOTAL_AMM_TRADES=0
+    TOTAL_AMM_SUCCESS=0
+    TOTAL_AMM_PEAK=0
     for i in 1 2 3; do
         eval "IP=\${WORKER${i}_IP}"
         STATUS=$(curl -s "http://${IP}:3001/stats" 2>/dev/null)
         TRADES=$(echo "$STATUS" | grep -o '"totalTrades":[0-9]*' | grep -o '[0-9]*' || echo "0")
         SUCCESS=$(echo "$STATUS" | grep -o '"successfulTrades":[0-9]*' | grep -o '[0-9]*' || echo "0")
         PEAK=$(echo "$STATUS" | grep -o '"peakTps":[0-9]*' | grep -o '[0-9]*' || echo "0")
+        TOTAL_AMM_TRADES=$((TOTAL_AMM_TRADES + TRADES))
+        TOTAL_AMM_SUCCESS=$((TOTAL_AMM_SUCCESS + SUCCESS))
+        if [ "$PEAK" -gt "$TOTAL_AMM_PEAK" ]; then
+            TOTAL_AMM_PEAK=$PEAK
+        fi
         echo "  Worker $i: $TRADES trades | $SUCCESS successful | Peak: $PEAK TPS"
     done
+    echo "  ────────────────────────────────────────────"
+    echo -e "  ${BOLD}Total: $TOTAL_AMM_TRADES trades | $TOTAL_AMM_SUCCESS successful | Peak: $TOTAL_AMM_PEAK TPS${NC}"
 
     if [ "$DUAL_MODE" = true ]; then
         echo ""
         echo "USD1 Transfers:"
-        for i in 1 2 3; do
-            eval "IP=\${WORKER${i}_IP}"
-            STATUS=$(curl -s "http://${IP}:3002/stats" 2>/dev/null)
-            TRADES=$(echo "$STATUS" | grep -o '"totalTrades":[0-9]*' | grep -o '[0-9]*' || echo "0")
-            SUCCESS=$(echo "$STATUS" | grep -o '"successfulTrades":[0-9]*' | grep -o '[0-9]*' || echo "0")
-            PEAK=$(echo "$STATUS" | grep -o '"peakTps":[0-9]*' | grep -o '[0-9]*' || echo "0")
-            echo "  Worker $i: $TRADES transfers | $SUCCESS successful | Peak: $PEAK TPS"
-        done
+        echo "  (Stats available via logs - run './scripts/demo.sh logs')"
+        echo "  Transfer servers wrote results to /tmp/hft-transfer.log on each worker"
     fi
+
+    echo ""
+    echo "Next steps:"
+    echo "  1. Collect transaction hashes: ./scripts/demo.sh collect"
+    echo "  2. Verify on-chain TPS: npx tsx scripts/analyze-tps.ts --minutes 5"
     echo ""
 }
 

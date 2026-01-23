@@ -17,6 +17,9 @@ import {
   XCircle,
   AlertTriangle,
   Server,
+  Terminal,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 // Cloud worker IPs
@@ -50,6 +53,7 @@ interface HFTLaunchControlProps {
   onStop: () => void;
   serverUrl?: string;
   multiWorkerMode?: boolean;
+  dualMode?: boolean; // AMM + Transfers (requires terminal launch)
 }
 
 interface StatusResponse {
@@ -64,16 +68,18 @@ interface StatusResponse {
 }
 
 export function HFTLaunchControl({
-  isConnected,
+  isConnected: _isConnected,
   isRunning,
-  onStart,
+  onStart: _onStart,
   onStop,
-  serverUrl = 'http://localhost:3001',
+  serverUrl: _serverUrl = 'http://localhost:3001',
   multiWorkerMode = true,
+  dualMode = true, // Default to dual mode for max TPS
 }: HFTLaunchControlProps) {
   const [workers, setWorkers] = useState<WorkerStatus[]>([]);
   const [isArmed, setIsArmed] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
   const [checks, setChecks] = useState<PreflightCheck[]>([
     { id: 'workers', label: 'Cloud Workers', status: 'pending' },
     { id: 'accounts', label: 'Trading Accounts (2000)', status: 'pending' },
@@ -311,20 +317,17 @@ export function HFTLaunchControl({
     setCountdown(3);
   };
 
-  // Countdown and launch
+  // Countdown and launch (AMM-only mode - dual mode uses terminal command)
   useEffect(() => {
     if (countdown === null) return;
 
     if (countdown === 0) {
-      // Trigger all workers
+      // Trigger all AMM workers (transfer servers need terminal for dual mode)
       const triggerWorkers = async () => {
         for (const worker of workers) {
           if (worker.connected) {
             try {
-              // Trigger AMM server
               await fetch(`http://${worker.ip}:3001/start?duration=60`, { method: 'POST' });
-              // Trigger Transfer server (dual mode)
-              await fetch(`http://${worker.ip}:3002/start?duration=60`, { method: 'POST' }).catch(() => {});
             } catch (e) {
               console.error(`Failed to trigger worker ${worker.id}:`, e);
             }
@@ -372,8 +375,19 @@ export function HFTLaunchControl({
     );
   }
 
+  // Copy command to clipboard
+  const copyCommand = (cmd: string) => {
+    navigator.clipboard.writeText(cmd);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   // ARMED STATE - Ready to launch
   if (isArmed) {
+    const launchCommand = dualMode
+      ? './scripts/demo.sh launch 60 --dual'
+      : './scripts/demo.sh launch 60';
+
     return (
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
@@ -390,7 +404,10 @@ export function HFTLaunchControl({
           </motion.div>
           <div className="text-center">
             <h3 className="text-green-400 font-bold text-xl">ALL SYSTEMS GO</h3>
-            <p className="text-[#8297a3] text-sm">{workers.reduce((s, w) => s + w.totalAccounts, 0).toLocaleString()} accounts ready</p>
+            <p className="text-[#8297a3] text-sm">
+              {workers.reduce((s, w) => s + w.totalAccounts, 0).toLocaleString()} accounts ready
+              {dualMode && ' (Dual Mode)'}
+            </p>
           </div>
         </div>
 
@@ -402,22 +419,50 @@ export function HFTLaunchControl({
               <span className="text-green-400">{workers.filter(w => w.connected).length}/3</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#8297a3]">Accounts:</span>
-              <span className="text-green-400">{workers.reduce((s, w) => s + w.totalAccounts, 0).toLocaleString()}</span>
+              <span className="text-[#8297a3]">Mode:</span>
+              <span className="text-green-400">{dualMode ? 'AMM + Transfers' : 'AMM Only'}</span>
             </div>
           </div>
         </div>
 
-        {/* Launch Button */}
-        <motion.button
-          onClick={handleLaunch}
-          className="w-full py-4 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white font-bold text-lg flex items-center justify-center gap-3 shadow-lg shadow-green-500/30 mb-3"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-        >
-          <Rocket size={24} />
-          LAUNCH DEMO
-        </motion.button>
+        {dualMode ? (
+          /* Dual Mode: Show terminal command */
+          <>
+            <div className="mb-4">
+              <p className="text-[#8297a3] text-sm mb-2 flex items-center gap-2">
+                <Terminal size={14} />
+                Run in terminal to launch:
+              </p>
+              <div
+                onClick={() => copyCommand(launchCommand)}
+                className="flex items-center justify-between bg-[#0d1a24] border border-[#2c3f4f] rounded-lg p-3 cursor-pointer hover:border-green-500/50 transition-colors"
+              >
+                <code className="text-green-400 text-sm font-mono">
+                  {launchCommand}
+                </code>
+                {copied ? (
+                  <Check size={16} className="text-green-400" />
+                ) : (
+                  <Copy size={16} className="text-[#6b7a8a]" />
+                )}
+              </div>
+              <p className="text-[#6b7a8a] text-xs mt-2">
+                Dual mode runs AMM + USD1 transfers for maximum TPS
+              </p>
+            </div>
+          </>
+        ) : (
+          /* AMM Only: Show launch button */
+          <motion.button
+            onClick={handleLaunch}
+            className="w-full py-4 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white font-bold text-lg flex items-center justify-center gap-3 shadow-lg shadow-green-500/30 mb-3"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <Rocket size={24} />
+            LAUNCH DEMO
+          </motion.button>
+        )}
 
         {/* Disarm Button */}
         <button
