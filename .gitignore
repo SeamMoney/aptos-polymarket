@@ -40,3 +40,4 @@ reference/
 *.sln
 *.sw?
 .vercel
+.ralphy/

@@ -68,7 +68,7 @@ interface MarketCache {
   walletAddress?: string;
 }
 let marketCache: MarketCache | null = null;
-const CACHE_TTL_MS = 10000; // Cache valid for 10 seconds
+const CACHE_TTL_MS = 5000; // Cache valid for 5 seconds (reduced from 10s for faster updates)
 
 export function useMultiMarkets() {
   const { account } = useWallet();
@@ -298,7 +298,7 @@ export function useMultiMarkets() {
 
   // Refresh every 30 seconds (reduced from 10s to avoid rate limiting)
   useEffect(() => {
-    const interval = setInterval(fetchMarkets, 30000);
+    const interval = setInterval(fetchMarkets, 10000); // Poll every 10 seconds (reduced from 30s)
     return () => clearInterval(interval);
   }, [fetchMarkets]);
 

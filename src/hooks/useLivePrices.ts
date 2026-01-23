@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea";
-// First market from VITE_MULTI_MARKETS or default to first new market
-const MARKET_ADDRESS = import.meta.env.VITE_MULTI_MARKETS?.split(',')[0] || "0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052";
+// Default market address (first from VITE_MULTI_MARKETS) - used only as fallback
+const DEFAULT_MARKET_ADDRESS = import.meta.env.VITE_MULTI_MARKETS?.split(',')[0] || "0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052";
 
 // RPC endpoints in priority order (custom fullnode first, Aptos Labs fallback)
 const RPC_ENDPOINTS = [
@@ -47,20 +47,36 @@ interface UseLivePricesReturn {
 // Max history points to keep (about 2 hours at 3s intervals)
 const MAX_HISTORY_POINTS = 2400;
 
-export function useLivePrices(pollInterval: number = 3000): UseLivePricesReturn {
+export function useLivePrices(marketAddress?: string, pollInterval: number = 3000): UseLivePricesReturn {
+  // Use provided market address or fall back to default
+  const effectiveMarketAddress = marketAddress || DEFAULT_MARKET_ADDRESS;
+
   const [currentPrices, setCurrentPrices] = useState<number[]>([]);
   const [priceHistory, setPriceHistory] = useState<PricePoint[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   const historyRef = useRef<PricePoint[]>([]);
+  const lastMarketRef = useRef<string>(effectiveMarketAddress);
+
+  // Clear history when market address changes
+  useEffect(() => {
+    if (lastMarketRef.current !== effectiveMarketAddress) {
+      historyRef.current = [];
+      setPriceHistory([]);
+      setCurrentPrices([]);
+      lastMarketRef.current = effectiveMarketAddress;
+    }
+  }, [effectiveMarketAddress]);
 
   const fetchPrices = useCallback(async () => {
+    if (!effectiveMarketAddress) return;
+
     try {
       const result = await fetchWithFailover(client => client.view({
         payload: {
           function: `${CONTRACT_ADDRESS}::multi_outcome_market::get_all_prices`,
           typeArguments: [],
-          functionArguments: [MARKET_ADDRESS],
+          functionArguments: [effectiveMarketAddress],
         },
       }));
 
@@ -96,7 +112,7 @@ export function useLivePrices(pollInterval: number = 3000): UseLivePricesReturn 
       console.error('Error fetching prices:', error);
       setIsConnected(false);
     }
-  }, []);
+  }, [effectiveMarketAddress]);
 
   // Poll for prices
   useEffect(() => {

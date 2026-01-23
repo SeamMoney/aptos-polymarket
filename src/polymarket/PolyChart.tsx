@@ -149,7 +149,7 @@ export const generateOutcomePrices = (
   return prices;
 };
 
-// Generate SVG path with padding and optional scaling
+// Generate SVG path - simple linear interpolation like Polymarket
 const generatePath = (
   prices: number[],
   width: number,
@@ -163,9 +163,9 @@ const generatePath = (
   const innerWidth = width - paddingRight;
   const priceRange = maxPrice - minPrice || 1;
   let path = "";
+
   for (let i = 0; i < prices.length; i++) {
     const x = (i / (prices.length - 1)) * innerWidth;
-    // Scale price to 0-1 range based on min/max, then to height
     const normalizedPrice = (prices[i] - minPrice) / priceRange;
     const y = height - normalizedPrice * height;
     path += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
@@ -545,11 +545,11 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
                 </>
               );
             }
-            default: // ALL
+            default: // MAX - Real data spans Nov 2025 to Jan 2026
               return (
                 <>
-                  <span className="text-poly-textMuted text-xs">Sep</span>
-                  <span className="text-poly-textMuted text-xs">Dec</span>
+                  <span className="text-poly-textMuted text-xs">Nov</span>
+                  <span className="text-poly-textMuted text-xs">Jan</span>
                 </>
               );
           }
@@ -610,10 +610,10 @@ function HoverLabels({ outcomes, activeIndex, chartWidth, timestamps, timeRange 
         dateLabel = time.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         break;
       }
-      default: { // ALL - fallback to Sept-Dec
-        const months = ["Sep", "Oct", "Nov", "Dec"];
-        const monthIndex = Math.floor(t * 3.99);
-        const day = Math.floor((t * 4 - monthIndex) * 28) + 1;
+      default: { // MAX - fallback to Nov-Jan (real data range)
+        const months = ["Nov", "Dec", "Jan"];
+        const monthIndex = Math.floor(t * 2.99);
+        const day = Math.floor((t * 3 - monthIndex) * 28) + 1;
         dateLabel = `${months[monthIndex]} ${day}`;
       }
     }

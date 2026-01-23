@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Link2, Bookmark, BarChart3, Sliders, Settings, Clock, ChevronUp, Wallet } from "lucide-react";
+import { Link2, Bookmark, BarChart3, Settings, Clock, ChevronUp, Wallet } from "lucide-react";
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { PolyChart } from "./PolyChart";
@@ -19,6 +19,7 @@ import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useHFTConnection } from "../hooks/useHFTConnection";
 import { useLivePrices } from "../hooks/useLivePrices";
+import { useTradePriceHistory } from "../hooks/useTradePriceHistory";
 import { useLiveTrades, emitTrade, type LiveTrade } from "../hooks/useLiveTrades";
 import type { Category, Outcome } from "./types";
 import type { Trade } from "../hooks/useHFTConnection";
@@ -37,7 +38,7 @@ function extractMarketAddress(id: string | undefined): string {
   return id;
 }
 
-const timeRanges = ["1H", "6H", "1D", "1W", "1M", "ALL"];
+const timeRanges = ["1H", "1D", "1W", "1M", "MAX"];
 
 export function MarketDetail() {
   const { id } = useParams<{ id: string }>();
@@ -45,7 +46,7 @@ export function MarketDetail() {
   const titleRef = useRef<HTMLDivElement>(null);
 
   const [selectedCategory, setSelectedCategory] = useState<Category>("All");
-  const [timeRange, setTimeRange] = useState("ALL");
+  const [timeRange, setTimeRange] = useState("MAX");
   const [selectedOutcome, setSelectedOutcome] = useState<Outcome | null>(null);
   const [showTradingSheet, setShowTradingSheet] = useState(false);
   const [tradeType, setTradeType] = useState<"yes" | "no">("yes");
@@ -54,6 +55,27 @@ export function MarketDetail() {
   const [showStickyTitle, setShowStickyTitle] = useState(false);
   const [highlightedOutcomeId, setHighlightedOutcomeId] = useState<string | null>(null);
   const [tvl, setTvl] = useState<number | null>(null);
+
+  // Khamenei market date selector - matching Polymarket UI exactly
+  // Shows deadline dates when Khamenei might die (resolution dates)
+  const [selectedKhameneiDate, setSelectedKhameneiDate] = useState<string>("Mar 31");
+  const KHAMENEI_DATES = ["Jan 31", "Jan 31", "Feb 28", "Mar 31"];  // Polymarket shows duplicate Jan 31
+
+  // Latest prices for each Khamenei date deadline (from real CSV data)
+  const KHAMENEI_LATEST: Record<string, number> = {
+    "Past": 0.08,      // Past deadlines
+    "Jan 31": 0.12,    // Jan 31 deadline
+    "Feb 28": 0.18,    // Feb 28 deadline
+    "Mar 31": 0.495,   // Mar 31 deadline - from CSV: 49.5%
+  };
+
+  // Price change from start of chart period (for "▲ X%" indicator)
+  const KHAMENEI_CHANGE: Record<string, number> = {
+    "Past": 0,
+    "Jan 31": 0.04,    // +4%
+    "Feb 28": 0.07,    // +7%
+    "Mar 31": 0.15,    // +15% (was 34.5%, now 49.5%)
+  };
 
   // Extract market address from route id
   const marketAddress = useMemo(() => extractMarketAddress(id), [id]);
@@ -119,7 +141,20 @@ export function MarketDetail() {
     currentPrices: _livePrices,
     priceHistory: livePriceHistory,
     isConnected: _pricesConnected,
-  } = useLivePrices(3000); // Poll every 3 seconds
+  } = useLivePrices(marketAddress, 3000); // Poll every 3 seconds for specific market
+
+  // Trade-based price history from Geomi indexer (shows actual trades as step changes)
+  // Now properly normalizes all prices when a trade occurs
+  const {
+    priceHistory: tradePriceHistory,
+    currentPrices: tradeCurrentPrices,
+    isLoading: _tradeHistoryLoading,
+    tradesProcessed,
+  } = useTradePriceHistory(
+    marketAddress,
+    4,  // Support up to 4 outcomes (most common case) - hook handles dynamic
+    5000  // Poll every 5 seconds
+  );
 
   // Live trades from blockchain polling - always enabled to show all trades
   // Pass marketAddress to enable Geomi indexer for accurate trade data
@@ -234,13 +269,14 @@ export function MarketDetail() {
     );
 
     // Number of points to show based on timeframe
+    // Higher resolution for short timeframes to capture rapid trades
     const TIMEFRAME_POINTS: Record<string, number> = {
-      '1H': 60,
-      '6H': 72,
-      '1D': 96,
+      '1H': 360,   // 1 point per 10 seconds - captures rapid trading
+      '6H': 360,   // 1 point per minute
+      '1D': 288,   // 1 point per 5 minutes
       '1W': 168,
       '1M': 180,
-      'ALL': 220, // Use all real data points
+      'MAX': 220,
     };
     const pointsToShow = TIMEFRAME_POINTS[timeRange] || 220;
 
@@ -250,10 +286,11 @@ export function MarketDetail() {
       return x - Math.floor(x);
     };
 
-    // DEMO MODE: Don't use live on-chain prices for chart display
-    // The HFT trading equalizes all prices which looks unrealistic
-    // Instead, use static Polymarket data which shows Vance leading at ~50%
-    const hasLivePrices = false; // Disabled - livePriceHistory.length > 5;
+    // Use trade-based price history from Geomi (shows actual trade steps)
+    // Now properly normalizes all prices when a trade occurs
+    // Falls back to livePriceHistory (polling) if no trade data
+    const hasTradeHistory = tradePriceHistory.length > 0 && tradesProcessed > 0;
+    const hasLivePrices = hasTradeHistory || livePriceHistory.length > 5;
     const isShortTimeframe = ['1H', '6H', '1D'].includes(timeRange);
 
     if (isVPMarket && market?.outcomes) {
@@ -271,33 +308,15 @@ export function MarketDetail() {
           : null;
         const currentPrice = liveCurrentPrice ?? LATEST_REAL_PRICES[candidateName] ?? 0.05;
 
-        // For short timeframes during HFT demo, use live prices for the recent portion
+        // For VP market, use real Polymarket CSV data
         let basePrices: number[];
 
-        if (hasLivePrices && isShortTimeframe) {
-          // Use live price history for recent data (makes chart animate!)
-          const livePricesForCandidate = livePriceHistory.map(p => p.prices[candIdx] || currentPrice);
-
-          // Take the most recent live prices
-          const livePointsToUse = Math.min(livePricesForCandidate.length, Math.floor(pointsToShow * 0.8));
-          const staticPointsNeeded = pointsToShow - livePointsToUse;
-
-          // Get static prices for the beginning
-          const staticPortion = realPrices.slice(-staticPointsNeeded);
-          while (staticPortion.length < staticPointsNeeded) {
-            staticPortion.unshift(staticPortion[0] || currentPrice);
-          }
-
-          // Combine static + live
-          basePrices = [...staticPortion, ...livePricesForCandidate.slice(-livePointsToUse)];
+        // Use real Polymarket data for all timeframes
+        if (timeRange === 'MAX') {
+          basePrices = [...realPrices];
         } else {
-          // Default behavior: use real Polymarket data
-          if (timeRange === 'ALL') {
-            basePrices = [...realPrices];
-          } else {
-            const startIdx = Math.max(0, realPrices.length - pointsToShow);
-            basePrices = realPrices.slice(startIdx);
-          }
+          const startIdx = Math.max(0, realPrices.length - pointsToShow);
+          basePrices = realPrices.slice(startIdx);
         }
 
         // Pad with the last price if needed
@@ -367,49 +386,49 @@ export function MarketDetail() {
                        market?.question?.toLowerCase().includes('iran supreme leader');
 
     if (isKhamenei) {
+      // For SHORT timeframes (1H, 1D): Use LIVE trade data from Geomi
+      // For LONG timeframes (1W, 1M, MAX): Use historical CSV data
+      const useLiveData = (timeRange === '1H' || timeRange === '1D') && tradePriceHistory.length > 0;
 
-      // Use the "Jan 31" outcome data as the primary "Yes" price since it's the most likely outcome
-      // This matches what Polymarket shows - the probability of Khamenei being out by a certain date
-      const realPrices = KHAMENEI_PRICE_HISTORY.map((point: { prices: Record<string, number> }) => point.prices["Jan 31"] || 0.35);
-      const currentPrice = LATEST_REAL_PRICES["Jan 31"] ?? 0.615;
+      if (useLiveData) {
+        // Use live trade-based price history - outcome 1 is "Mar 31"
+        const livePrices = tradePriceHistory.map(p => p.prices[1] || 0.25);
+        return [
+          {
+            id: "yes",
+            name: "Mar 31",
+            color: "#5b9cf6",
+            prices: livePrices.length > 3 ? livePrices : [0.25, 0.25, 0.25], // fallback if no data
+          },
+        ];
+      }
 
-      // Select price range based on timeframe
+      // For longer timeframes, use historical CSV data
+      const dateKey = selectedKhameneiDate === "Past" ? "Jan 31" : selectedKhameneiDate;
+      const realPrices = KHAMENEI_PRICE_HISTORY.map((point: { prices: Record<string, number> }) =>
+        point.prices[dateKey] || 0.10
+      );
+
       let basePrices: number[];
-      if (timeRange === 'ALL') {
-        basePrices = [...realPrices];
-      } else {
-        const startIdx = Math.max(0, realPrices.length - pointsToShow);
-        basePrices = realPrices.slice(startIdx);
-      }
+      const dataPointsAvailable = realPrices.length;
 
-      // Pad if needed to match pointsToShow
-      while (basePrices.length < pointsToShow) {
-        basePrices.push(basePrices[basePrices.length - 1] || currentPrice);
-      }
-      basePrices = basePrices.slice(-pointsToShow);
-
-      // Use the real data directly - NO added volatility (Polymarket charts are clean)
-      const yesPrices = basePrices.map((p, i) => {
-        // Force end to current price
-        if (i === basePrices.length - 1) return currentPrice;
-        return p;
-      });
-
-      // No price is complement of Yes
-      const noPrices = yesPrices.map(p => 1 - p);
+      const TIMEFRAME_DATA_POINTS: Record<string, number> = {
+        '1H': 3,
+        '1D': 5,
+        '1W': 7,
+        '1M': 30,
+        'MAX': dataPointsAvailable,
+      };
+      const desiredPoints = TIMEFRAME_DATA_POINTS[timeRange] || dataPointsAvailable;
+      const startIdx = Math.max(0, dataPointsAvailable - desiredPoints);
+      basePrices = realPrices.slice(startIdx);
 
       return [
         {
           id: "yes",
           name: "Yes",
-          color: "#22c55e",  // Green for Yes
-          prices: yesPrices,
-        },
-        {
-          id: "no",
-          name: "No",
-          color: "#5b9cf6",  // Blue for No
-          prices: noPrices,
+          color: "#5b9cf6",
+          prices: basePrices,
         },
       ];
     }
@@ -429,50 +448,58 @@ export function MarketDetail() {
         const noOutcome = market.outcomes.find(o => o.name.toLowerCase() === 'no')!;
         const yesEndPrice = yesOutcome.price;
 
-        // Seeded random for consistent chart
-        const seed = market.question.length * 7 + market.id.length;
-        const seededRandom = (s: number) => {
-          const x = Math.sin(s * 12345.6789) * 43758.5453;
-          return x - Math.floor(x);
-        };
+        let yesPrices: number[];
 
-        // Generate step-like Yes prices (like real trading)
-        const yesPrices: number[] = [];
-        let currentPrice = 0.5; // Start at 50%
+        // For binary markets without historical data, show flat lines at current prices
+        if (false) {
+          // Placeholder - historical data handling removed for simplicity
+          yesPrices = [];
+        } else {
+          // Fallback: Generate step-like Yes prices (like real trading)
+          yesPrices = [];
+          let currentPrice = 0.5; // Start at 50%
 
-        // Create random step points where price jumps (more steps = more granular)
-        const numSteps = 25 + Math.floor(seededRandom(seed) * 15); // 25-40 steps
-        const stepIndices: number[] = [];
-        for (let s = 0; s < numSteps; s++) {
-          stepIndices.push(Math.floor(seededRandom(seed * 100 + s) * numPoints));
-        }
-        stepIndices.sort((a, b) => a - b);
+          // Seeded random for consistent chart
+          const seed = market.question.length * 7 + market.id.length;
+          const seededRandom = (s: number) => {
+            const x = Math.sin(s * 12345.6789) * 43758.5453;
+            return x - Math.floor(x);
+          };
 
-        // Pre-calculate step prices trending toward end
-        const stepPrices: number[] = [0.5];
-        let stepPrice = 0.5;
-        for (let s = 0; s < numSteps; s++) {
-          const progress = (s + 1) / numSteps;
-          const targetAtStep = 0.5 + (yesEndPrice - 0.5) * progress;
-          // Random jump toward target with more variance
-          const jump = (seededRandom(seed * 200 + s) - 0.4) * 0.04;
-          stepPrice = stepPrice + (targetAtStep - stepPrice) * 0.3 + jump;
-          stepPrice = Math.max(0.30, Math.min(0.70, stepPrice)); // Allow wider swings
-          stepPrices.push(stepPrice);
-        }
-        stepPrices.push(yesEndPrice);
-
-        // Generate prices with step behavior
-        let stepIdx = 0;
-        for (let i = 0; i < numPoints; i++) {
-          // Check if we hit a step
-          while (stepIdx < stepIndices.length && i >= stepIndices[stepIdx]) {
-            currentPrice = stepPrices[stepIdx + 1];
-            stepIdx++;
+          // Create random step points where price jumps (more steps = more granular)
+          const numSteps = 25 + Math.floor(seededRandom(seed) * 15); // 25-40 steps
+          const stepIndices: number[] = [];
+          for (let s = 0; s < numSteps; s++) {
+            stepIndices.push(Math.floor(seededRandom(seed * 100 + s) * numPoints));
           }
-          yesPrices.push(currentPrice);
+          stepIndices.sort((a, b) => a - b);
+
+          // Pre-calculate step prices trending toward end
+          const stepPrices: number[] = [0.5];
+          let stepPrice = 0.5;
+          for (let s = 0; s < numSteps; s++) {
+            const progress = (s + 1) / numSteps;
+            const targetAtStep = 0.5 + (yesEndPrice - 0.5) * progress;
+            // Random jump toward target with more variance
+            const jump = (seededRandom(seed * 200 + s) - 0.4) * 0.04;
+            stepPrice = stepPrice + (targetAtStep - stepPrice) * 0.3 + jump;
+            stepPrice = Math.max(0.30, Math.min(0.70, stepPrice)); // Allow wider swings
+            stepPrices.push(stepPrice);
+          }
+          stepPrices.push(yesEndPrice);
+
+          // Generate prices with step behavior
+          let stepIdx = 0;
+          for (let i = 0; i < numPoints; i++) {
+            // Check if we hit a step
+            while (stepIdx < stepIndices.length && i >= stepIndices[stepIdx]) {
+              currentPrice = stepPrices[stepIdx + 1];
+              stepIdx++;
+            }
+            yesPrices.push(currentPrice);
+          }
         }
-        yesPrices[numPoints - 1] = yesEndPrice;
+        yesPrices[yesPrices.length - 1] = yesEndPrice;
 
         // No is EXACTLY 1 - Yes (perfect mirror)
         const noPrices = yesPrices.map(p => 1 - p);
@@ -483,21 +510,88 @@ export function MarketDetail() {
         ];
       }
 
-      // Multi-outcome market (3+ options) - generate independent prices
+      // Multi-outcome market (3+ options)
+      // Use trade history from Geomi to show actual price changes
       const genericResult = market.outcomes.map((outcome, outcomeIdx) => {
-        const prices: number[] = [];
         const endPrice = outcome.price;
+        let prices: number[];
 
-        // Smooth trend from a starting point to end price
-        const startPrice = Math.max(0.05, Math.min(0.95, endPrice + (Math.random() - 0.5) * 0.1));
+        // Build chart from trade price history
+        if (tradePriceHistory.length > 0) {
+          // Get timeframe boundaries
+          const now = Date.now();
+          const timeframeDurations: Record<string, number> = {
+            '1H': 60 * 60 * 1000,
+            '6H': 6 * 60 * 60 * 1000,
+            '1D': 24 * 60 * 60 * 1000,
+            '1W': 7 * 24 * 60 * 60 * 1000,
+            '1M': 30 * 24 * 60 * 60 * 1000,
+            'MAX': now, // All time = from epoch to now
+          };
+          const timeframeDuration = timeframeDurations[timeRange] || timeframeDurations['ALL'];
+          const startTime = now - timeframeDuration;
 
-        for (let i = 0; i < numPoints; i++) {
-          const t = i / (numPoints - 1);
-          const smoothT = t * t * (3 - 2 * t);
-          const price = startPrice + (endPrice - startPrice) * smoothT;
-          prices.push(Math.max(0.01, Math.min(0.99, price)));
+          // Filter trades within timeframe
+          const relevantHistory = tradePriceHistory.filter(p => p.timestamp >= startTime);
+
+          // Debug logging (only for first outcome to avoid spam)
+          if (outcomeIdx === 0) {
+            console.log(`[Chart ${timeRange}] Total history: ${tradePriceHistory.length}, In window: ${relevantHistory.length}`);
+            console.log(`[Chart ${timeRange}] Window: ${new Date(startTime).toISOString()} to ${new Date(now).toISOString()}`);
+            if (relevantHistory.length > 0) {
+              console.log(`[Chart ${timeRange}] First relevant: ${new Date(relevantHistory[0].timestamp).toISOString()}`);
+            }
+          }
+
+          if (relevantHistory.length > 0) {
+            // Build price array with proper time positioning
+            prices = [];
+            const timePerPoint = timeframeDuration / numPoints;
+
+            // Get initial price: find the last trade BEFORE the timeframe window
+            // This ensures we carry forward the correct starting price
+            const equalPrice = 1 / (market.outcomes?.length || 2);
+            const tradesBeforeWindow = tradePriceHistory.filter(p => p.timestamp < startTime);
+            let currentPrice = tradesBeforeWindow.length > 0
+              ? tradesBeforeWindow[tradesBeforeWindow.length - 1].prices[outcomeIdx] ?? equalPrice
+              : equalPrice;
+
+            if (outcomeIdx === 0) {
+              console.log(`[Chart ${timeRange}] Trades before window: ${tradesBeforeWindow.length}, Starting price: ${(currentPrice * 100).toFixed(1)}%`);
+            }
+
+            // Find price at each chart point
+            let historyIdx = 0;
+            for (let i = 0; i < numPoints; i++) {
+              const pointTime = startTime + (i * timePerPoint);
+
+              // Advance through history to find price at this time
+              while (historyIdx < relevantHistory.length &&
+                     relevantHistory[historyIdx].timestamp <= pointTime) {
+                currentPrice = relevantHistory[historyIdx].prices[outcomeIdx] ?? currentPrice;
+                historyIdx++;
+              }
+
+              prices.push(currentPrice);
+            }
+
+            // Ensure last point matches current on-chain price
+            prices[prices.length - 1] = endPrice;
+          } else {
+            // No trades in timeframe - find price from before window, or use current
+            const tradesBeforeWindow = tradePriceHistory.filter(p => p.timestamp < startTime);
+            const startPrice = tradesBeforeWindow.length > 0
+              ? tradesBeforeWindow[tradesBeforeWindow.length - 1].prices[outcomeIdx] ?? endPrice
+              : endPrice;
+            // Show flat line from historical price to current price
+            prices = new Array(numPoints).fill(startPrice);
+            prices[prices.length - 1] = endPrice;
+          }
+        } else {
+          // No trade history yet - show flat line at current price
+          prices = new Array(numPoints).fill(endPrice);
         }
-        prices[numPoints - 1] = endPrice;
+        prices[prices.length - 1] = endPrice;
 
         return {
           id: outcome.id || `outcome-${outcomeIdx}`,
@@ -513,20 +607,27 @@ export function MarketDetail() {
     // Handle binary markets - Yes and No MUST be mirrors (sum to 100%)
     if (market?.yesPrice !== undefined) {
       const numPoints = pointsToShow;
-      const yesPrices: number[] = [];
-
-      // Smooth trend from 50% to current Yes price
-      const startPrice = 0.5;
+      let yesPrices: number[];
       const endPrice = market.yesPrice;
 
-      for (let i = 0; i < numPoints; i++) {
-        const t = i / (numPoints - 1);
-        // Smooth S-curve interpolation
-        const smoothT = t * t * (3 - 2 * t);
-        const price = startPrice + (endPrice - startPrice) * smoothT;
-        yesPrices.push(Math.max(0.01, Math.min(0.99, price)));
+      // For binary markets without historical data, show flat lines at current prices
+      if (false) {
+        // Placeholder - historical data handling removed for simplicity
+        yesPrices = [];
+      } else {
+        // Fallback: Generate smooth trend from 50% to current Yes price
+        yesPrices = [];
+        const startPrice = 0.5;
+
+        for (let i = 0; i < numPoints; i++) {
+          const t = i / (numPoints - 1);
+          // Smooth S-curve interpolation
+          const smoothT = t * t * (3 - 2 * t);
+          const price = startPrice + (endPrice - startPrice) * smoothT;
+          yesPrices.push(Math.max(0.01, Math.min(0.99, price)));
+        }
       }
-      yesPrices[numPoints - 1] = endPrice;
+      yesPrices[yesPrices.length - 1] = endPrice;
 
       // No prices are EXACTLY 1 - Yes prices (perfect mirror)
       const noPrices = yesPrices.map(p => 1 - p);
@@ -562,7 +663,8 @@ export function MarketDetail() {
     ];
 
     return fallbackResult;
-  }, [market?.outcomes, market?.yesPrice, market?.noPrice, market?.question, timeRange, livePriceHistory,
+  }, [market?.outcomes, market?.yesPrice, market?.noPrice, market?.question, timeRange,
+      livePriceHistory, tradePriceHistory, tradesProcessed, selectedKhameneiDate,
       // Force recalculation when outcome prices change (shallow comparison of outcomes array isn't enough)
       // eslint-disable-next-line react-hooks/exhaustive-deps
       JSON.stringify(market?.outcomes?.map(o => o.price))]);
@@ -713,8 +815,84 @@ export function MarketDetail() {
           </h1>
         </div>
 
-        {/* Outcome Legend - Clickable to highlight */}
-        {chartOutcomes.length > 0 && (
+        {/* Polymarket-style Date Selector for Khamenei market */}
+        {isKhameneiMarket && (
+          <div
+            className={`px-4 pb-2 transition-all duration-300 delay-200 ${
+              isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+            }`}
+          >
+            {/* Date buttons row - matches Polymarket styling exactly */}
+            <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1">
+              {/* Past dropdown button like Polymarket */}
+              <button
+                onClick={() => setSelectedKhameneiDate("Past")}
+                className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all flex items-center gap-1 ${
+                  selectedKhameneiDate === "Past"
+                    ? "bg-white text-gray-900 font-medium shadow-sm"
+                    : "bg-[#2d3748] text-gray-300 hover:bg-[#374151]"
+                }`}
+              >
+                Past
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {/* Date buttons */}
+              {KHAMENEI_DATES.map((date, index) => (
+                <button
+                  key={`${date}-${index}`}
+                  onClick={() => setSelectedKhameneiDate(date)}
+                  className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
+                    selectedKhameneiDate === date
+                      ? "bg-white text-gray-900 font-medium shadow-sm"
+                      : "bg-[#2d3748] text-gray-300 hover:bg-[#374151]"
+                  }`}
+                >
+                  {date}
+                </button>
+              ))}
+              {/* More dropdown like Polymarket */}
+              <button className="px-4 py-2 rounded-full text-sm whitespace-nowrap bg-[#2d3748] text-gray-300 hover:bg-[#374151] flex items-center gap-1">
+                More
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Chance indicator - uses LIVE on-chain prices */}
+            {(() => {
+              // Map date to outcome index: Jan 31=0, Mar 31=1, Jun 30=2, Dec 31=3
+              const dateToOutcome: Record<string, number> = {
+                "Jan 31": 0, "Mar 31": 1, "Jun 30": 2, "Dec 31": 3, "Past": 0
+              };
+              const outcomeIdx = dateToOutcome[selectedKhameneiDate] ?? 1;
+              // Use live price if available, otherwise fallback to static
+              const livePrice = tradeCurrentPrices[outcomeIdx];
+              const displayPrice = livePrice !== undefined ? livePrice : (KHAMENEI_LATEST[selectedKhameneiDate] || 0);
+              const change = KHAMENEI_CHANGE[selectedKhameneiDate] || 0;
+
+              return (
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-2xl font-semibold text-[#5b9cf6]">
+                    {Math.round(displayPrice * 100)}% chance
+                  </span>
+                  {selectedKhameneiDate !== "Past" && (
+                    <span className={`text-base font-medium flex items-center gap-1 ${
+                      change >= 0 ? "text-[#22c55e]" : "text-[#ef4444]"
+                    }`}>
+                      {change >= 0 ? "▲" : "▼"} {Math.abs(Math.round(change * 100))}%
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Outcome Legend - Clickable to highlight (for non-Khamenei markets) */}
+        {!isKhameneiMarket && chartOutcomes.length > 0 && (
           <div
             className={`px-4 pb-4 flex flex-wrap gap-3 transition-all duration-300 delay-200 ${
               isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
@@ -724,11 +902,9 @@ export function MarketDetail() {
               const outcomeId = chartOutcome.id;
               const isHighlighted = highlightedOutcomeId === outcomeId;
               const isDimmed = highlightedOutcomeId && !isHighlighted;
-              // Only use hardcoded Polymarket prices for specific markets (GOP nominee, Khamenei, Fed Chair)
-              // For generic Yes/No markets like BTC $100K, use actual chart end price (from on-chain data)
+              // Only use hardcoded Polymarket prices for specific markets (GOP nominee, Fed Chair)
               const isSpecialMarket = market?.question?.toLowerCase().includes('republican') ||
                                      market?.question?.toLowerCase().includes('nominee') ||
-                                     market?.question?.toLowerCase().includes('khamenei') ||
                                      market?.question?.toLowerCase().includes('fed chair') ||
                                      market?.question?.toLowerCase().includes('trump nominate');
               const realPolymarketPrice = isSpecialMarket
@@ -781,38 +957,39 @@ export function MarketDetail() {
           />
         </div>
 
-        {/* Time Range Selector */}
+        {/* Time Range Selector - Polymarket style with volume */}
         <div
           className={`px-4 pb-4 transition-all duration-300 delay-400 ${
             isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
           }`}
         >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-0.5 bg-poly-surface/50 rounded-lg p-0.5">
-              {timeRanges.map((range) => (
-                <button
-                  key={range}
-                  onClick={() => setTimeRange(range)}
-                  className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
-                    timeRange === range
-                      ? "bg-poly-card text-white font-medium"
-                      : "text-poly-textSecondary hover:text-white"
-                  }`}
-                >
-                  {range}
-                </button>
-              ))}
-            </div>
+            {/* Volume display like Polymarket */}
+            <span className="text-sm text-gray-400">
+              ${tvl ? tvl.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0'} Vol.
+            </span>
 
+            {/* Timeframe buttons */}
             <div className="flex items-center gap-1">
-              <button className="p-1.5 hover:bg-poly-surface rounded-lg transition-colors">
-                <BarChart3 size={14} color="#6E7681" strokeWidth={2.5} />
-              </button>
-              <button className="p-1.5 hover:bg-poly-surface rounded-lg transition-colors">
-                <Sliders size={14} color="#6E7681" strokeWidth={2.5} />
-              </button>
-              <button className="p-1.5 hover:bg-poly-surface rounded-lg transition-colors">
-                <Settings size={14} color="#6E7681" strokeWidth={2.5} />
+              <div className="flex items-center gap-0.5 bg-transparent">
+                {timeRanges.map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => setTimeRange(range)}
+                    className={`px-2 py-1 text-sm transition-colors ${
+                      timeRange === range
+                        ? "text-white font-medium border-b-2 border-white"
+                        : "text-gray-500 hover:text-gray-300"
+                    }`}
+                  >
+                    {range}
+                  </button>
+                ))}
+              </div>
+
+              {/* Settings gear icon */}
+              <button className="p-1.5 ml-2 hover:bg-poly-surface rounded-lg transition-colors">
+                <Settings size={16} color="#6E7681" strokeWidth={2} />
               </button>
             </div>
           </div>
