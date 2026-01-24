@@ -699,35 +699,75 @@ export function MarketDetail() {
         return result;
       };
 
+      // Generate FIXED synthetic prices for long-term charts (MAX, 1M)
+      // These use seeded endpoints that DON'T change with live trades
+      const generateFixedSyntheticPrices = (
+        outcomeIdx: number,
+        numOutcomes: number,
+        points: number
+      ): number[] => {
+        const result: number[] = [];
+        const outcomeSeed = seed * 100 + outcomeIdx * 17;
+
+        // Fixed starting prices based on seed (doesn't change with trades)
+        const basePrice = 1 / numOutcomes;
+        const startVariance = (seededRandom(outcomeSeed) - 0.5) * 0.15;
+        const startPrice = Math.max(0.05, Math.min(0.45, basePrice + startVariance));
+
+        // Fixed ending prices based on seed (doesn't change with trades)
+        // Creates realistic-looking price differences between outcomes
+        const endVariance = (seededRandom(outcomeSeed + 500) - 0.5) * 0.20;
+        const fixedEndPrice = Math.max(0.08, Math.min(0.50, basePrice + endVariance));
+
+        let currentPrice = startPrice;
+        const volatility = 0.02 + seededRandom(outcomeSeed + 1) * 0.03;
+
+        for (let i = 0; i < points; i++) {
+          const progress = i / (points - 1);
+          const targetPrice = startPrice + (fixedEndPrice - startPrice) * progress;
+          const noiseScale = (1 - progress * 0.7) * volatility;
+          const noise = (seededRandom(outcomeSeed * 1000 + i) - 0.5) * noiseScale;
+          const momentum = i > 0 ? (currentPrice - (result[i - 1] || currentPrice)) * 0.3 : 0;
+          const reversion = (targetPrice - currentPrice) * 0.15;
+
+          currentPrice = currentPrice + reversion + noise + momentum;
+          currentPrice = Math.max(0.005, Math.min(0.95, currentPrice));
+          result.push(currentPrice);
+        }
+        result[result.length - 1] = fixedEndPrice;
+        return result;
+      };
+
       const genericResult = market.outcomes.map((outcome, outcomeIdx) => {
-        const endPrice = outcome.price;
+        const endPrice = outcome.price; // Current on-chain price
         let prices: number[];
 
-        // Build chart from trade price history if available
-        if (tradePriceHistory.length >= 10) {
-          // Enough trade history - use actual data
+        // MAX and 1M: Use FIXED synthetic data (doesn't change with trades)
+        // This makes long-term charts look like a mature market
+        if (timeRange === 'MAX' || timeRange === '1M') {
+          prices = generateFixedSyntheticPrices(outcomeIdx, market.outcomes?.length || 4, numPoints);
+        }
+        // 1H, 1D, 1W: Use actual trade history to show real trading activity
+        else if (tradePriceHistory.length >= 3) {
           const now = Date.now();
           const timeframeDurations: Record<string, number> = {
             '1H': 60 * 60 * 1000,
-            '6H': 6 * 60 * 60 * 1000,
             '1D': 24 * 60 * 60 * 1000,
             '1W': 7 * 24 * 60 * 60 * 1000,
-            '1M': 30 * 24 * 60 * 60 * 1000,
-            'MAX': now,
           };
-          const timeframeDuration = timeframeDurations[timeRange] || timeframeDurations['MAX'];
+          const timeframeDuration = timeframeDurations[timeRange] || timeframeDurations['1D'];
           const startTime = now - timeframeDuration;
 
           const relevantHistory = tradePriceHistory.filter(p => p.timestamp >= startTime);
 
-          if (relevantHistory.length >= 10) {
-            // Dense data: build step chart from actual trade history
+          if (relevantHistory.length >= 2) {
+            // Build step chart from actual trade history
             prices = [];
             const timePerPoint = timeframeDuration / numPoints;
             const tradesBeforeWindow = tradePriceHistory.filter(p => p.timestamp < startTime);
             let currentPrice = tradesBeforeWindow.length > 0
               ? tradesBeforeWindow[tradesBeforeWindow.length - 1].prices[outcomeIdx] ?? endPrice
-              : endPrice;
+              : (1 / (market.outcomes?.length || 4)); // Start at equal distribution
 
             let historyIdx = 0;
             for (let i = 0; i < numPoints; i++) {
@@ -739,17 +779,21 @@ export function MarketDetail() {
               }
               prices.push(currentPrice);
             }
+            // End at current on-chain price
             prices[prices.length - 1] = endPrice;
           } else {
-            // Not enough data in window - generate realistic synthetic data
+            // Not enough data - show flat line from equal to current
             prices = generateRealisticPrices(outcomeIdx, endPrice, market.outcomes?.length || 4, numPoints);
           }
         } else {
-          // No/sparse trade history - generate realistic synthetic data
-          // This creates independent-looking lines, NOT curves from a single point
+          // No trade history yet - generate realistic synthetic trending to current price
           prices = generateRealisticPrices(outcomeIdx, endPrice, market.outcomes?.length || 4, numPoints);
         }
-        prices[prices.length - 1] = endPrice;
+
+        // Only set endpoint to current price for short-term charts (not MAX/1M)
+        if (timeRange !== 'MAX' && timeRange !== '1M') {
+          prices[prices.length - 1] = endPrice;
+        }
 
         return {
           id: outcome.id || `outcome-${outcomeIdx}`,
