@@ -7,7 +7,7 @@ import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { PolyChart } from "./PolyChart";
 import { TOP_CANDIDATES, CANDIDATE_COLORS } from "./priceData";
-import { REAL_PRICE_HISTORY, KHAMENEI_PRICE_HISTORY, LATEST_REAL_PRICES } from "./realPriceData";
+import { REAL_PRICE_HISTORY, KHAMENEI_PRICE_HISTORY, LATEST_REAL_PRICES, FED_CHAIR_PRICE_HISTORY, FED_CHAIR_CANDIDATES, FED_CHAIR_COLORS } from "./realPriceData";
 import { TradingSheet } from "./TradingSheet";
 import { LiveOrderBook } from "./LiveOrderBook";
 import { TPSChart } from "./TPSChart";
@@ -35,7 +35,22 @@ function extractMarketAddress(id: string | undefined): string {
   if (!id) return "";
   if (id.startsWith('multi-')) return id.replace('multi-', '');
   if (id.startsWith('binary-')) return id.replace('binary-', '');
+  // Map mock IDs to real on-chain addresses
+  const mockToRealAddress = getMockToRealAddress(id);
+  if (mockToRealAddress) return mockToRealAddress;
   return id;
+}
+
+// Mapping from mock market IDs to real on-chain market addresses
+// This allows mock UI markets to trade on real contracts
+const MOCK_TO_REAL_ADDRESS: Record<string, string> = {
+  // Khamenei "When will Khamenei no longer be Iran's Supreme Leader?"
+  "iran-khamenei": "0xcbdddcf6206d2b5956b6c7c6a10d4ac1d6253a2c1c151e8b3af113d8e940f9dc",
+  "iran-khamenei-binary": "0xcbdddcf6206d2b5956b6c7c6a10d4ac1d6253a2c1c151e8b3af113d8e940f9dc",
+};
+
+function getMockToRealAddress(id: string): string | null {
+  return MOCK_TO_REAL_ADDRESS[id] || null;
 }
 
 const timeRanges = ["1H", "1D", "1W", "1M", "MAX"];
@@ -225,6 +240,36 @@ export function MarketDetail() {
     return mockMarkets.find((m) => m.id === id);
   }, [id, getMarket]);
 
+  // For trading: use real on-chain market address even when displaying mock data
+  // This allows mock UI to trade on real contracts
+  const tradingMarket = useMemo(() => {
+    if (!market) return null;
+
+    // If market already has a real on-chain ID, use it directly
+    if (market.id.startsWith("multi-") || market.id.startsWith("binary-") || market.id.startsWith("0x")) {
+      return market;
+    }
+
+    // Check if there's a real address mapping for this mock market
+    const realAddress = MOCK_TO_REAL_ADDRESS[market.id];
+    if (realAddress) {
+      // Try to get the actual on-chain market data for accurate pricing
+      const realOnChainMarket = getMarket(`multi-${realAddress}`) || getMarket(realAddress);
+      if (realOnChainMarket) {
+        return realOnChainMarket;
+      }
+
+      // Create a trading-ready version with the real address
+      return {
+        ...market,
+        id: `multi-${realAddress}`,
+        isMultiOutcome: true,
+      };
+    }
+
+    return market;
+  }, [market, getMarket]);
+
   // Detect if this is the Khamenei Iran market (for special chart handling)
   const isKhameneiMarket = useMemo(() => {
     return market?.question?.toLowerCase().includes('khamenei') ||
@@ -376,6 +421,50 @@ export function MarketDetail() {
           name: candidateName,
           color: CANDIDATE_COLORS[candidateName] || outcome?.color || "#666",
           prices,
+        };
+      });
+    }
+
+    // Check if this is a Fed Chair market
+    const isFedChairMarket = market?.question?.toLowerCase().includes('fed chair') ||
+                             market?.question?.toLowerCase().includes('trump nominate');
+
+    if (isFedChairMarket) {
+      // Use real Polymarket Fed Chair historical data
+      return FED_CHAIR_CANDIDATES.map((candidateName) => {
+        // Get real prices from the Fed Chair historical data
+        const realPrices = FED_CHAIR_PRICE_HISTORY.map(point => point.prices[candidateName] || 0.05);
+
+        // Use LATEST_REAL_PRICES for current price
+        const currentPrice = LATEST_REAL_PRICES[candidateName] ?? 0.05;
+
+        // Use real historical data for all timeframes
+        let basePrices: number[];
+
+        if (timeRange === 'MAX') {
+          basePrices = [...realPrices];
+        } else {
+          // Sample points based on timeframe
+          const TIMEFRAME_POINTS: Record<string, number> = {
+            '1H': 6,
+            '1D': 8,
+            '1W': 12,
+            '1M': 15,
+            'MAX': realPrices.length,
+          };
+          const targetPoints = TIMEFRAME_POINTS[timeRange] || realPrices.length;
+          const startIdx = Math.max(0, realPrices.length - targetPoints);
+          basePrices = realPrices.slice(startIdx);
+        }
+
+        // Ensure last price matches current real price
+        basePrices[basePrices.length - 1] = currentPrice;
+
+        return {
+          id: candidateName.toLowerCase().replace(/\s+/g, '-'),
+          name: candidateName,
+          color: FED_CHAIR_COLORS[candidateName] || "#666",
+          prices: basePrices,
         };
       });
     }
@@ -734,17 +823,20 @@ export function MarketDetail() {
       transition={{ duration: 0.2 }}
       className="min-h-screen bg-poly-bg"
     >
-      <PolyHeader />
+      {/* Sticky Header + Category Tabs - same as PolymarketHome */}
+      <div className="sticky top-0 z-50" style={{ backgroundColor: '#1c2b3a' }}>
+        <PolyHeader />
 
-      <CategoryTabs
-        categories={categories}
-        selectedCategory={selectedCategory}
-        onSelectCategory={setSelectedCategory}
-      />
+        <CategoryTabs
+          categories={categories}
+          selectedCategory={selectedCategory}
+          onSelectCategory={setSelectedCategory}
+        />
+      </div>
 
-      {/* Sticky Header - shows market title when scrolling (positioned below main header) */}
+      {/* Sticky Header - shows market title when scrolling (positioned below sticky header+tabs ~104px) */}
       <div
-        className={`fixed top-[52px] left-0 right-0 z-40 border-b-2 border-[#2c3f4f] transition-all duration-300 ${
+        className={`fixed top-[104px] left-0 right-0 z-40 border-b-2 border-[#2c3f4f] transition-all duration-300 ${
           showStickyTitle ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-full pointer-events-none"
         }`}
         style={{ backgroundColor: '#1c2b3a' }}
@@ -777,7 +869,7 @@ export function MarketDetail() {
           }`}
         >
           <div className="flex items-center gap-4">
-            <span className="text-[#8297a3] text-sm">{market.volume} Vol.</span>
+            <span style={{ fontSize: '13px', fontWeight: 500, color: '#8297a3', fontFamily: '"Open Sauce One", sans-serif' }}>{market.volume} Vol.</span>
             {hftConnected && (
               <TPSChart
                 currentTps={hftStats.currentTps || 0}
@@ -810,7 +902,7 @@ export function MarketDetail() {
             alt=""
             className="w-14 h-14 rounded-lg object-cover bg-poly-surface shrink-0"
           />
-          <h1 className="flex-1 text-white text-xl font-semibold leading-snug pt-1">
+          <h1 className="flex-1 text-white pt-1" style={{ fontSize: '20px', fontWeight: 600, lineHeight: '25px', fontFamily: '"Open Sauce One", sans-serif' }}>
             {market.question}
           </h1>
         </div>
@@ -822,20 +914,26 @@ export function MarketDetail() {
               isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
-            {/* Date buttons row - matches Polymarket styling exactly */}
-            <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1">
+            {/* Date buttons row - exact Polymarket styling with smaller pills */}
+            <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 scrollbar-hide">
               {/* Past dropdown button like Polymarket */}
               <button
                 onClick={() => setSelectedKhameneiDate("Past")}
-                className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all flex items-center gap-1 ${
-                  selectedKhameneiDate === "Past"
-                    ? "bg-white text-gray-900 font-medium shadow-sm"
-                    : "bg-[#2d3748] text-gray-300 hover:bg-[#374151]"
-                }`}
+                className="shrink-0 flex items-center gap-1 transition-all"
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: '9999px',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  fontFamily: '"Open Sauce One", sans-serif',
+                  backgroundColor: selectedKhameneiDate === "Past" ? '#ffffff' : '#2f3f50',
+                  color: selectedKhameneiDate === "Past" ? '#1a1a1a' : '#c9d1d9',
+                  border: selectedKhameneiDate === "Past" ? '1px solid #ffffff' : '1px solid #3d5266',
+                }}
               >
                 Past
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
               {/* Date buttons */}
@@ -843,20 +941,38 @@ export function MarketDetail() {
                 <button
                   key={`${date}-${index}`}
                   onClick={() => setSelectedKhameneiDate(date)}
-                  className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
-                    selectedKhameneiDate === date
-                      ? "bg-white text-gray-900 font-medium shadow-sm"
-                      : "bg-[#2d3748] text-gray-300 hover:bg-[#374151]"
-                  }`}
+                  className="shrink-0 transition-all"
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '9999px',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    fontFamily: '"Open Sauce One", sans-serif',
+                    backgroundColor: selectedKhameneiDate === date ? '#ffffff' : '#2f3f50',
+                    color: selectedKhameneiDate === date ? '#1a1a1a' : '#c9d1d9',
+                    border: selectedKhameneiDate === date ? '1px solid #ffffff' : '1px solid #3d5266',
+                  }}
                 >
                   {date}
                 </button>
               ))}
               {/* More dropdown like Polymarket */}
-              <button className="px-4 py-2 rounded-full text-sm whitespace-nowrap bg-[#2d3748] text-gray-300 hover:bg-[#374151] flex items-center gap-1">
+              <button
+                className="shrink-0 flex items-center gap-1 transition-all"
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: '9999px',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  fontFamily: '"Open Sauce One", sans-serif',
+                  backgroundColor: '#2f3f50',
+                  color: '#c9d1d9',
+                  border: '1px solid #3d5266',
+                }}
+              >
                 More
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
             </div>
@@ -902,16 +1018,8 @@ export function MarketDetail() {
               const outcomeId = chartOutcome.id;
               const isHighlighted = highlightedOutcomeId === outcomeId;
               const isDimmed = highlightedOutcomeId && !isHighlighted;
-              // Only use hardcoded Polymarket prices for specific markets (GOP nominee, Fed Chair)
-              const isSpecialMarket = market?.question?.toLowerCase().includes('republican') ||
-                                     market?.question?.toLowerCase().includes('nominee') ||
-                                     market?.question?.toLowerCase().includes('fed chair') ||
-                                     market?.question?.toLowerCase().includes('trump nominate');
-              const realPolymarketPrice = isSpecialMarket
-                ? ((LATEST_REAL_PRICES as Record<string, number>)[chartOutcome.name] || 0)
-                : 0;
-              // Use on-chain price (chart end price) for generic markets
-              const currentPrice = realPolymarketPrice > 0 ? realPolymarketPrice : chartOutcome.prices[chartOutcome.prices.length - 1];
+              // Always use live on-chain price (chart end price)
+              const currentPrice = chartOutcome.prices[chartOutcome.prices.length - 1];
 
               return (
                 <button
@@ -965,7 +1073,7 @@ export function MarketDetail() {
         >
           <div className="flex items-center justify-between">
             {/* Volume display like Polymarket */}
-            <span className="text-sm text-gray-400">
+            <span className="text-white" style={{ fontSize: '13px', fontWeight: 500, fontFamily: '"Open Sauce One", sans-serif' }}>
               ${tvl ? tvl.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0'} Vol.
             </span>
 
@@ -976,11 +1084,16 @@ export function MarketDetail() {
                   <button
                     key={range}
                     onClick={() => setTimeRange(range)}
-                    className={`px-2 py-1 text-sm transition-colors ${
-                      timeRange === range
-                        ? "text-white font-medium border-b-2 border-white"
-                        : "text-gray-500 hover:text-gray-300"
-                    }`}
+                    style={{
+                      padding: '4px 6px',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      fontFamily: '"Open Sauce One", sans-serif',
+                      color: timeRange === range ? '#fff' : '#6E7681',
+                      borderBottom: timeRange === range ? '2px solid #fff' : '2px solid transparent',
+                      transition: 'color 0.15s, border-color 0.15s',
+                    }}
+                    className="hover:text-gray-300"
                   >
                     {range}
                   </button>
@@ -1059,18 +1172,8 @@ export function MarketDetail() {
               // Map "Other" to "Donald Trump Jr." for display
               const displayName = outcome.name === "Other" ? "Donald Trump Jr." : outcome.name;
 
-              // Only use hardcoded Polymarket prices for specific markets (GOP nominee, Khamenei, Fed Chair)
-              // For generic Yes/No markets like BTC $100K, use actual on-chain prices
-              const isSpecialMarket = market.question.toLowerCase().includes('republican') ||
-                                     market.question.toLowerCase().includes('nominee') ||
-                                     market.question.toLowerCase().includes('khamenei') ||
-                                     market.question.toLowerCase().includes('fed chair') ||
-                                     market.question.toLowerCase().includes('trump nominate');
-
-              // Use hardcoded prices only for special markets, otherwise use on-chain price
-              const realPrice = isSpecialMarket
-                ? (LATEST_REAL_PRICES[displayName] || LATEST_REAL_PRICES[outcome.name] || outcome.price)
-                : outcome.price;
+              // Always use live on-chain price
+              const realPrice = outcome.price;
               const yesPrice = Math.round(realPrice * 100);
               const noPrice = 100 - yesPrice;
               const yesPriceDisplay = yesPrice < 10 ? `${(realPrice * 100).toFixed(1)}` : yesPrice.toString();
@@ -1110,28 +1213,46 @@ export function MarketDetail() {
                         className="w-14 h-14 rounded-lg object-cover bg-poly-surface shrink-0"
                       />
                       <div className="pt-1">
-                        <p className="text-white text-lg font-semibold leading-tight">
+                        <p className="text-white leading-tight" style={{ fontSize: '18px', fontWeight: 600, fontFamily: '"Open Sauce One", sans-serif' }}>
                           {displayName}
                         </p>
-                        <p className="text-[#8297a3] text-sm mt-0.5">
+                        <p className="mt-0.5" style={{ fontSize: '13px', fontWeight: 500, color: '#8297a3', fontFamily: '"Open Sauce One", sans-serif' }}>
                           {volumeDisplay} Vol.
                         </p>
                       </div>
                     </div>
-                    <span className="text-white text-3xl font-bold pt-1">{yesPrice}%</span>
+                    <span className="text-white pt-1" style={{ fontSize: '28px', fontWeight: 500, fontFamily: '"Open Sauce One", sans-serif' }}>{yesPrice}%</span>
                   </button>
 
-                  {/* Buy Yes / Buy No buttons */}
-                  <div className="flex gap-3">
+                  {/* Buy Yes / Buy No buttons - Polymarket style */}
+                  <div className="flex gap-2">
                     <button
                       onClick={() => handleBuyYes(outcome)}
-                      className="flex-1 bg-[#3dac67] rounded-lg py-3.5 text-white text-base font-semibold hover:bg-[#359b5c] transition-colors"
+                      className="flex-1 hover:opacity-80 transition-opacity"
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: '5.6px',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        fontFamily: '"Open Sauce One", sans-serif',
+                        color: '#43c773',
+                        backgroundColor: 'rgba(67, 199, 115, 0.15)',
+                      }}
                     >
                       Buy Yes {yesPriceDisplay}¢
                     </button>
                     <button
                       onClick={() => handleBuyNo(outcome)}
-                      className="flex-1 bg-[#e13836] rounded-lg py-3.5 text-white text-base font-semibold hover:bg-[#c9312f] transition-colors"
+                      className="flex-1 hover:opacity-80 transition-opacity"
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: '5.6px',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        fontFamily: '"Open Sauce One", sans-serif',
+                        color: '#e13737',
+                        backgroundColor: 'rgba(225, 55, 55, 0.15)',
+                      }}
                     >
                       Buy No {noPriceDisplay}¢
                     </button>
@@ -1394,9 +1515,68 @@ export function MarketDetail() {
         </div>
       </div>
 
-      {/* Trading Sheet */}
+      {/* Sticky Buy Yes/No buttons at bottom - Polymarket style for binary/Khamenei markets */}
+      {isKhameneiMarket && (
+        <div
+          className="fixed bottom-0 left-0 right-0 z-50 px-4 py-3"
+          style={{ backgroundColor: '#1c2b3a', borderTop: '1px solid #2c3f4f' }}
+        >
+          <div className="max-w-4xl mx-auto flex gap-3">
+            <button
+              onClick={() => {
+                setTradeType('yes');
+                setShowTradingSheet(true);
+              }}
+              className="flex-1 py-3 rounded-lg transition-opacity hover:opacity-90"
+              style={{
+                backgroundColor: '#43c773',
+                fontSize: '16px',
+                fontWeight: 600,
+                fontFamily: '"Open Sauce One", sans-serif',
+                color: '#ffffff',
+              }}
+            >
+              Buy Yes {(() => {
+                const dateToOutcome: Record<string, number> = {
+                  "Jan 31": 0, "Mar 31": 1, "Jun 30": 2, "Dec 31": 3, "Past": 0
+                };
+                const outcomeIdx = dateToOutcome[selectedKhameneiDate] ?? 1;
+                const livePrice = tradeCurrentPrices[outcomeIdx];
+                const displayPrice = livePrice !== undefined ? livePrice : (KHAMENEI_LATEST[selectedKhameneiDate] || 0);
+                return `${Math.round(displayPrice * 100)}¢`;
+              })()}
+            </button>
+            <button
+              onClick={() => {
+                setTradeType('no');
+                setShowTradingSheet(true);
+              }}
+              className="flex-1 py-3 rounded-lg transition-opacity hover:opacity-90"
+              style={{
+                backgroundColor: '#e13737',
+                fontSize: '16px',
+                fontWeight: 600,
+                fontFamily: '"Open Sauce One", sans-serif',
+                color: '#ffffff',
+              }}
+            >
+              Buy No {(() => {
+                const dateToOutcome: Record<string, number> = {
+                  "Jan 31": 0, "Mar 31": 1, "Jun 30": 2, "Dec 31": 3, "Past": 0
+                };
+                const outcomeIdx = dateToOutcome[selectedKhameneiDate] ?? 1;
+                const livePrice = tradeCurrentPrices[outcomeIdx];
+                const displayPrice = livePrice !== undefined ? livePrice : (KHAMENEI_LATEST[selectedKhameneiDate] || 0);
+                return `${100 - Math.round(displayPrice * 100)}¢`;
+              })()}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Trading Sheet - use tradingMarket for real on-chain trades */}
       <TradingSheet
-        market={market}
+        market={tradingMarket || market}
         selectedOutcome={selectedOutcome || undefined}
         isVisible={showTradingSheet}
         onClose={() => setShowTradingSheet(false)}

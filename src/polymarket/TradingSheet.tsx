@@ -100,8 +100,15 @@ export function TradingSheet({
   }, [isVisible, initialType]);
 
   // Check if this is a real on-chain market
-  const isRealMarket = market.id.startsWith("binary-") || market.id.startsWith("multi-");
-  const isMultiOutcome = market.id.startsWith("multi-");
+  // Real markets have IDs like: "binary-0x...", "multi-0x...", or just "0x..."
+  // Also check if trading functions are provided (indicates real market integration)
+  const hasRealMarketId = market.id.startsWith("binary-") ||
+                          market.id.startsWith("multi-") ||
+                          market.id.startsWith("0x") ||
+                          market.id.includes("0x");
+  const hasTradingFunctions = !!(onBuyOutcome || onSellOutcome || onBuyYes || onBuyNo);
+  const isRealMarket = hasRealMarketId || hasTradingFunctions;
+  const isMultiOutcome = market.id.startsWith("multi-") || market.isMultiOutcome;
 
   // Get outcome index for multi-outcome markets
   const getOutcomeIndex = (): number => {
@@ -229,9 +236,12 @@ export function TradingSheet({
     ? Math.round(market.yesPrice * 100)
     : Math.round(market.noPrice * 100);
 
+  // amount is in cents, currentPrice is 0-100 (e.g., 62 for 62%)
+  // Shares = dollars / price_per_share = (amount/100) / (currentPrice/100) = amount / currentPrice
+  // Each share pays $1 if outcome wins, so potentialWin in dollars = shares
   const potentialWin =
     amount > 0
-      ? (amount / (currentPrice / 100)).toFixed(2)
+      ? (amount / currentPrice).toFixed(2)
       : "0.00";
 
   const handleAmountChange = useCallback((delta: number) => {
