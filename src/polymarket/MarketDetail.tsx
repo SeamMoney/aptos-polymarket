@@ -1523,10 +1523,10 @@ export function MarketDetail() {
       {/* Sticky Buy Yes/No buttons above bottom navbar - Polymarket style */}
       {isKhameneiMarket && (
         <div
-          className="fixed left-0 right-0 z-50 px-4 py-3"
-          style={{ backgroundColor: '#1c2b3a', borderTop: '1px solid #2c3f4f', bottom: '60px' }}
+          className="fixed left-0 right-0 z-50 px-4 pb-3 pt-3"
+          style={{ backgroundColor: '#171c24', bottom: '60px' }}
         >
-          <div className="max-w-4xl mx-auto flex gap-3">
+          <div className="flex gap-2">
             {(() => {
               // Map selected date to outcome index
               const dateToOutcome: Record<string, number> = {
@@ -1547,13 +1547,17 @@ export function MarketDetail() {
                       setTradeType('yes');
                       setShowTradingSheet(true);
                     }}
-                    className="flex-1 py-3 rounded-lg transition-opacity hover:opacity-90"
+                    className="flex-1 transition-all hover:brightness-110 active:scale-[0.98]"
                     style={{
-                      backgroundColor: '#43c773',
-                      fontSize: '16px',
-                      fontWeight: 600,
-                      fontFamily: '"Open Sauce One", sans-serif',
+                      backgroundColor: '#4eb36b',
+                      borderRadius: '10px',
+                      padding: '14px 24px',
+                      fontSize: '18px',
+                      fontWeight: 700,
+                      fontFamily: '"Open Sauce One", -apple-system, BlinkMacSystemFont, sans-serif',
                       color: '#ffffff',
+                      border: 'none',
+                      cursor: 'pointer',
                     }}
                   >
                     Buy Yes {yesPrice}¢
@@ -1564,13 +1568,17 @@ export function MarketDetail() {
                       setTradeType('no');
                       setShowTradingSheet(true);
                     }}
-                    className="flex-1 py-3 rounded-lg transition-opacity hover:opacity-90"
+                    className="flex-1 transition-all hover:brightness-110 active:scale-[0.98]"
                     style={{
-                      backgroundColor: '#e13737',
-                      fontSize: '16px',
-                      fontWeight: 600,
-                      fontFamily: '"Open Sauce One", sans-serif',
+                      backgroundColor: '#e64b4b',
+                      borderRadius: '10px',
+                      padding: '14px 24px',
+                      fontSize: '18px',
+                      fontWeight: 700,
+                      fontFamily: '"Open Sauce One", -apple-system, BlinkMacSystemFont, sans-serif',
                       color: '#ffffff',
+                      border: 'none',
+                      cursor: 'pointer',
                     }}
                   >
                     Buy No {noPrice}¢
