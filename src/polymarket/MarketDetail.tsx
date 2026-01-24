@@ -700,7 +700,8 @@ export function MarketDetail() {
       };
 
       // Generate FIXED synthetic prices for long-term charts (MAX, 1M)
-      // These use seeded endpoints that DON'T change with live trades
+      // Creates STEP-LIKE patterns that look like real Polymarket trading data
+      // Key: long flat periods + clustered sharp jumps, NOT smooth curves
       const generateFixedSyntheticPrices = (
         outcomeIdx: number,
         numOutcomes: number,
@@ -709,31 +710,90 @@ export function MarketDetail() {
         const result: number[] = [];
         const outcomeSeed = seed * 100 + outcomeIdx * 17;
 
-        // Fixed starting prices based on seed (doesn't change with trades)
+        // Fixed starting and ending prices based on seed
         const basePrice = 1 / numOutcomes;
-        const startVariance = (seededRandom(outcomeSeed) - 0.5) * 0.15;
-        const startPrice = Math.max(0.05, Math.min(0.45, basePrice + startVariance));
+        const startVariance = (seededRandom(outcomeSeed) - 0.5) * 0.12;
+        const startPrice = Math.max(0.08, Math.min(0.40, basePrice + startVariance));
+        const endVariance = (seededRandom(outcomeSeed + 500) - 0.5) * 0.25;
+        const fixedEndPrice = Math.max(0.05, Math.min(0.55, basePrice + endVariance));
 
-        // Fixed ending prices based on seed (doesn't change with trades)
-        // Creates realistic-looking price differences between outcomes
-        const endVariance = (seededRandom(outcomeSeed + 500) - 0.5) * 0.20;
-        const fixedEndPrice = Math.max(0.08, Math.min(0.50, basePrice + endVariance));
+        // Create "activity clusters" - periods of high trading followed by calm
+        // This mimics real market behavior where news causes bursts of activity
+        const numClusters = 3 + Math.floor(seededRandom(outcomeSeed + 1) * 3); // 3-5 clusters
+        const clusters: { center: number; width: number; intensity: number }[] = [];
 
+        for (let c = 0; c < numClusters; c++) {
+          clusters.push({
+            center: Math.floor(seededRandom(outcomeSeed + 50 + c) * points),
+            width: 5 + Math.floor(seededRandom(outcomeSeed + 60 + c) * 15), // 5-20 points wide
+            intensity: 0.5 + seededRandom(outcomeSeed + 70 + c) * 0.5, // 50-100% intensity
+          });
+        }
+
+        // Generate events clustered around activity periods
+        const events: { point: number; priceChange: number }[] = [];
+        const totalEvents = 8 + Math.floor(seededRandom(outcomeSeed + 2) * 12); // 8-20 events total
+
+        for (let e = 0; e < totalEvents; e++) {
+          // 70% chance event is in a cluster, 30% random
+          const inCluster = seededRandom(outcomeSeed + 100 + e) < 0.7;
+          let eventPoint: number;
+
+          if (inCluster && clusters.length > 0) {
+            const cluster = clusters[Math.floor(seededRandom(outcomeSeed + 110 + e) * clusters.length)];
+            const offset = (seededRandom(outcomeSeed + 120 + e) - 0.5) * cluster.width * 2;
+            eventPoint = Math.floor(cluster.center + offset);
+          } else {
+            eventPoint = Math.floor(seededRandom(outcomeSeed + 130 + e) * points);
+          }
+          eventPoint = Math.max(0, Math.min(points - 1, eventPoint));
+
+          // Price changes: mostly medium, occasionally large
+          const isLargeMove = seededRandom(outcomeSeed + 200 + e) > 0.8;
+          const moveSize = isLargeMove
+            ? (seededRandom(outcomeSeed + 300 + e) - 0.5) * 0.12  // Large: up to ±6%
+            : (seededRandom(outcomeSeed + 300 + e) - 0.5) * 0.05; // Medium: up to ±2.5%
+
+          events.push({ point: eventPoint, priceChange: moveSize });
+        }
+
+        // Sort events by point
+        events.sort((a, b) => a.point - b.point);
+
+        // Build the step chart
         let currentPrice = startPrice;
-        const volatility = 0.02 + seededRandom(outcomeSeed + 1) * 0.03;
+        let eventIdx = 0;
+
+        // Calculate trend adjustment to reach end price
+        const totalRandomChange = events.reduce((sum, e) => sum + e.priceChange, 0);
+        const targetChange = fixedEndPrice - startPrice;
+        // Apply trend in discrete steps, not continuously
+        const trendSteps = 5;
+        const trendPerStep = (targetChange - totalRandomChange) / trendSteps;
+        const trendPoints = Array.from({ length: trendSteps }, (_, i) =>
+          Math.floor((i + 1) * points / (trendSteps + 1))
+        );
+        let trendIdx = 0;
 
         for (let i = 0; i < points; i++) {
-          const progress = i / (points - 1);
-          const targetPrice = startPrice + (fixedEndPrice - startPrice) * progress;
-          const noiseScale = (1 - progress * 0.7) * volatility;
-          const noise = (seededRandom(outcomeSeed * 1000 + i) - 0.5) * noiseScale;
-          const momentum = i > 0 ? (currentPrice - (result[i - 1] || currentPrice)) * 0.3 : 0;
-          const reversion = (targetPrice - currentPrice) * 0.15;
+          // Apply any events at this point
+          while (eventIdx < events.length && events[eventIdx].point <= i) {
+            currentPrice += events[eventIdx].priceChange;
+            eventIdx++;
+          }
 
-          currentPrice = currentPrice + reversion + noise + momentum;
-          currentPrice = Math.max(0.005, Math.min(0.95, currentPrice));
+          // Apply trend adjustments at specific points (creates discrete steps)
+          while (trendIdx < trendPoints.length && trendPoints[trendIdx] <= i) {
+            currentPrice += trendPerStep;
+            trendIdx++;
+          }
+
+          // Clamp price
+          currentPrice = Math.max(0.03, Math.min(0.80, currentPrice));
           result.push(currentPrice);
         }
+
+        // Ensure exact end price
         result[result.length - 1] = fixedEndPrice;
         return result;
       };
