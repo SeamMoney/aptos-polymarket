@@ -16,7 +16,7 @@ export const mockMarkets: Market[] = [
   {
     id: "republican-2028",
     question: "Who will be the Republican Presidential Nominee in 2028?",
-    image: "https://images.unsplash.com/photo-1540910419892-4a36d2c3266c?w=200",
+    image: "https://polymarket-upload.s3.us-east-2.amazonaws.com/republicans+2028.png",
     yesPrice: 0.54,
     noPrice: 0.46,
     volume: "$19.8K",
@@ -40,7 +40,7 @@ export const mockMarkets: Market[] = [
   {
     id: "wlfi-charter",
     question: "Will WLFI receive OCC banking charter in 2026?",
-    image: "https://images.unsplash.com/photo-1541354329998-f4d9a9f9297f?w=200",
+    image: "https://polymarket-upload.s3.us-east-2.amazonaws.com/wlfi.png",
     yesPrice: 0.42,
     noPrice: 0.58,
     volume: "$2.1M",
@@ -62,7 +62,7 @@ export const mockMarkets: Market[] = [
   {
     id: "greenland",
     question: "Will Trump acquire Greenland before 2027?",
-    image: "https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=200",
+    image: "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-trump-acquire-greenland-in-2025-5ZDkcIGhdBMW.jpg",
     yesPrice: 0.16,
     noPrice: 0.84,
     volume: "$4.2M",
@@ -83,7 +83,7 @@ export const mockMarkets: Market[] = [
   {
     id: "fed-chair",
     question: "Who will Trump nominate as Fed Chair?",
-    image: "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=200",
+    image: "https://polymarket-upload.s3.us-east-2.amazonaws.com/who-will-trump-nominate-as-fed-chair-9p19ttRwsbKL.png",
     yesPrice: 0.41,
     noPrice: 0.59,
     volume: "$153M",
@@ -125,7 +125,7 @@ export const mockMarkets: Market[] = [
   {
     id: "china-taiwan",
     question: "Will China invade Taiwan in 2026?",
-    image: "https://images.unsplash.com/photo-1513628253939-010e64ac66cd?w=200",
+    image: "https://polymarket-upload.s3.us-east-2.amazonaws.com/china-invades-taiwan-in-2025-CCSd9dX2mrea.jpg",
     yesPrice: 0.14,
     noPrice: 0.86,
     volume: "$5.2M",
@@ -144,7 +144,7 @@ export const mockMarkets: Market[] = [
   {
     id: "russia-ukraine",
     question: "Russia-Ukraine ceasefire by Q2 2026?",
-    image: "https://images.unsplash.com/photo-1646548168566-84ca6a431f8f?w=200",
+    image: "https://polymarket-upload.s3.us-east-2.amazonaws.com/russia-x-ukraine-ceasefire-in-2025-w2voYOygx80B.jpg",
     yesPrice: 0.04,
     noPrice: 0.96,
     volume: "$10.2M",
@@ -166,7 +166,7 @@ export const mockMarkets: Market[] = [
   {
     id: "venezuela",
     question: "Venezuela leadership end of 2026?",
-    image: "https://images.unsplash.com/photo-1589519160732-57fc498494f8?w=200",
+    image: "https://polymarket-upload.s3.us-east-2.amazonaws.com/venezuela-leader-end-of-2026-lOfqbUxiKAsg.png",
     yesPrice: 0.52,
     noPrice: 0.48,
     volume: "$2.4M",
@@ -190,7 +190,7 @@ export const mockMarkets: Market[] = [
   {
     id: "fed-jan-2026",
     question: "Fed rate decision January 2026?",
-    image: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=200",
+    image: "https://polymarket-upload.s3.us-east-2.amazonaws.com/jerome+powell+glasses1.png",
     yesPrice: 0.87,
     noPrice: 0.13,
     volume: "$8.4M",
@@ -211,7 +211,7 @@ export const mockMarkets: Market[] = [
   {
     id: "btc-q1-2026",
     question: "Bitcoin price end of Q1 2026?",
-    image: "https://images.unsplash.com/photo-1518546305927-5a555bb7020d?w=200",
+    image: "https://polymarket-upload.s3.us-east-2.amazonaws.com/BTC+fullsize.png",
     yesPrice: 0.42,
     noPrice: 0.58,
     volume: "$17.2M",
@@ -233,7 +233,7 @@ export const mockMarkets: Market[] = [
   {
     id: "btc-150k",
     question: "Will Bitcoin hit $150K before 2027?",
-    image: "https://images.unsplash.com/photo-1621761191319-c6fb62004040?w=200",
+    image: "https://polymarket-upload.s3.us-east-2.amazonaws.com/BTC+fullsize.png",
     yesPrice: 0.21,
     noPrice: 0.79,
     volume: "$24.6M",

@@ -537,7 +537,7 @@ export function OutcomeDetail() {
           }`}
         >
           <img
-            src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Seal_of_the_United_States_Federal_Reserve_System.svg/200px-Seal_of_the_United_States_Federal_Reserve_System.svg.png"
+            src={outcome?.image || market?.image || "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=200"}
             alt=""
             className="w-10 h-10 rounded-full mr-3 object-cover bg-poly-surface"
           />
@@ -705,12 +705,56 @@ export function OutcomeDetail() {
             </div>
           </div>
 
-          {/* X-axis labels */}
+          {/* X-axis labels - dynamic based on timeRange */}
           <div className="flex justify-between mt-2 pr-12">
-            <span className="text-[#6b7a8a] text-xs">Sep</span>
-            <span className="text-[#6b7a8a] text-xs">Oct</span>
-            <span className="text-[#6b7a8a] text-xs">Nov</span>
-            <span className="text-[#6b7a8a] text-xs">Dec</span>
+            {(() => {
+              const now = new Date();
+              const labels: string[] = [];
+
+              if (timeRange === "1H") {
+                // Show minutes: -60min to now
+                for (let i = 0; i < 4; i++) {
+                  const mins = 60 - (i * 20);
+                  labels.push(mins === 0 ? "Now" : `-${mins}m`);
+                }
+              } else if (timeRange === "6H") {
+                // Show hours
+                for (let i = 0; i < 4; i++) {
+                  const hrs = 6 - (i * 2);
+                  labels.push(hrs === 0 ? "Now" : `-${hrs}h`);
+                }
+              } else if (timeRange === "1D") {
+                // Show hours in day
+                for (let i = 0; i < 4; i++) {
+                  const d = new Date(now.getTime() - (24 - i * 8) * 60 * 60 * 1000);
+                  labels.push(d.toLocaleTimeString('en-US', { hour: 'numeric' }));
+                }
+              } else if (timeRange === "1W") {
+                // Show days of week
+                for (let i = 0; i < 4; i++) {
+                  const d = new Date(now.getTime() - (7 - i * 2) * 24 * 60 * 60 * 1000);
+                  labels.push(d.toLocaleDateString('en-US', { weekday: 'short' }));
+                }
+              } else if (timeRange === "1M") {
+                // Show weeks
+                for (let i = 0; i < 4; i++) {
+                  const d = new Date(now.getTime() - (30 - i * 10) * 24 * 60 * 60 * 1000);
+                  labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+                }
+              } else {
+                // ALL/MAX - show months
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const currentMonth = now.getMonth();
+                for (let i = 0; i < 4; i++) {
+                  const monthIdx = (currentMonth - 3 + i + 12) % 12;
+                  labels.push(months[monthIdx]);
+                }
+              }
+
+              return labels.map((label, i) => (
+                <span key={i} className="text-[#6b7a8a] text-xs">{label}</span>
+              ));
+            })()}
           </div>
         </div>
 
@@ -778,8 +822,22 @@ export function OutcomeDetail() {
         >
           <h3 className="text-white text-base mb-2">Rules</h3>
           <p className="text-poly-textSecondary text-sm leading-5">
-            This market will resolve according to the next individual appointed to be Chair of the Federal Reserve by
-            the President of the United States.
+            {market?.question?.toLowerCase().includes('fed chair') || market?.question?.toLowerCase().includes('trump nominate')
+              ? `This market will resolve according to the next individual appointed to be Chair of the Federal Reserve by the President of the United States.`
+              : market?.question?.toLowerCase().includes('khamenei') || market?.question?.toLowerCase().includes('iran')
+              ? `This market will resolve to "${outcome?.name}" if Khamenei is no longer Iran's Supreme Leader by that date.`
+              : market?.question?.toLowerCase().includes('bitcoin') || market?.question?.toLowerCase().includes('btc')
+              ? `This market will resolve based on the price of Bitcoin at the specified end date.`
+              : market?.question?.toLowerCase().includes('republican') || market?.question?.toLowerCase().includes('nominee')
+              ? `This market will resolve to the candidate who wins the Republican Presidential Nomination.`
+              : market?.question?.toLowerCase().includes('ceasefire') || market?.question?.toLowerCase().includes('russia') || market?.question?.toLowerCase().includes('ukraine')
+              ? `This market will resolve based on whether a ceasefire is announced by the specified end date.`
+              : market?.question?.toLowerCase().includes('china') || market?.question?.toLowerCase().includes('taiwan')
+              ? `This market will resolve based on whether China invades Taiwan by the specified end date.`
+              : market?.question?.toLowerCase().includes('greenland')
+              ? `This market will resolve based on whether the US acquires Greenland by the specified end date.`
+              : `This market will resolve based on the outcome of: "${market?.question}"`
+            }
           </p>
         </div>
       </div>

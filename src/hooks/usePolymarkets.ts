@@ -26,29 +26,40 @@ const CATEGORY_IMAGES: Record<string, string> = {
   default: 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=200',
 };
 
-// Special market images (for specific markets by keyword)
+// Special market images (for specific markets by keyword) - using actual Polymarket images
 const SPECIAL_MARKET_IMAGES: Record<string, string> = {
-  'republican': '/images/republican-elephant.png',
+  // Politics
+  'republican': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/republicans+2028.png',
+  'nominee 2028': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/republicans+2028.png',
+  'third term': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/trump-announce-hes-run-for-3rd-term-xNfqKj-FDMLz.jpg',
+  '3rd term': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/trump-announce-hes-run-for-3rd-term-xNfqKj-FDMLz.jpg',
+  'insurrection act': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/trump-invokes-the-insurrection-act-before-august-jR3s2WWoaIbY.jpg',
+  'midterm': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/will-the-2026-midterm-elections-happen-as-scheduled-Yu4FtUsATBIb.jpg',
   // Trump/WLFI markets
-  'wlfi': 'https://images.unsplash.com/photo-1541354329998-f4d9a9f9297f?w=200',
-  'banking charter': 'https://images.unsplash.com/photo-1541354329998-f4d9a9f9297f?w=200',
-  'greenland': 'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=200',
-  'fed chair': 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=200',
+  'wlfi': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/wlfi.png',
+  'world liberty': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/wlfi.png',
+  'banking charter': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/wlfi.png',
+  'greenland': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/will-trump-acquire-greenland-in-2025-5ZDkcIGhdBMW.jpg',
+  'fed chair': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/who-will-trump-nominate-as-fed-chair-9p19ttRwsbKL.png',
+  'nominate as fed': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/who-will-trump-nominate-as-fed-chair-9p19ttRwsbKL.png',
   // Geopolitics
-  'khamenei': 'https://images.unsplash.com/photo-1565967511849-76a60a516170?w=200',
-  'iran': 'https://images.unsplash.com/photo-1565967511849-76a60a516170?w=200',
-  'taiwan': 'https://images.unsplash.com/photo-1513628253939-010e64ac66cd?w=200',
-  'china invade': 'https://images.unsplash.com/photo-1513628253939-010e64ac66cd?w=200',
-  'ukraine': 'https://images.unsplash.com/photo-1646548168566-84ca6a431f8f?w=200',
-  'russia': 'https://images.unsplash.com/photo-1646548168566-84ca6a431f8f?w=200',
-  'ceasefire': 'https://images.unsplash.com/photo-1646548168566-84ca6a431f8f?w=200',
-  'venezuela': 'https://images.unsplash.com/photo-1589519160732-57fc498494f8?w=200',
+  'khamenei': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg',
+  'iran': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg',
+  'supreme leader': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg',
+  'taiwan': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/china-invades-taiwan-in-2025-CCSd9dX2mrea.jpg',
+  'china invade': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/china-invades-taiwan-in-2025-CCSd9dX2mrea.jpg',
+  'ukraine': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/russia-x-ukraine-ceasefire-in-2025-w2voYOygx80B.jpg',
+  'russia': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/russia-x-ukraine-ceasefire-in-2025-w2voYOygx80B.jpg',
+  'ceasefire': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/russia-x-ukraine-ceasefire-in-2025-w2voYOygx80B.jpg',
+  'venezuela': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/venezuela-leader-end-of-2026-lOfqbUxiKAsg.png',
   // Crypto/Economic
-  'bitcoin': 'https://images.unsplash.com/photo-1518546305927-5a555bb7020d?w=200',
-  'btc': 'https://images.unsplash.com/photo-1518546305927-5a555bb7020d?w=200',
-  '$150k': 'https://images.unsplash.com/photo-1621761191319-c6fb62004040?w=200',
-  'fed rate': 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=200',
-  'fomc': 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=200',
+  'bitcoin': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/BTC+fullsize.png',
+  'btc': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/BTC+fullsize.png',
+  '$150k': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/BTC+fullsize.png',
+  '$100k': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/BTC+fullsize.png',
+  'fed rate': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/jerome+powell+glasses1.png',
+  'fomc': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/jerome+powell+glasses1.png',
+  'rate decision': 'https://polymarket-upload.s3.us-east-2.amazonaws.com/jerome+powell+glasses1.png',
 };
 
 // Candidate/person face images for outcomes
