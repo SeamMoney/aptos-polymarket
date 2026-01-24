@@ -1520,11 +1520,11 @@ export function MarketDetail() {
         </div>
       </div>
 
-      {/* Sticky Buy Yes/No buttons at bottom - Polymarket style for binary/Khamenei markets */}
+      {/* Sticky Buy Yes/No buttons above bottom navbar - Polymarket style */}
       {isKhameneiMarket && (
         <div
-          className="fixed bottom-0 left-0 right-0 z-50 px-4 py-3"
-          style={{ backgroundColor: '#1c2b3a', borderTop: '1px solid #2c3f4f' }}
+          className="fixed left-0 right-0 z-50 px-4 py-3"
+          style={{ backgroundColor: '#1c2b3a', borderTop: '1px solid #2c3f4f', bottom: '60px' }}
         >
           <div className="max-w-4xl mx-auto flex gap-3">
             {(() => {
