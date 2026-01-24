@@ -45,8 +45,8 @@ function extractMarketAddress(id: string | undefined): string {
 // This allows mock UI markets to trade on real contracts
 const MOCK_TO_REAL_ADDRESS: Record<string, string> = {
   // Khamenei "When will Khamenei no longer be Iran's Supreme Leader?"
-  "iran-khamenei": "0xcbdddcf6206d2b5956b6c7c6a10d4ac1d6253a2c1c151e8b3af113d8e940f9dc",
-  "iran-khamenei-binary": "0xcbdddcf6206d2b5956b6c7c6a10d4ac1d6253a2c1c151e8b3af113d8e940f9dc",
+  "iran-khamenei": "0xcbdddcf6206d2b5956b6c7c6a10d4ac1d6253a2c1c151e8b3af113d8e940f01f",
+  "iran-khamenei-binary": "0xcbdddcf6206d2b5956b6c7c6a10d4ac1d6253a2c1c151e8b3af113d8e940f01f",
 };
 
 function getMockToRealAddress(id: string): string | null {
@@ -919,20 +919,21 @@ export function MarketDetail() {
               {/* Past dropdown button like Polymarket */}
               <button
                 onClick={() => setSelectedKhameneiDate("Past")}
-                className="shrink-0 flex items-center gap-1 transition-all"
+                className="shrink-0 flex items-center justify-center gap-1 transition-all"
                 style={{
-                  padding: '5px 10px',
+                  padding: '0px 8px 0px 16px',
+                  height: '32px',
                   borderRadius: '9999px',
-                  fontSize: '12px',
-                  fontWeight: 500,
+                  fontSize: '16px',
+                  fontWeight: 700,
                   fontFamily: '"Open Sauce One", sans-serif',
                   backgroundColor: selectedKhameneiDate === "Past" ? '#ffffff' : '#2f3f50',
-                  color: selectedKhameneiDate === "Past" ? '#1a1a1a' : '#c9d1d9',
-                  border: selectedKhameneiDate === "Past" ? '1px solid #ffffff' : '1px solid #3d5266',
+                  color: selectedKhameneiDate === "Past" ? '#1a1a1a' : '#ffffff',
+                  border: 'none',
                 }}
               >
                 Past
-                <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
@@ -941,16 +942,17 @@ export function MarketDetail() {
                 <button
                   key={`${date}-${index}`}
                   onClick={() => setSelectedKhameneiDate(date)}
-                  className="shrink-0 transition-all"
+                  className="shrink-0 flex items-center justify-center transition-all"
                   style={{
-                    padding: '5px 10px',
+                    padding: '0px 12px',
+                    height: '32px',
                     borderRadius: '9999px',
-                    fontSize: '12px',
-                    fontWeight: 500,
+                    fontSize: '16px',
+                    fontWeight: 700,
                     fontFamily: '"Open Sauce One", sans-serif',
                     backgroundColor: selectedKhameneiDate === date ? '#ffffff' : '#2f3f50',
-                    color: selectedKhameneiDate === date ? '#1a1a1a' : '#c9d1d9',
-                    border: selectedKhameneiDate === date ? '1px solid #ffffff' : '1px solid #3d5266',
+                    color: selectedKhameneiDate === date ? '#1a1a1a' : '#ffffff',
+                    border: 'none',
                   }}
                 >
                   {date}
@@ -958,20 +960,21 @@ export function MarketDetail() {
               ))}
               {/* More dropdown like Polymarket */}
               <button
-                className="shrink-0 flex items-center gap-1 transition-all"
+                className="shrink-0 flex items-center justify-center gap-1 transition-all"
                 style={{
-                  padding: '5px 10px',
+                  padding: '0px 8px 0px 16px',
+                  height: '32px',
                   borderRadius: '9999px',
-                  fontSize: '12px',
-                  fontWeight: 500,
+                  fontSize: '16px',
+                  fontWeight: 700,
                   fontFamily: '"Open Sauce One", sans-serif',
                   backgroundColor: '#2f3f50',
-                  color: '#c9d1d9',
-                  border: '1px solid #3d5266',
+                  color: '#ffffff',
+                  border: 'none',
                 }}
               >
                 More
-                <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
@@ -1224,39 +1227,41 @@ export function MarketDetail() {
                     <span className="text-white pt-1" style={{ fontSize: '28px', fontWeight: 500, fontFamily: '"Open Sauce One", sans-serif' }}>{yesPrice}%</span>
                   </button>
 
-                  {/* Buy Yes / Buy No buttons - Polymarket style */}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleBuyYes(outcome)}
-                      className="flex-1 hover:opacity-80 transition-opacity"
-                      style={{
-                        padding: '8px 16px',
-                        borderRadius: '5.6px',
-                        fontSize: '14px',
-                        fontWeight: 500,
-                        fontFamily: '"Open Sauce One", sans-serif',
-                        color: '#43c773',
-                        backgroundColor: 'rgba(67, 199, 115, 0.15)',
-                      }}
-                    >
-                      Buy Yes {yesPriceDisplay}¢
-                    </button>
-                    <button
-                      onClick={() => handleBuyNo(outcome)}
-                      className="flex-1 hover:opacity-80 transition-opacity"
-                      style={{
-                        padding: '8px 16px',
-                        borderRadius: '5.6px',
-                        fontSize: '14px',
-                        fontWeight: 500,
-                        fontFamily: '"Open Sauce One", sans-serif',
-                        color: '#e13737',
-                        backgroundColor: 'rgba(225, 55, 55, 0.15)',
-                      }}
-                    >
-                      Buy No {noPriceDisplay}¢
-                    </button>
-                  </div>
+                  {/* Buy Yes / Buy No buttons - hide for Khamenei market since bottom bar handles it */}
+                  {!isKhameneiMarket && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleBuyYes(outcome)}
+                        className="flex-1 hover:opacity-80 transition-opacity"
+                        style={{
+                          padding: '8px 16px',
+                          borderRadius: '5.6px',
+                          fontSize: '14px',
+                          fontWeight: 500,
+                          fontFamily: '"Open Sauce One", sans-serif',
+                          color: '#43c773',
+                          backgroundColor: 'rgba(67, 199, 115, 0.15)',
+                        }}
+                      >
+                        Buy Yes {yesPriceDisplay}¢
+                      </button>
+                      <button
+                        onClick={() => handleBuyNo(outcome)}
+                        className="flex-1 hover:opacity-80 transition-opacity"
+                        style={{
+                          padding: '8px 16px',
+                          borderRadius: '5.6px',
+                          fontSize: '14px',
+                          fontWeight: 500,
+                          fontFamily: '"Open Sauce One", sans-serif',
+                          color: '#e13737',
+                          backgroundColor: 'rgba(225, 55, 55, 0.15)',
+                        }}
+                      >
+                        Buy No {noPriceDisplay}¢
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1522,54 +1527,57 @@ export function MarketDetail() {
           style={{ backgroundColor: '#1c2b3a', borderTop: '1px solid #2c3f4f' }}
         >
           <div className="max-w-4xl mx-auto flex gap-3">
-            <button
-              onClick={() => {
-                setTradeType('yes');
-                setShowTradingSheet(true);
-              }}
-              className="flex-1 py-3 rounded-lg transition-opacity hover:opacity-90"
-              style={{
-                backgroundColor: '#43c773',
-                fontSize: '16px',
-                fontWeight: 600,
-                fontFamily: '"Open Sauce One", sans-serif',
-                color: '#ffffff',
-              }}
-            >
-              Buy Yes {(() => {
-                const dateToOutcome: Record<string, number> = {
-                  "Jan 31": 0, "Mar 31": 1, "Jun 30": 2, "Dec 31": 3, "Past": 0
-                };
-                const outcomeIdx = dateToOutcome[selectedKhameneiDate] ?? 1;
-                const livePrice = tradeCurrentPrices[outcomeIdx];
-                const displayPrice = livePrice !== undefined ? livePrice : (KHAMENEI_LATEST[selectedKhameneiDate] || 0);
-                return `${Math.round(displayPrice * 100)}¢`;
-              })()}
-            </button>
-            <button
-              onClick={() => {
-                setTradeType('no');
-                setShowTradingSheet(true);
-              }}
-              className="flex-1 py-3 rounded-lg transition-opacity hover:opacity-90"
-              style={{
-                backgroundColor: '#e13737',
-                fontSize: '16px',
-                fontWeight: 600,
-                fontFamily: '"Open Sauce One", sans-serif',
-                color: '#ffffff',
-              }}
-            >
-              Buy No {(() => {
-                const dateToOutcome: Record<string, number> = {
-                  "Jan 31": 0, "Mar 31": 1, "Jun 30": 2, "Dec 31": 3, "Past": 0
-                };
-                const outcomeIdx = dateToOutcome[selectedKhameneiDate] ?? 1;
-                const livePrice = tradeCurrentPrices[outcomeIdx];
-                const displayPrice = livePrice !== undefined ? livePrice : (KHAMENEI_LATEST[selectedKhameneiDate] || 0);
-                return `${100 - Math.round(displayPrice * 100)}¢`;
-              })()}
-            </button>
+            {(() => {
+              // Map selected date to outcome index
+              const dateToOutcome: Record<string, number> = {
+                "Jan 31": 0, "Mar 31": 1, "Jun 30": 2, "Dec 31": 3, "Past": 0
+              };
+              const outcomeIdx = dateToOutcome[selectedKhameneiDate] ?? 1;
+              const outcome = market?.outcomes?.[outcomeIdx];
+              const livePrice = tradeCurrentPrices[outcomeIdx];
+              const displayPrice = livePrice !== undefined ? livePrice : (KHAMENEI_LATEST[selectedKhameneiDate] || 0);
+              const yesPrice = Math.round(displayPrice * 100);
+              const noPrice = 100 - yesPrice;
+
+              return (
+                <>
+                  <button
+                    onClick={() => {
+                      if (outcome) setSelectedOutcome(outcome);
+                      setTradeType('yes');
+                      setShowTradingSheet(true);
+                    }}
+                    className="flex-1 py-3 rounded-lg transition-opacity hover:opacity-90"
+                    style={{
+                      backgroundColor: '#43c773',
+                      fontSize: '16px',
+                      fontWeight: 600,
+                      fontFamily: '"Open Sauce One", sans-serif',
+                      color: '#ffffff',
+                    }}
+                  >
+                    Buy Yes {yesPrice}¢
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (outcome) setSelectedOutcome(outcome);
+                      setTradeType('no');
+                      setShowTradingSheet(true);
+                    }}
+                    className="flex-1 py-3 rounded-lg transition-opacity hover:opacity-90"
+                    style={{
+                      backgroundColor: '#e13737',
+                      fontSize: '16px',
+                      fontWeight: 600,
+                      fontFamily: '"Open Sauce One", sans-serif',
+                      color: '#ffffff',
+                    }}
+                  >
+                    Buy No {noPrice}¢
+                  </button>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
