@@ -405,22 +405,22 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
               />
             ))}
 
-            {/* Polymarket watermark - top right corner away from chart data */}
-            <g opacity={0.15}>
+            {/* Polymarket watermark - top right corner of chart grid, larger and visible */}
+            <g opacity={0.25}>
               <image
                 href="/images/icon-white.svg"
-                x={width - 120}
-                y={8}
+                x={width - 115}
+                y={6}
                 width={20}
                 height={20}
               />
               <text
-                x={width - 96}
-                y={22}
+                x={width - 92}
+                y={20}
                 fill="#ffffff"
-                fontSize={11}
+                fontSize={13}
                 fontWeight={500}
-                fontFamily="system-ui, -apple-system, sans-serif"
+                fontFamily='"Open Sauce One", system-ui, -apple-system, sans-serif'
               >
                 Polymarket
               </text>
@@ -432,7 +432,7 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
               const isHighlighted = !highlightedOutcomeId || highlightedOutcomeId === id;
               const lineColor = isHighlighted ? color : "#4a5568";
               const lineOpacity = isHighlighted ? 1 : 0.4;
-              const lineWidth = isHighlighted ? 2.5 : 1.5;
+              const lineWidth = isHighlighted ? 1.8 : 1.2;
 
               return (
                 <g key={id} style={{ opacity: lineOpacity, transition: 'opacity 0.2s ease' }}>
@@ -545,11 +545,11 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
                 </>
               );
             }
-            default: // MAX - Real data spans Nov 2025 to Jan 2026
+            default: // MAX - Real data spans Dec 2025 to Jan 2026 (matching Polymarket)
               return (
                 <>
-                  <span className="text-poly-textMuted text-xs">Nov</span>
-                  <span className="text-poly-textMuted text-xs">Jan</span>
+                  <span className="text-poly-textMuted text-xs">Dec 28</span>
+                  <span className="text-poly-textMuted text-xs">Jan 11</span>
                 </>
               );
           }

@@ -1,15 +1,14 @@
 import type { Market, Category } from "./types";
 
 export const categories: Category[] = [
-  "All",
+  "All",       // Displays as "Trending"
   "Breaking",
   "New",
   "Politics",
+  "Sports",
   "Crypto",
-  "Business",
+  "Finance",
   "World",
-  "Science",
-  "Culture",
 ];
 
 export const mockMarkets: Market[] = [
@@ -107,7 +106,7 @@ export const mockMarkets: Market[] = [
   {
     id: "iran-khamenei-binary",
     question: "Khamenei out as Iran Supreme Leader by June 2026?",
-    image: "https://images.unsplash.com/photo-1565967511849-76a60a516170?w=200",
+    image: "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
     yesPrice: 0.35,
     noPrice: 0.65,
     volume: "$164.9K",
@@ -255,7 +254,7 @@ export const mockMarkets: Market[] = [
   {
     id: "iran-khamenei",
     question: "When will Khamenei no longer be Iran's Supreme Leader?",
-    image: "https://images.unsplash.com/photo-1565967511849-76a60a516170?w=200",
+    image: "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
     yesPrice: 0.615,
     noPrice: 0.385,
     volume: "$10.8M",

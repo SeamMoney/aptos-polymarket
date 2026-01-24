@@ -45,6 +45,7 @@ export type Category =
   | "Politics"
   | "Sports"
   | "Crypto"
+  | "Finance"
   | "Business"
   | "Science"
   | "Culture"

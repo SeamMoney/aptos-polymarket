@@ -225,24 +225,26 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
     }
   }, [connected, isOpen, onClose]);
 
-  // Use the official groupAndSortWallets function from wallet adapter
-  // Important: Pass both wallets and notDetectedWallets for proper grouping
-  const { petraWebWallets, availableWallets, installableWallets } = groupAndSortWallets(
-    [...(wallets || []), ...notDetectedWallets]
-  );
+  // Memoize wallet grouping and filtering to prevent lag on modal open
+  const { petraWebWallets, aptosWallets, solanaWallets, ethereumWallets, aptosInstallable, solanaInstallable, ethereumInstallable } = useMemo(() => {
+    const { petraWebWallets, availableWallets, installableWallets } = groupAndSortWallets(
+      [...(wallets || []), ...notDetectedWallets]
+    );
 
-  // Separate cross-chain wallets (Solana/Ethereum) from Aptos wallets
-  const aptosWallets = availableWallets.filter(w =>
-    !w.name.includes('Solana') && !w.name.includes('Ethereum')
-  );
-  const solanaWallets = availableWallets.filter(w => w.name.includes('Solana'));
-  const ethereumWallets = availableWallets.filter(w => w.name.includes('Ethereum'));
-
-  const aptosInstallable = installableWallets.filter(w =>
-    !w.name.includes('Solana') && !w.name.includes('Ethereum')
-  );
-  const solanaInstallable = installableWallets.filter(w => w.name.includes('Solana'));
-  const ethereumInstallable = installableWallets.filter(w => w.name.includes('Ethereum'));
+    return {
+      petraWebWallets,
+      aptosWallets: availableWallets.filter(w =>
+        !w.name.includes('Solana') && !w.name.includes('Ethereum')
+      ),
+      solanaWallets: availableWallets.filter(w => w.name.includes('Solana')),
+      ethereumWallets: availableWallets.filter(w => w.name.includes('Ethereum')),
+      aptosInstallable: installableWallets.filter(w =>
+        !w.name.includes('Solana') && !w.name.includes('Ethereum')
+      ),
+      solanaInstallable: installableWallets.filter(w => w.name.includes('Solana')),
+      ethereumInstallable: installableWallets.filter(w => w.name.includes('Ethereum')),
+    };
+  }, [wallets, notDetectedWallets]);
 
   if (!isOpen) return null;
 
@@ -265,7 +267,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
         >
           {/* Header */}
           <div className="relative p-6 pb-4">
-            <div className="absolute inset-0 overflow-hidden">
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[300px] h-[150px] bg-gradient-to-b from-[#60a5fa]/20 via-[#22c55e]/10 to-transparent rounded-full blur-3xl" />
             </div>
 
@@ -447,7 +449,9 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
               )}
 
               {/* Empty state */}
-              {petraWebWallets.length === 0 && availableWallets.length === 0 && installableWallets.length === 0 && (
+              {petraWebWallets.length === 0 &&
+               aptosWallets.length === 0 && solanaWallets.length === 0 && ethereumWallets.length === 0 &&
+               aptosInstallable.length === 0 && solanaInstallable.length === 0 && ethereumInstallable.length === 0 && (
                 <div className="text-center py-8 text-[#6b7a8a]">
                   No wallets available
                 </div>

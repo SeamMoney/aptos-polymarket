@@ -58,7 +58,7 @@ const getRpcEndpoints = (): string[] => {
 };
 
 // Run modes
-type RunMode = 'dryrun' | 'light' | 'normal' | 'turbo' | 'quantum';
+type RunMode = 'dryrun' | 'light' | 'normal' | 'turbo' | 'quantum' | 'max2k';
 
 const MODE_CONFIGS: Record<RunMode, {
   batchSize: number;
@@ -96,11 +96,17 @@ const MODE_CONFIGS: Record<RunMode, {
     fireAndForgetRatio: 0.90,
     targetTps: 5000,
   },
+  max2k: {
+    batchSize: 25,            // Smaller batches for 2000 accounts
+    batchDelayMs: 30,         // Slightly more delay for stability
+    fireAndForgetRatio: 0.90, // High fire-and-forget
+    targetTps: 8000,          // Target 8K TPS with 2000 accounts
+  },
 };
 
 function resolveMode(): RunMode {
   const argMode = process.argv[2];
-  if (['dryrun', 'light', 'normal', 'turbo', 'quantum'].includes(argMode)) {
+  if (['dryrun', 'light', 'normal', 'turbo', 'quantum', 'max2k'].includes(argMode)) {
     return argMode as RunMode;
   }
   return 'quantum';
@@ -112,7 +118,20 @@ const MODE_CONFIG = MODE_CONFIGS[RUN_MODE];
 // Account configuration
 const ACCOUNT_COUNT = parseInt(process.env.ACCOUNT_COUNT || '500');
 const ACCOUNT_START_INDEX = parseInt(process.env.ACCOUNT_START_INDEX || '0'); // Offset for parallel demos
-const WORKER_COUNT = parseInt(process.env.WORKER_COUNT || '4');
+
+// Worker count with smart defaults based on account count
+function getRecommendedWorkerCount(accountCount: number): number {
+  if (accountCount <= 500) return 4;
+  if (accountCount <= 1000) return 6;
+  if (accountCount <= 2000) return 8;
+  return 16; // Max 16 workers
+}
+
+const DEFAULT_WORKER_COUNT = getRecommendedWorkerCount(ACCOUNT_COUNT);
+const WORKER_COUNT = Math.min(
+  parseInt(process.env.WORKER_COUNT || String(DEFAULT_WORKER_COUNT)),
+  16 // Cap at 16 workers
+);
 const USE_ORDERLESS = process.env.USE_ORDERLESS !== 'false'; // Default true
 const USE_USD1 = process.env.USE_USD1 === 'true';
 const USD1_METADATA = process.env.USD1_METADATA || null;

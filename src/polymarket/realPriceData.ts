@@ -436,6 +436,7 @@ export const REAL_PRICE_HISTORY: RealPricePoint[] = [
 
 // Latest prices (January 2026)
 export const LATEST_REAL_PRICES: Record<string, number> = {
+  // VP Nominee market
   "J.D. Vance": 0.55,
   "Marco Rubio": 0.068,
   "Donald Trump": 0.043,
@@ -444,4 +445,60 @@ export const LATEST_REAL_PRICES: Record<string, number> = {
   "Donald Trump Jr.": 0.02,
   // Khamenei - from real CSV data
   "Mar 31": 0.495,  // Latest from CSV: 49.5%
+  // Fed Chair market - real Polymarket prices (Jan 2026)
+  "Rick Rieder": 0.502,
+  "Kevin Warsh": 0.31,
+  "Christopher Waller": 0.078,
+  "Kevin Hassett": 0.06,
+  "Scott Bessent": 0.027,
+  "Judy Shelton": 0.014,
+  "Michelle Bowman": 0.009,
+  "Stephen Miran": 0.005,
+  "Powell Stays": 0.002,  // Jerome Powell staying
+  "Other": 0.003,
+};
+
+// Fed Chair historical price data (simulated based on real Polymarket trends)
+// Shows Rick Rieder surge from ~5% to 50%, Kevin Warsh decline from ~45% to 31%
+export const FED_CHAIR_PRICE_HISTORY: RealPricePoint[] = [
+  // Early December 2025 - Kevin Warsh leading
+  { timestamp: 1764547211, prices: { "Rick Rieder": 0.05, "Kevin Warsh": 0.45, "Christopher Waller": 0.15, "Kevin Hassett": 0.20 } },
+  { timestamp: 1764720012, prices: { "Rick Rieder": 0.06, "Kevin Warsh": 0.44, "Christopher Waller": 0.14, "Kevin Hassett": 0.19 } },
+  { timestamp: 1764892810, prices: { "Rick Rieder": 0.07, "Kevin Warsh": 0.43, "Christopher Waller": 0.13, "Kevin Hassett": 0.18 } },
+  { timestamp: 1765065623, prices: { "Rick Rieder": 0.08, "Kevin Warsh": 0.42, "Christopher Waller": 0.12, "Kevin Hassett": 0.17 } },
+  // Mid December - Rick Rieder starts rising
+  { timestamp: 1765238420, prices: { "Rick Rieder": 0.12, "Kevin Warsh": 0.40, "Christopher Waller": 0.11, "Kevin Hassett": 0.15 } },
+  { timestamp: 1765411210, prices: { "Rick Rieder": 0.15, "Kevin Warsh": 0.38, "Christopher Waller": 0.10, "Kevin Hassett": 0.14 } },
+  { timestamp: 1765584011, prices: { "Rick Rieder": 0.18, "Kevin Warsh": 0.37, "Christopher Waller": 0.10, "Kevin Hassett": 0.12 } },
+  { timestamp: 1765756811, prices: { "Rick Rieder": 0.22, "Kevin Warsh": 0.36, "Christopher Waller": 0.09, "Kevin Hassett": 0.11 } },
+  // Late December - Major shift begins
+  { timestamp: 1765929607, prices: { "Rick Rieder": 0.28, "Kevin Warsh": 0.35, "Christopher Waller": 0.09, "Kevin Hassett": 0.10 } },
+  { timestamp: 1766102411, prices: { "Rick Rieder": 0.32, "Kevin Warsh": 0.34, "Christopher Waller": 0.08, "Kevin Hassett": 0.09 } },
+  { timestamp: 1766275210, prices: { "Rick Rieder": 0.35, "Kevin Warsh": 0.33, "Christopher Waller": 0.08, "Kevin Hassett": 0.08 } },
+  { timestamp: 1766448011, prices: { "Rick Rieder": 0.38, "Kevin Warsh": 0.32, "Christopher Waller": 0.08, "Kevin Hassett": 0.07 } },
+  // Early January 2026 - Rick Rieder surges to lead
+  { timestamp: 1766620821, prices: { "Rick Rieder": 0.42, "Kevin Warsh": 0.32, "Christopher Waller": 0.08, "Kevin Hassett": 0.07 } },
+  { timestamp: 1766793612, prices: { "Rick Rieder": 0.45, "Kevin Warsh": 0.31, "Christopher Waller": 0.08, "Kevin Hassett": 0.06 } },
+  { timestamp: 1766966428, prices: { "Rick Rieder": 0.47, "Kevin Warsh": 0.31, "Christopher Waller": 0.08, "Kevin Hassett": 0.06 } },
+  { timestamp: 1767139211, prices: { "Rick Rieder": 0.48, "Kevin Warsh": 0.31, "Christopher Waller": 0.08, "Kevin Hassett": 0.06 } },
+  // Mid January 2026 - Rick Rieder consolidates lead
+  { timestamp: 1767312011, prices: { "Rick Rieder": 0.49, "Kevin Warsh": 0.31, "Christopher Waller": 0.08, "Kevin Hassett": 0.06 } },
+  { timestamp: 1767484812, prices: { "Rick Rieder": 0.50, "Kevin Warsh": 0.31, "Christopher Waller": 0.08, "Kevin Hassett": 0.06 } },
+  { timestamp: 1767657615, prices: { "Rick Rieder": 0.50, "Kevin Warsh": 0.31, "Christopher Waller": 0.078, "Kevin Hassett": 0.06 } },
+  { timestamp: 1767830428, prices: { "Rick Rieder": 0.502, "Kevin Warsh": 0.31, "Christopher Waller": 0.078, "Kevin Hassett": 0.06 } },
+];
+
+// Fed Chair candidate names (top 4 for display)
+export const FED_CHAIR_CANDIDATES = ["Rick Rieder", "Kevin Warsh", "Christopher Waller", "Kevin Hassett"];
+
+// Fed Chair candidate colors
+export const FED_CHAIR_COLORS: Record<string, string> = {
+  "Rick Rieder": "#4abe7a",      // Green - leading
+  "Kevin Warsh": "#5b9cf6",      // Blue
+  "Christopher Waller": "#f5a623", // Orange
+  "Kevin Hassett": "#00bcd4",    // Cyan
+  "Scott Bessent": "#9c27b0",    // Purple
+  "Judy Shelton": "#e91e63",     // Pink
+  "Powell Stays": "#607d8b",     // Gray
+  "Other": "#795548",            // Brown
 };

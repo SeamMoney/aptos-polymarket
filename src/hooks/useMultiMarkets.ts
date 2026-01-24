@@ -14,8 +14,9 @@ const EXPLICIT_MARKETS = import.meta.env.VITE_MULTI_MARKETS?.split(',').filter(B
 // RPC endpoints in priority order (custom fullnode first, Aptos Labs fallback)
 const RPC_ENDPOINTS = [
   'https://aptos.cash.trading/v1',      // Custom fullnode - no rate limits
+  import.meta.env.VITE_RPC_URL || 'https://api.testnet.aptoslabs.com/v1',
   'https://api.testnet.aptoslabs.com/v1', // Aptos Labs fallback
-];
+].filter((v, i, a) => a.indexOf(v) === i); // Dedupe
 
 // Create Aptos client for a specific endpoint
 function createAptosClient(fullnode: string): Aptos {
@@ -61,23 +62,58 @@ interface MultiMarket {
 }
 
 // Module-level cache to persist markets across page navigations
-// This prevents refetching when navigating between pages
 interface MarketCache {
   markets: MultiMarket[];
   timestamp: number;
   walletAddress?: string;
 }
 let marketCache: MarketCache | null = null;
-const CACHE_TTL_MS = 5000; // Cache valid for 5 seconds (reduced from 10s for faster updates)
+const CACHE_TTL_MS = 5000; // Memory cache valid for 5 seconds
+
+// LocalStorage cache for instant load on return visits
+const LS_CACHE_KEY = 'aptos_markets_cache';
+const LS_CACHE_TTL_MS = 60 * 60 * 1000; // localStorage cache valid for 1 hour
+
+function loadFromLocalStorage(): MarketCache | null {
+  try {
+    const cached = localStorage.getItem(LS_CACHE_KEY);
+    if (!cached) return null;
+    const parsed = JSON.parse(cached) as MarketCache;
+    // Check if cache is still valid (1 hour)
+    if (Date.now() - parsed.timestamp > LS_CACHE_TTL_MS) {
+      localStorage.removeItem(LS_CACHE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveToLocalStorage(cache: MarketCache): void {
+  try {
+    localStorage.setItem(LS_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // localStorage might be full or disabled
+  }
+}
 
 export function useMultiMarkets() {
   const { account } = useWallet();
   const walletAddress = account?.address?.toString();
 
-  // Initialize from cache if valid (wallet-independent for initial render)
+  // Initialize from cache if valid (memory first, then localStorage for instant load)
   const getInitialMarkets = (): MultiMarket[] => {
+    // Try memory cache first (fastest)
     if (marketCache && Date.now() - marketCache.timestamp < CACHE_TTL_MS) {
       return marketCache.markets;
+    }
+    // Try localStorage for instant load on return visits
+    const lsCache = loadFromLocalStorage();
+    if (lsCache && lsCache.markets.length > 0) {
+      // Populate memory cache from localStorage
+      marketCache = lsCache;
+      return lsCache.markets;
     }
     return [];
   };
@@ -95,7 +131,7 @@ export function useMultiMarkets() {
       return;
     }
 
-    // Skip fetch if cache is still valid and has all markets (unless force refresh)
+    // Skip fetch if MEMORY cache is still valid (fresh data from this session)
     const expectedMarketCount = EXPLICIT_MARKETS.length || 15;
     if (!forceRefresh && marketCache &&
         Date.now() - marketCache.timestamp < CACHE_TTL_MS &&
@@ -105,7 +141,14 @@ export function useMultiMarkets() {
       return;
     }
 
+    // If we have localStorage cache, we already showed it - now refresh in background
+    // Don't show loading spinner since we have data to display
+    const hasLocalStorageData = markets.length > 0;
+
     fetchInProgressRef.current = true;
+    if (!hasLocalStorageData) {
+      setLoading(true);
+    }
 
     try {
       // Use explicit market addresses if configured, otherwise try registry
@@ -142,8 +185,9 @@ export function useMultiMarkets() {
         3: 'optimistic',
       };
 
-      // Fetch all markets in PARALLEL for speed, with endpoint failover
-      const fetchSingleMarket = async (addr: string, endpointIndex = 0): Promise<MultiMarket | null> => {
+      // Fetch single market with retries and endpoint failover
+      const fetchSingleMarket = async (addr: string, endpointIndex = 0, retryCount = 0): Promise<MultiMarket | null> => {
+        const MAX_RETRIES = 2;
         const client = endpointIndex === 0 ? aptos : createAptosClient(RPC_ENDPOINTS[endpointIndex]);
 
         try {
@@ -237,50 +281,63 @@ export function useMultiMarkets() {
         } catch (err) {
           // Try next endpoint on failure
           if (endpointIndex < RPC_ENDPOINTS.length - 1) {
-            return fetchSingleMarket(addr, endpointIndex + 1);
+            return fetchSingleMarket(addr, endpointIndex + 1, 0);
           }
-          console.error(`Error fetching market ${addr} (all endpoints failed):`, err);
+          // Retry on same endpoint chain
+          if (retryCount < MAX_RETRIES) {
+            await new Promise(r => setTimeout(r, 200 * (retryCount + 1)));
+            return fetchSingleMarket(addr, 0, retryCount + 1);
+          }
+          console.error(`Error fetching market ${addr} (all retries failed):`, err);
           return null;
         }
       };
 
-      // Fetch ALL markets in parallel - no rate limits on custom fullnode
-      const results = await Promise.all(marketAddresses.map(fetchSingleMarket));
-      const fetchedMarkets = results.filter((m): m is MultiMarket => m !== null);
+      // Fetch markets in batches to avoid overwhelming slow connections
+      // Progressive loading: update UI after each batch for faster perceived load
+      const BATCH_SIZE = 5;
+      const BATCH_DELAY_MS = 50;
+      const allResults: (MultiMarket | null)[] = [];
 
-      // Only update state if we got all markets or more than we currently have
-      // This prevents rate-limited fetches from overwriting good data
+      for (let i = 0; i < marketAddresses.length; i += BATCH_SIZE) {
+        const batch = marketAddresses.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.all(batch.map(addr => fetchSingleMarket(addr)));
+        allResults.push(...batchResults);
+
+        // Progressive update: show markets as they load
+        const loadedSoFar = allResults.filter((m): m is MultiMarket => m !== null);
+        if (loadedSoFar.length > 0) {
+          setMarkets(prev => {
+            // Merge new markets with existing, avoiding duplicates
+            const existingAddrs = new Set(prev.map(m => m.address));
+            const newMarkets = loadedSoFar.filter(m => !existingAddrs.has(m.address));
+            return [...prev, ...newMarkets].sort((a, b) => a.question.localeCompare(b.question));
+          });
+          setLoading(false); // Stop showing loading spinner once we have some data
+        }
+
+        // Small delay between batches (except last)
+        if (i + BATCH_SIZE < marketAddresses.length) {
+          await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+        }
+      }
+
+      const fetchedMarkets = allResults.filter((m): m is MultiMarket => m !== null);
       console.log('[Markets] Fetch complete:', fetchedMarkets.length, 'of', marketAddresses.length);
-      setMarkets(prevMarkets => {
-        let newMarkets: MultiMarket[];
-        let shouldCache = false;
 
-        if (fetchedMarkets.length >= marketAddresses.length) {
-          // Got all markets, update and cache
-          newMarkets = fetchedMarkets;
-          shouldCache = true;
-        } else if (fetchedMarkets.length > prevMarkets.length) {
-          // Got more than before, update but don't cache (partial data)
-          newMarkets = fetchedMarkets;
-        } else if (prevMarkets.length === 0) {
-          // First load, use whatever we got but don't cache (partial data)
-          newMarkets = fetchedMarkets;
-        } else {
-          // Rate-limited fetch returned fewer markets, keep existing data
-          return prevMarkets;
-        }
-
-        // Only cache when we have all markets
-        if (shouldCache) {
-          marketCache = {
-            markets: newMarkets,
-            timestamp: Date.now(),
-            walletAddress,
-          };
-        }
-
-        return newMarkets;
-      });
+      // Final state update and caching
+      if (fetchedMarkets.length >= marketAddresses.length) {
+        // Got all markets - cache them in memory and localStorage
+        const sortedMarkets = fetchedMarkets.sort((a, b) => a.question.localeCompare(b.question));
+        setMarkets(sortedMarkets);
+        const newCache = {
+          markets: sortedMarkets,
+          timestamp: Date.now(),
+          walletAddress,
+        };
+        marketCache = newCache;
+        saveToLocalStorage(newCache);  // Persist for instant load on return visits
+      }
       setError(null);
     } catch (err) {
       console.error('Error fetching multi-outcome markets:', err);

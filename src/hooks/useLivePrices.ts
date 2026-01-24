@@ -5,11 +5,11 @@ const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xca4d40eae9f
 // Default market address (first from VITE_MULTI_MARKETS) - used only as fallback
 const DEFAULT_MARKET_ADDRESS = import.meta.env.VITE_MULTI_MARKETS?.split(',')[0] || "0x3e690f317df664c413e12b15eaa6e5565606fbd46628464f84f93e0674a3c052";
 
-// RPC endpoints in priority order (custom fullnode first, Aptos Labs fallback)
+// RPC endpoints in priority order
 const RPC_ENDPOINTS = [
-  'https://aptos.cash.trading/v1',      // Custom fullnode - no rate limits
+  import.meta.env.VITE_RPC_URL || 'https://api.testnet.aptoslabs.com/v1',
   'https://api.testnet.aptoslabs.com/v1', // Aptos Labs fallback
-];
+].filter((v, i, a) => a.indexOf(v) === i); // Dedupe
 
 // Create Aptos clients for failover
 const aptosClients = RPC_ENDPOINTS.map(url => new Aptos(new AptosConfig({

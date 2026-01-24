@@ -7,42 +7,42 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Official Polymarket colors (poly-* prefix)
+        // Official Polymarket colors (poly-* prefix) - extracted from polymarket.com
         'poly': {
-          // Background colors
-          'bg': '#1c2b3a',
-          'card': '#243447',
-          'cardHover': '#2a3d52',
-          'surface': '#243447',
-          'surfaceHover': '#2a3d52',
-          'bgElevated': '#2a3d52',
-          // Border colors
-          'border': '#30363D',
-          'borderLight': '#3D444D',
+          // Background colors (exact from Polymarket)
+          'bg': '#1d2b3a',
+          'card': '#2f3f50',
+          'cardHover': '#364858',
+          'surface': '#2f3f50',
+          'surfaceHover': '#364858',
+          'bgElevated': '#364858',
+          // Border colors (exact from Polymarket)
+          'border': '#3d5266',
+          'borderLight': '#4a6278',
           // Brand colors
           'blue': '#2E5CFF',
           'blueHover': '#2451E0',
-          // Trading colors
-          'green': '#00D295',
-          'greenHover': '#00BA85',
-          'red': '#FF6B6B',
-          'redHover': '#E85555',
-          // Text colors
+          // Trading colors (exact from Polymarket)
+          'green': '#43c773',
+          'greenHover': '#3ab866',
+          'red': '#e13737',
+          'redHover': '#d42e2e',
+          // Text colors (exact from Polymarket)
           'textPrimary': '#FFFFFF',
-          'textSecondary': '#8B949E',
-          'textMuted': '#6E7681',
+          'textSecondary': '#8297a3',
+          'textMuted': '#8297a3',
           // UI elements
-          'inputBg': '#1c2b3a',
-          'pillBg': '#243447',
-          'pillSelected': '#2a3d52',
+          'inputBg': '#1d2b3a',
+          'pillBg': '#2f3f50',
+          'pillSelected': '#364858',
           'cyan': '#2E5CFF',
         },
-        // Legacy poly colors (for backwards compatibility)
-        'poly-green': '#00D295',
-        'poly-red': '#FF6B6B',
-        'poly-dark': '#1c2b3a',
-        'poly-card': '#243447',
-        'poly-border': '#2c3f4f',
+        // Legacy poly colors (for backwards compatibility) - updated to exact Polymarket
+        'poly-green': '#43c773',
+        'poly-red': '#e13737',
+        'poly-dark': '#1d2b3a',
+        'poly-card': '#2f3f50',
+        'poly-border': '#3d5266',
         // Polymarket brand colors
         'pm': {
           'blue': '#1652f0',
@@ -50,14 +50,14 @@ export default {
           'secondary': '#2d9cdb',
           'accent': '#5d94ff',
         },
-        // Polymarket dark theme
+        // Polymarket dark theme (exact from Polymarket)
         'pm-dark': {
           'bg': '#1d2b3a',
-          'surface': '#2b3846',
-          'surface-2': '#2c3f50',
-          'surface-3': '#344452',
-          'surface-4': '#425464',
-          'border': '#2c3f4f',
+          'surface': '#2f3f50',
+          'surface-2': '#364858',
+          'surface-3': '#3d5266',
+          'surface-4': '#4a6278',
+          'border': '#3d5266',
         },
         // Polymarket light theme
         'pm-light': {
@@ -67,17 +67,17 @@ export default {
           'hover': '#edeff1',
           'border': '#e6e8ea',
         },
-        // Polymarket trading colors
+        // Polymarket trading colors (exact from Polymarket)
         'pm-yes': {
-          'DEFAULT': '#27ae60',
-          'bright': '#00b955',
-          'bg': 'rgba(39, 174, 96, 0.1)',
+          'DEFAULT': '#43c773',
+          'bright': '#4ed97f',
+          'bg': 'rgba(67, 199, 115, 0.15)',
         },
         'pm-no': {
-          'DEFAULT': '#eb5757',
+          'DEFAULT': '#e13737',
           'orange': '#e64800',
-          'bright': '#f9452c',
-          'bg': 'rgba(235, 87, 87, 0.1)',
+          'bright': '#f04040',
+          'bg': 'rgba(225, 55, 55, 0.15)',
         },
         // Polymarket text
         'pm-text': {

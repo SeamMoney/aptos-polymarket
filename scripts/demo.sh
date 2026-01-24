@@ -5,12 +5,16 @@
 # Simplified demo script for 2000-account high TPS demos
 #
 # Usage:
+#   ./scripts/demo.sh preflight         # Pre-flight validation
+#   ./scripts/demo.sh preflight --dual  # Pre-flight with transfer checks
 #   ./scripts/demo.sh standby           # AMM only (2000 accounts)
 #   ./scripts/demo.sh standby --dual    # AMM + USD1 transfers (1500 + 500)
 #   ./scripts/demo.sh launch N          # Trigger N-second demo
 #   ./scripts/demo.sh stop              # Stop all workers
 #   ./scripts/demo.sh status            # Check all workers
 #   ./scripts/demo.sh logs              # View worker logs
+#   ./scripts/demo.sh collect           # Collect results from workers
+#   ./scripts/demo.sh analyze           # Run post-run analysis
 #   ./scripts/demo.sh deploy            # Deploy latest code to VMs
 #
 
@@ -613,6 +617,77 @@ cmd_collect() {
 }
 
 # ============================================
+# PREFLIGHT COMMAND
+# ============================================
+
+cmd_preflight() {
+    print_header "PRE-FLIGHT CHECK FOR 2000 ACCOUNTS"
+
+    if ! get_seed_mnemonic; then
+        exit 1
+    fi
+
+    local PREFLIGHT_ARGS=""
+    if [ "$DUAL_MODE" = true ]; then
+        PREFLIGHT_ARGS="--dual"
+    fi
+
+    echo "Running comprehensive pre-flight validation..."
+    echo ""
+
+    SEED_MNEMONIC="${SEED_MNEMONIC}" \
+    ACCOUNT_COUNT=2000 \
+    AMM_ACCOUNTS=1500 \
+    FULLNODE_URL="${INTERNAL_VFN}" \
+    CONTRACT_ADDRESS="${CONTRACT_ADDRESS}" \
+    MULTI_MARKETS="${MULTI_MARKETS}" \
+    npx tsx scripts/pre-flight-2000.ts $PREFLIGHT_ARGS
+
+    local EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 0 ]; then
+        echo -e "${GREEN}Pre-flight check passed!${NC}"
+    else
+        echo -e "${RED}Pre-flight check failed. Fix issues before demo.${NC}"
+    fi
+
+    return $EXIT_CODE
+}
+
+# ============================================
+# ANALYZE COMMAND
+# ============================================
+
+cmd_analyze() {
+    print_header "POST-RUN ANALYSIS"
+
+    local TARGET="${1:-}"
+    local ANALYZE_ARGS=""
+
+    if [ -n "$TARGET" ]; then
+        if [ -f "$TARGET" ]; then
+            ANALYZE_ARGS="$TARGET"
+        elif [ -d "$TARGET" ]; then
+            # If it's a directory, look for all-amm.json
+            if [ -f "$TARGET/all-amm.json" ]; then
+                ANALYZE_ARGS="$TARGET/all-amm.json"
+            fi
+        fi
+    fi
+
+    echo "Running unified post-run analysis..."
+    echo ""
+
+    npx tsx scripts/auto-analyze.ts $ANALYZE_ARGS
+
+    local EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 0 ]; then
+        echo -e "${GREEN}Analysis complete!${NC}"
+    else
+        echo -e "${YELLOW}Analysis completed with warnings${NC}"
+    fi
+}
+
+# ============================================
 # DEPLOY COMMAND
 # ============================================
 
@@ -669,6 +744,9 @@ for arg in "$@"; do
 done
 
 case "${ARGS[0]:-help}" in
+    preflight)
+        cmd_preflight
+        ;;
     standby)
         cmd_standby
         ;;
@@ -687,6 +765,9 @@ case "${ARGS[0]:-help}" in
     collect)
         cmd_collect
         ;;
+    analyze)
+        cmd_analyze "${ARGS[1]:-}"
+        ;;
     deploy)
         cmd_deploy
         ;;
@@ -695,6 +776,8 @@ case "${ARGS[0]:-help}" in
         echo "Usage: ./scripts/demo.sh <command> [options]"
         echo ""
         echo "Commands:"
+        echo "  preflight            Pre-flight check (validates all 2000 accounts)"
+        echo "  preflight --dual     Pre-flight with transfer account checks"
         echo "  standby              Start AMM workers (2000 accounts)"
         echo "  standby --dual       Start AMM + Transfer workers (1500 + 500)"
         echo "  launch [N]           Trigger N-second demo (default: 60)"
@@ -703,13 +786,15 @@ case "${ARGS[0]:-help}" in
         echo "  status               Check worker status"
         echo "  logs                 View worker logs"
         echo "  collect              Collect results from all workers"
+        echo "  analyze [path]       Run unified post-run analysis"
         echo "  deploy               Deploy latest code to VMs"
         echo ""
-        echo "Demo Workflow (Dual - MAX TPS):"
-        echo "  1. ./scripts/demo.sh standby --dual"
-        echo "  2. ./scripts/demo.sh launch 60 --dual"
-        echo "  3. ./scripts/demo.sh collect"
-        echo "  4. npx tsx scripts/analyze-tps.ts --minutes 5"
+        echo "Full Demo Workflow:"
+        echo "  1. ./scripts/demo.sh preflight --dual  # Validate setup"
+        echo "  2. ./scripts/demo.sh standby --dual    # Start workers"
+        echo "  3. ./scripts/demo.sh launch 60 --dual  # Run demo"
+        echo "  4. ./scripts/demo.sh collect           # Gather results"
+        echo "  5. ./scripts/demo.sh analyze           # Run analysis"
         echo ""
         ;;
 esac

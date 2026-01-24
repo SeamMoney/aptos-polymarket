@@ -13,10 +13,47 @@ import { subscribeToTrades, type LiveTrade } from './useLiveTrades';
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea';
 
 // RPC client for fetching current prices
+const RPC_URL = import.meta.env.VITE_RPC_URL || 'https://api.testnet.aptoslabs.com/v1';
 const aptos = new Aptos(new AptosConfig({
   network: Network.TESTNET,
-  fullnode: 'https://aptos.cash.trading/v1',
+  fullnode: RPC_URL,
 }));
+
+// LocalStorage cache for trade history
+const LS_TRADE_HISTORY_PREFIX = 'trade_history_';
+const LS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+interface TradeHistoryCache {
+  priceHistory: TradePricePoint[];
+  currentPrices: number[];
+  tradesProcessed: number;
+  timestamp: number;
+}
+
+function loadTradeHistoryFromLS(marketAddress: string): TradeHistoryCache | null {
+  try {
+    const key = LS_TRADE_HISTORY_PREFIX + marketAddress.slice(0, 16);
+    const cached = localStorage.getItem(key);
+    if (!cached) return null;
+    const parsed = JSON.parse(cached) as TradeHistoryCache;
+    if (Date.now() - parsed.timestamp > LS_CACHE_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveTradeHistoryToLS(marketAddress: string, cache: TradeHistoryCache): void {
+  try {
+    const key = LS_TRADE_HISTORY_PREFIX + marketAddress.slice(0, 16);
+    localStorage.setItem(key, JSON.stringify(cache));
+  } catch {
+    // Storage full or disabled
+  }
+}
 
 export interface TradePricePoint {
   timestamp: number;
@@ -166,24 +203,48 @@ export function useTradePriceHistory(
   outcomeCount: number = 4,
   pollInterval: number = 5000
 ): UseTradePriceHistoryReturn {
-  const [priceHistory, setPriceHistory] = useState<TradePricePoint[]>([]);
-  const [currentPrices, setCurrentPrices] = useState<number[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Initialize from localStorage cache for instant load
+  const getInitialState = () => {
+    if (!marketAddress) return { priceHistory: [], currentPrices: [], tradesProcessed: 0 };
+    const cached = loadTradeHistoryFromLS(marketAddress);
+    if (cached) {
+      return {
+        priceHistory: cached.priceHistory,
+        currentPrices: cached.currentPrices,
+        tradesProcessed: cached.tradesProcessed,
+      };
+    }
+    return { priceHistory: [], currentPrices: [], tradesProcessed: 0 };
+  };
+
+  const initial = getInitialState();
+  const [priceHistory, setPriceHistory] = useState<TradePricePoint[]>(initial.priceHistory);
+  const [currentPrices, setCurrentPrices] = useState<number[]>(initial.currentPrices);
+  const [isLoading, setIsLoading] = useState(initial.priceHistory.length === 0);
   const [error, setError] = useState<string | null>(null);
-  const [tradesProcessed, setTradesProcessed] = useState(0);
+  const [tradesProcessed, setTradesProcessed] = useState(initial.tradesProcessed);
 
   const lastMarketRef = useRef<string | undefined>(marketAddress);
-  const lastTradeCountRef = useRef<number>(0);
+  const lastTradeCountRef = useRef<number>(initial.tradesProcessed);
 
-  // Reset when market changes
+  // Reset when market changes - but try to load from cache first
   useEffect(() => {
     if (lastMarketRef.current !== marketAddress) {
-      setPriceHistory([]);
-      setCurrentPrices([]);
-      setIsLoading(true);
+      const cached = marketAddress ? loadTradeHistoryFromLS(marketAddress) : null;
+      if (cached) {
+        setPriceHistory(cached.priceHistory);
+        setCurrentPrices(cached.currentPrices);
+        setTradesProcessed(cached.tradesProcessed);
+        setIsLoading(false);
+        lastTradeCountRef.current = cached.tradesProcessed;
+      } else {
+        setPriceHistory([]);
+        setCurrentPrices([]);
+        setIsLoading(true);
+        setTradesProcessed(0);
+        lastTradeCountRef.current = 0;
+      }
       setError(null);
-      setTradesProcessed(0);
-      lastTradeCountRef.current = 0;
       lastMarketRef.current = marketAddress;
     }
   }, [marketAddress]);
@@ -229,8 +290,17 @@ export function useTradePriceHistory(
             console.log(`[TradePriceHistory] Latest prices: ${last.prices.map(p => (p * 100).toFixed(1) + '%').join(', ')}`);
           }
 
-          setPriceHistory(history.slice(-MAX_HISTORY_POINTS));
+          const trimmedHistory = history.slice(-MAX_HISTORY_POINTS);
+          setPriceHistory(trimmedHistory);
           setTradesProcessed(trades.length);
+
+          // Cache to localStorage for instant load on return
+          saveTradeHistoryToLS(marketAddress, {
+            priceHistory: trimmedHistory,
+            currentPrices: currentNormalizedPrices,
+            tradesProcessed: trades.length,
+            timestamp: Date.now(),
+          });
         }
       }
 
@@ -273,6 +343,53 @@ export function useTradePriceHistory(
     error,
     tradesProcessed,
   }), [priceHistory, currentPrices, isLoading, error, tradesProcessed]);
+}
+
+// In-flight prefetch promises to avoid duplicate requests
+const prefetchPromises = new Map<string, Promise<void>>();
+
+/**
+ * Pre-fetch trade history for a market (call on hover/visibility)
+ * This warms up the cache so the market detail page loads instantly
+ */
+export async function prefetchTradeHistory(marketAddress: string, outcomeCount: number = 4): Promise<void> {
+  // Check if already cached
+  const cached = loadTradeHistoryFromLS(marketAddress);
+  if (cached) return;
+
+  // Check if already fetching
+  const existing = prefetchPromises.get(marketAddress);
+  if (existing) return existing;
+
+  const fetchPromise = (async () => {
+    try {
+      const trades = await fetchLatestTrades(marketAddress, 200);
+      const currentPrices = await fetchCurrentPrices(marketAddress);
+
+      if (trades.length > 0) {
+        const oc = currentPrices.length || outcomeCount;
+        let history = replayTrades(trades, oc);
+
+        if (history.length > 0 && currentPrices.length > 0) {
+          history.push({ timestamp: Date.now(), prices: [...currentPrices] });
+        }
+
+        saveTradeHistoryToLS(marketAddress, {
+          priceHistory: history.slice(-MAX_HISTORY_POINTS),
+          currentPrices,
+          tradesProcessed: trades.length,
+          timestamp: Date.now(),
+        });
+      }
+    } catch (err) {
+      console.warn('[Prefetch] Failed to prefetch trade history:', err);
+    } finally {
+      prefetchPromises.delete(marketAddress);
+    }
+  })();
+
+  prefetchPromises.set(marketAddress, fetchPromise);
+  return fetchPromise;
 }
 
 /**

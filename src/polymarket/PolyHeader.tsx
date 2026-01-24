@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { ChevronDown, Wallet, LogOut, Copy, Check, Loader2, RefreshCw } from "lucide-react";
+import { ChevronDown, LogOut, Copy, Check, Loader2, RefreshCw } from "lucide-react";
 import { WalletSelector, getWalletIcon } from "../components/WalletSelector";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 
 // Polymarket P logo without background (white version)
 function PolymarketLogo() {
   return (
-    <svg width="36" height="36" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2">
+    <svg width="42" height="42" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2">
       <path d="M375.84 389.422C375.84 403.572 375.84 410.647 371.212 414.154C366.585 417.662 359.773 415.75 346.15 411.927L127.22 350.493C119.012 348.19 114.907 347.038 112.534 343.907C110.161 340.776 110.161 336.513 110.161 327.988V184.012C110.161 175.487 110.161 171.224 112.534 168.093C114.907 164.962 119.012 163.81 127.22 161.507L346.15 100.072C359.773 96.2495 366.585 94.338 371.212 97.8455C375.84 101.353 375.84 108.428 375.84 122.578V389.422ZM164.761 330.463L346.035 381.337V279.595L164.761 330.463ZM139.963 306.862L321.201 256L139.963 205.138V306.862ZM164.759 181.537L346.035 232.406V130.663L164.759 181.537Z" fill="white"/>
     </svg>
   );
@@ -241,14 +241,14 @@ export function PolyHeader() {
   };
 
   return (
-    <header className="sticky top-0 z-[60] px-4 py-2 flex items-center justify-between border-b border-[#2c3f4f]" style={{ backgroundColor: '#1c2b3a' }}>
+    <header className="sticky top-0 z-[60] px-4 py-2 flex items-center justify-between" style={{ backgroundColor: '#1c2b3a' }}>
       {/* Logo */}
       <button
         onClick={() => navigate("/polymarket")}
         className="flex items-center hover:opacity-90 transition-opacity"
       >
         <PolymarketLogo />
-        <span className="text-white text-lg font-bold tracking-tight">
+        <span className="text-white tracking-tight" style={{ fontSize: '20px', fontWeight: 700, fontFamily: '"Open Sauce One", sans-serif' }}>
           Polymarket
         </span>
       </button>
@@ -435,15 +435,16 @@ export function PolyHeader() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleLogin}
-            className="text-[#8297a3] hover:text-white text-sm font-medium transition-colors px-3 py-1.5"
+            className="hover:opacity-80 transition-colors"
+            style={{ color: '#2c9cdb', fontSize: '14px', fontWeight: 500, padding: '8px 16px', fontFamily: '"Open Sauce One", sans-serif' }}
           >
             Log In
           </button>
           <button
             onClick={handleLogin}
-            className="bg-[#289cdd] hover:bg-[#2089c4] px-3 py-1.5 rounded-md text-white text-sm font-semibold transition-colors flex items-center gap-1.5"
+            className="hover:opacity-90 transition-colors text-white"
+            style={{ backgroundColor: '#2c9cdb', borderRadius: '5.6px', padding: '8px 16px', fontSize: '14px', fontWeight: 500, fontFamily: '"Open Sauce One", sans-serif' }}
           >
-            <Wallet size={14} />
             Sign Up
           </button>
         </div>

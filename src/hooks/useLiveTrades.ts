@@ -7,11 +7,11 @@ const TRADES_STORAGE_KEY = 'polymarket_live_trades';
 const MAX_STORED_TRADES = 100;
 const TRADE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-// RPC endpoints in priority order (custom fullnode first, then Aptos Labs fallback)
+// RPC endpoints in priority order
 const RPC_ENDPOINTS = [
-  "https://aptos.cash.trading/v1",  // Custom fullnode - no rate limits
+  import.meta.env.VITE_RPC_URL || "https://api.testnet.aptoslabs.com/v1",
   "https://api.testnet.aptoslabs.com/v1",  // Aptos Labs fallback
-];
+].filter((v, i, a) => a.indexOf(v) === i); // Dedupe
 
 // Helper to fetch from RPC with failover
 async function fetchFromRpc(path: string): Promise<Response> {

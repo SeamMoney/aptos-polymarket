@@ -8,6 +8,8 @@
  */
 
 import { parentPort, workerData } from 'worker_threads';
+import http from 'http';
+import https from 'https';
 import {
   Aptos,
   AptosConfig,
@@ -19,6 +21,26 @@ import {
   deriveAccount,
   validateMnemonic,
 } from '../config/seed-accounts';
+
+// Configure HTTP agents for high-throughput connections
+// This increases the default socket limit from ~10 to 100 per origin
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: 100,           // Max 100 connections per origin
+  maxFreeSockets: 50,
+  timeout: 30_000,
+});
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 100,
+  maxFreeSockets: 50,
+  timeout: 30_000,
+});
+
+// Apply to global http/https module
+http.globalAgent = httpAgent;
+https.globalAgent = httpsAgent;
 
 // Worker configuration passed via workerData
 interface WorkerConfig {
