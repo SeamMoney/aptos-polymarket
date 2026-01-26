@@ -52,7 +52,11 @@ export function TradingSheet({
   const [txHash, setTxHash] = useState<string | null>(null);
   const [balance, setBalance] = useState<number>(0);
 
-  // Fetch wallet balance
+  // USD1 contract addresses for balance fetching
+  const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x1bd17a9cb5a55a414de956128e332f7744ef260bbdc49303a08105c986adbda3";
+  const USD1_METADATA = import.meta.env.VITE_USD1_METADATA || "0xa89bf8c3480600cf0b30914b3370fed8ebfd7a638df6a6edee0e45b2a1dfff82";
+
+  // Fetch USD1 wallet balance (not APT)
   useEffect(() => {
     const fetchBalance = async () => {
       if (!connected || !account?.address) {
@@ -63,22 +67,43 @@ export function TradingSheet({
         const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
         const address = account.address.toString();
 
+        // Fetch USD1 fungible asset balance
         try {
-          const faBalance = await aptos.getAccountAPTAmount({ accountAddress: address });
-          setBalance(faBalance / 100_000_000);
-        } catch {
-          // Fallback to legacy CoinStore
-          try {
-            const resources = await aptos.getAccountResource({
-              accountAddress: address,
-              resourceType: "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>",
-            });
-            const balanceOctas = (resources as any).coin?.value || 0;
-            setBalance(Number(balanceOctas) / 100_000_000);
-          } catch {
-            setBalance(0);
+          const balances = await aptos.getCurrentFungibleAssetBalances({
+            options: {
+              where: {
+                owner_address: { _eq: address },
+                asset_type: { _eq: USD1_METADATA },
+              },
+            },
+          });
+
+          if (balances.length > 0 && balances[0].amount) {
+            // USD1 has 8 decimals
+            setBalance(Number(balances[0].amount) / 100_000_000);
+            return;
           }
+        } catch (err) {
+          console.log("Fungible asset query failed, trying view function:", err);
         }
+
+        // Fallback: call view function directly
+        try {
+          const result = await aptos.view({
+            payload: {
+              function: `${CONTRACT_ADDRESS}::usd1::balance`,
+              functionArguments: [address],
+            },
+          });
+          if (result && result[0]) {
+            setBalance(Number(result[0]) / 100_000_000);
+            return;
+          }
+        } catch {
+          // No USD1 balance
+        }
+
+        setBalance(0);
       } catch {
         setBalance(0);
       }
@@ -87,7 +112,7 @@ export function TradingSheet({
     if (isVisible) {
       fetchBalance();
     }
-  }, [isVisible, connected, account?.address]);
+  }, [isVisible, connected, account?.address, CONTRACT_ADDRESS, USD1_METADATA]);
 
   // Reset state when sheet opens
   useEffect(() => {
@@ -214,6 +239,7 @@ export function TradingSheet({
           trader: account?.address?.toString() || '',
           marketAddress: marketAddr,
         };
+        console.log('[TradingSheet] Emitting trade:', { marketId: market.id, marketAddr, liveTrade });
         emitTrade(liveTrade);
       }
 
