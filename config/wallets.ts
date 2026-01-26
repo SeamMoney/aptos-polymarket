@@ -72,7 +72,7 @@ export const CONTRACTS = {
     "0xf85c7010d966bc6c3417e52a9b4d86b5f36117e51b43bf5c7a92f0468bac5497", // 3. Fed Chair Nomination
     "0xcbdddcf6206d2b5956b6c7c6a10d4ac1d6253a2c1c151e8b3af113d8e940f01f", // 4. Khamenei Iran
     "0xe128c8f16a0f07f48c69a38ac75868a2d5fdd9fbf3299958e9b1e2994a0b9f57", // 5. China Taiwan
-    "0xf60c218d500eb76c66a4a7fb6c6e5664847d5e9496016000fc953b5a89f6eb",   // 6. Russia-Ukraine
+    "0x00f60c218d500eb76c66a4a7fb6c6e5664847d5e9496016000fc953b5a89f6eb",   // 6. Russia-Ukraine
     "0x287968f6d26efbd291960455ce14e3723a48d32b3dc0a8c545d4603fe842e30f", // 7. Venezuela
     "0xa594c8df003cd232043b34beefe020af744f378ec367a7f65b89e306e06baacb", // 8. Fed Rate Jan 2026
     "0x310ccec449c57bf8972feab19c5cb8ba5004e2934e4fa1bd565fdbd1a44f4008", // 9. Bitcoin Q1 2026

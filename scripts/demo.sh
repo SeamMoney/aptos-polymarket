@@ -59,12 +59,18 @@ WORKER2_TRANSFER_COUNT=167
 WORKER3_TRANSFER_START=1834
 WORKER3_TRANSFER_COUNT=166
 
-# Contract Configuration
+# Contract Configuration (AMM-fixed contract, Jan 14 2026)
+# SYNCED WITH .env.local and .env.seed - DO NOT EDIT MANUALLY
 CONTRACT_ADDRESS="0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea"
-USD1_METADATA="0x4e977d5ee91d77d680972a44b38b9c7a2c5694439169eeae060a48324e5c4597"
+USD1_METADATA="0x14b1ec8a5f31554d0cd19c390be83444ed519be2d7108c3e27dcbc4230c01fa3"
 
-# Markets (15 total)
-MULTI_MARKETS="0xaf561030c7ebb22b1d8b99b727c27caab1f6944ce39c141fd2b6b0cfbf614a9e,0x1c5b4c6b0a8e1b9e8b6a4f3d2e1c0b9a8f7e6d5c4b3a2918f7e6d5c4b3a29180,0x2d6c5d7c1b9f2c0f9c7b5g4e3f2d1c0a9f8e7d6c5b4a3928f8e7d6c5b4a39281,0x3e7d6e8d2c0g3d1g0d8c6h5f4g3e2d1b0g9f8e7d6c5b4a3938g9f8e7d6c5b4a3,0x4f8e7f9e3d1h4e2h1e9d7i6g5h4f3e2c1h0g9f8e7d6c5b4a4948h0g9f8e7d6c5b,0x5g9f8g0f4e2i5f3i2f0e8j7h6i5g4f3d2i1h0g9f8e7d6c5b5a58i1h0g9f8e7d6c,0x6h0g9h1g5f3j6g4j3g1f9k8i7j6h5g4e3j2i1h0g9f8e7d6c6b68j2i1h0g9f8e7d,0x7i1h0i2h6g4k7h5k4h2g0l9j8k7i6h5f4k3j2i1h0g9f8e7d7c78k3j2i1h0g9f8e,0x8j2i1j3i7h5l8i6l5i3h1m0k9l8j7i6g5l4k3j2i1h0g9f8e8d88l4k3j2i1h0g9f,0x9k3j2k4j8i6m9j7m6j4i2n1l0m9k8j7h6m5l4k3j2i1h0g9f9e98m5l4k3j2i1h0g,0xal4k3l5k9j7n0k8n7k5j3o2m1n0l9k8i7n6m5l4k3j2i1h0ga0fa8n6m5l4k3j2i1h,0xbm5l4m6l0k8o1l9o8l6k4p3n2o1m0l9j8o7n6m5l4k3j2i1hb1gb8o7n6m5l4k3j2i,0xcn6m5n7m1l9p2m0p9m7l5q4o3p2n1m0k9p8o7n6m5l4k3j2ic2hc8p8o7n6m5l4k3j,0xdo7n6o8n2m0q3n1q0n8m6r5p4q3o2n1l0q9p8o7n6m5l4k3jd3id8q9p8o7n6m5l4k,0xep8o7p9o3n1r4o2r1o9n7s6q5r4p3o2m1r0q9p8o7n6m5l4ke4je8r0q9p8o7n6m5l"
+# 15 Polymarket-style markets on AMM-fixed contract
+# 1. WLFI Banking Charter     2. Trump Greenland        3. Fed Chair Nomination
+# 4. Khamenei Iran            5. China Taiwan           6. Russia-Ukraine (short addr)
+# 7. Venezuela                8. Fed Rate Jan 2026      9. Bitcoin Q1 2026
+# 10. Bitcoin $150K           11. BTC $100K Test        12. Insurrection Act 2026
+# 13. Midterm Elections 2026  14. Trump Third Term      15. Republican 2028 Nominee
+MULTI_MARKETS="0xaf561030c7ebb22b1d8b99b727c27caab1f6944ce39c141fd2b6b0cfbf614a9e,0xa4ee321c4c642e7b5a3e27b9820f2be4c17a1add79f8129122289fca2c3ca7c3,0xf85c7010d966bc6c3417e52a9b4d86b5f36117e51b43bf5c7a92f0468bac5497,0xcbdddcf6206d2b5956b6c7c6a10d4ac1d6253a2c1c151e8b3af113d8e940f01f,0xe128c8f16a0f07f48c69a38ac75868a2d5fdd9fbf3299958e9b1e2994a0b9f57,0x00f60c218d500eb76c66a4a7fb6c6e5664847d5e9496016000fc953b5a89f6eb,0x287968f6d26efbd291960455ce14e3723a48d32b3dc0a8c545d4603fe842e30f,0xa594c8df003cd232043b34beefe020af744f378ec367a7f65b89e306e06baacb,0x310ccec449c57bf8972feab19c5cb8ba5004e2934e4fa1bd565fdbd1a44f4008,0x8172b2cf4ba365d72fca8b899a54d3c9e2539d63bd2283aca55c0d032fc793f6,0xa550234b5784656e3f3d060134e36ab9a0eecc436d182452955c995984b3e67a,0x9dc3b78821f64119671d7918b824b3b3c4b0e2124643ebe6b1e587efe9591202,0xf508498afdecb2a2f6b40912efb1611b9fe9725e9c35521be5ff2bba3c187efa,0x289aabd338cf7a2bc48512927775b5e1218b15bd83c3c740c3ec43faccef5b21,0x8c4f0da1238adb4486d2a62ff08c85af331e022c1446445059059918d4361cd3"
 
 # RPC - Internal VFN for best TPS
 INTERNAL_VFN="http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1"

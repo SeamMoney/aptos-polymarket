@@ -29,15 +29,21 @@ WORKER_VM2_IP="147.182.237.239"  # Worker 2: 8 accounts (8-15)
 WORKER_VM3_IP="161.35.231.0"     # Worker 3: 5 accounts (16-20)
 WORKER_VM_USER="root"
 
-# TPS Optimized Contract (Table + snapshot pattern) - Jan 13, 2026
-CONTRACT_ADDRESS="0xda51d5f87be27cac0a1d72fe500da145c61b2356547ac811e0cd822c80f99a3b"
-USD1_METADATA="0xff7e7db4e38ce829a087d08d129585154bfed104d880486bc170d1464a504a8b"
+# AMM-Fixed Contract (per-outcome base_reserve) - Jan 14, 2026
+# SYNCED WITH .env.local - DO NOT EDIT MANUALLY, use config/wallets.ts as source of truth
+CONTRACT_ADDRESS="0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea"
+USD1_METADATA="0x14b1ec8a5f31554d0cd19c390be83444ed519be2d7108c3e27dcbc4230c01fa3"
 
-# 10 USD1-backed Polymarket-style markets (TPS optimized contract - Jan 13 NEW deployment)
-MULTI_MARKETS="0xdda603f5809b7e3c873f50ca06137e895883498836d3581894baa69d9e1e79e1,0x568914c73b8aed2a93c01f63dc6e9b7b8c923a5867d40e9a1f5445e6add8e7c0,0x10932ea9a3448eb137ed439ee236c4f76d41ce3e6c5afb61236cd246c0da568a,0xbbfcd32bfc2b653d94d17fcabb6f28f4ea30ada1e3643b3e8a3c8fd8b543b63b,0xbc2240693af5df6478d28d8b7530f1cd1ff99683a3fa1dbb05e989383d3e1257,0xcb0e753cfa2a03059ccabbd74c5818f5b64949b2379ae0cfc1c25255509ba6b2,0xe83d90a6e7229a6aabbbd67388bc34cfb5fada53000c7d2dc27ef98ba1f573d0,0x1267b37dd2c196a1ecf25318e146bc16a798a7da5c7ed99bfee8df5efc4bab24,0x3c704b2a85071b56360e6df0ce7ced87989d048c7f136cdeb679ac6936bdd69f,0x66523f60f28f17e86067ac52a8fa227a73fce050063951e964d540d39caf516c"
+# 15 Polymarket-style markets on AMM-fixed contract (from .env.local)
+# 1. WLFI Banking Charter     2. Trump Greenland        3. Fed Chair Nomination
+# 4. Khamenei Iran            5. China Taiwan           6. Russia-Ukraine (short addr)
+# 7. Venezuela                8. Fed Rate Jan 2026      9. Bitcoin Q1 2026
+# 10. Bitcoin $150K           11. BTC $100K Test        12. Insurrection Act 2026
+# 13. Midterm Elections 2026  14. Trump Third Term      15. Republican 2028 Nominee
+MULTI_MARKETS="0xaf561030c7ebb22b1d8b99b727c27caab1f6944ce39c141fd2b6b0cfbf614a9e,0xa4ee321c4c642e7b5a3e27b9820f2be4c17a1add79f8129122289fca2c3ca7c3,0xf85c7010d966bc6c3417e52a9b4d86b5f36117e51b43bf5c7a92f0468bac5497,0xcbdddcf6206d2b5956b6c7c6a10d4ac1d6253a2c1c151e8b3af113d8e940f01f,0xe128c8f16a0f07f48c69a38ac75868a2d5fdd9fbf3299958e9b1e2994a0b9f57,0x00f60c218d500eb76c66a4a7fb6c6e5664847d5e9496016000fc953b5a89f6eb,0x287968f6d26efbd291960455ce14e3723a48d32b3dc0a8c545d4603fe842e30f,0xa594c8df003cd232043b34beefe020af744f378ec367a7f65b89e306e06baacb,0x310ccec449c57bf8972feab19c5cb8ba5004e2934e4fa1bd565fdbd1a44f4008,0x8172b2cf4ba365d72fca8b899a54d3c9e2539d63bd2283aca55c0d032fc793f6,0xa550234b5784656e3f3d060134e36ab9a0eecc436d182452955c995984b3e67a,0x9dc3b78821f64119671d7918b824b3b3c4b0e2124643ebe6b1e587efe9591202,0xf508498afdecb2a2f6b40912efb1611b9fe9725e9c35521be5ff2bba3c187efa,0x289aabd338cf7a2bc48512927775b5e1218b15bd83c3c740c3ec43faccef5b21,0x8c4f0da1238adb4486d2a62ff08c85af331e022c1446445059059918d4361cd3"
 
 # First market (for backwards compatibility)
-MARKET_ADDRESS="0xdda603f5809b7e3c873f50ca06137e895883498836d3581894baa69d9e1e79e1"
+MARKET_ADDRESS="0xaf561030c7ebb22b1d8b99b727c27caab1f6944ce39c141fd2b6b0cfbf614a9e"
 
 # API Keys
 APTOS_API_KEY="AG-3JMDT54EN4DCLULDWAUXCYGQ56JJQCYHH"
