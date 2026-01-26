@@ -20,6 +20,7 @@ import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useHFTConnection } from "../hooks/useHFTConnection";
 import { useLivePrices } from "../hooks/useLivePrices";
 import { useTradePriceHistory } from "../hooks/useTradePriceHistory";
+import { useRealtimePrices } from "../hooks/useRealtimePrices";
 import { useLiveTrades, emitTrade, type LiveTrade } from "../hooks/useLiveTrades";
 import type { Category, Outcome } from "./types";
 import type { Trade } from "../hooks/useHFTConnection";
@@ -211,6 +212,17 @@ export function MarketDetail() {
     marketAddress,
     4,  // Support up to 4 outcomes (most common case) - hook handles dynamic
     5000  // Poll every 5 seconds
+  );
+
+  // HIGH-FREQUENCY real-time prices for order book (updates 3x per second)
+  const {
+    prices: realtimePrices,
+    totalCollateral: realtimeTvl,
+    updateCount: priceUpdateCount,
+  } = useRealtimePrices(
+    marketAddress,
+    300,  // Poll every 300ms = ~3 updates per second
+    !!marketAddress  // Only enable when we have a market address
   );
 
   // Live trades from blockchain polling - always enabled to show all trades
@@ -1184,25 +1196,30 @@ export function MarketDetail() {
         >
           <LiveOrderBook
             yesPrice={
-              // Use selected outcome's price
-              market?.outcomes?.[selectedOutcomeIndex]?.price
-                ? market.outcomes[selectedOutcomeIndex].price * 100
-                : hftMarketInfo?.yesPrice || market.yesPrice * 100
+              // Use REAL-TIME prices (updates 3x/sec) for live order book
+              realtimePrices.length > selectedOutcomeIndex
+                ? realtimePrices[selectedOutcomeIndex] * 100
+                : market?.outcomes?.[selectedOutcomeIndex]?.price
+                  ? market.outcomes[selectedOutcomeIndex].price * 100
+                  : hftMarketInfo?.yesPrice || market.yesPrice * 100
             }
             noPrice={
-              market?.outcomes?.[selectedOutcomeIndex]?.price
-                ? (1 - market.outcomes[selectedOutcomeIndex].price) * 100
-                : hftMarketInfo?.noPrice || market.noPrice * 100
+              realtimePrices.length > selectedOutcomeIndex
+                ? (1 - realtimePrices[selectedOutcomeIndex]) * 100
+                : market?.outcomes?.[selectedOutcomeIndex]?.price
+                  ? (1 - market.outcomes[selectedOutcomeIndex].price) * 100
+                  : hftMarketInfo?.noPrice || market.noPrice * 100
             }
             yesReserve={hftReserves.yesReserve}
             noReserve={hftReserves.noReserve}
             trades={combinedTrades}
-            isConnected={hftConnected || combinedTrades.length > 0}
+            isConnected={hftConnected || combinedTrades.length > 0 || priceUpdateCount > 0}
             isMultiOutcome={!!market?.outcomes}
-            tvl={tvl || 0}
+            tvl={realtimeTvl > 0 ? realtimeTvl : (tvl || 0)}
             outcomes={market?.outcomes?.map(o => o.name) || []}
             onLoadMore={loadMore}
             hasMore={hasMore}
+            updateCount={priceUpdateCount}
           />
         </div>
 

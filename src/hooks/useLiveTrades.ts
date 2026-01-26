@@ -258,7 +258,15 @@ export function useLiveTrades(
 
   // Add a trade directly (used when UI executes a trade or HFT broadcasts)
   const addTrade = useCallback((trade: LiveTrade) => {
-    if (seenIdsRef.current.has(trade.id)) return;
+    console.log('[useLiveTrades] addTrade called:', {
+      tradeMarketAddress: trade.marketAddress,
+      hookMarketAddress: marketAddress,
+      tradeId: trade.id
+    });
+    if (seenIdsRef.current.has(trade.id)) {
+      console.log('[useLiveTrades] Trade already seen, skipping:', trade.id);
+      return;
+    }
     seenIdsRef.current.add(trade.id);
 
     setLocalTrades(prev => {
@@ -266,10 +274,11 @@ export function useLiveTrades(
       const unique = combined.filter((t, idx, arr) =>
         arr.findIndex(x => x.id === t.id) === idx
       );
+      console.log('[useLiveTrades] Local trades updated, count:', unique.length);
       return unique.sort((a, b) => b.timestamp - a.timestamp).slice(0, maxTrades);
     });
     setLastUpdate(Date.now());
-  }, [maxTrades]);
+  }, [maxTrades, marketAddress]);
 
   // Add trade by fetching from transaction hash
   const addTradeFromTx = useCallback(async (txHash: string) => {
@@ -312,8 +321,23 @@ export function useLiveTrades(
       filtered = unique.filter(trade => {
         // If trade has no market address, don't show it (can't verify it belongs here)
         if (!trade.marketAddress) return false;
-        return trade.marketAddress.toLowerCase() === normalizedMarket;
+        const matches = trade.marketAddress.toLowerCase() === normalizedMarket;
+        if (!matches && unique.length > 0) {
+          console.log('[useLiveTrades] Trade filtered out:', {
+            tradeMarketAddress: trade.marketAddress,
+            hookMarketAddress: marketAddress,
+            matches
+          });
+        }
+        return matches;
       });
+      if (unique.length > 0 && filtered.length !== unique.length) {
+        console.log('[useLiveTrades] Filtering result:', {
+          before: unique.length,
+          after: filtered.length,
+          marketAddress
+        });
+      }
     }
 
     // Sort by timestamp descending and limit

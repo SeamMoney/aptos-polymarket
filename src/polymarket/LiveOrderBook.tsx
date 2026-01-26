@@ -15,6 +15,7 @@ interface LiveOrderBookProps {
   outcomes?: string[];
   onLoadMore?: () => void;
   hasMore?: boolean;
+  updateCount?: number; // Track number of real-time updates
 }
 
 interface OrderLevel {
@@ -45,11 +46,34 @@ export function LiveOrderBook({
   outcomes = [],
   onLoadMore,
   hasMore = true,
+  updateCount = 0,
 }: LiveOrderBookProps) {
   const tradeListRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState<'book' | 'trades'>('book');
   const [animatedTrades, setAnimatedTrades] = useState<Set<string>>(new Set());
+
+  // Track price changes for visual feedback
+  const prevPriceRef = useRef<number>(yesPrice);
+  const [priceDirection, setPriceDirection] = useState<'up' | 'down' | null>(null);
+  const [priceFlash, setPriceFlash] = useState(false);
+
+  // Detect price changes and trigger visual feedback
+  useEffect(() => {
+    const prevPrice = prevPriceRef.current;
+    if (Math.abs(yesPrice - prevPrice) > 0.01) {
+      setPriceDirection(yesPrice > prevPrice ? 'up' : 'down');
+      setPriceFlash(true);
+      prevPriceRef.current = yesPrice;
+
+      // Clear flash after animation
+      const timer = setTimeout(() => {
+        setPriceFlash(false);
+        setPriceDirection(null);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [yesPrice]);
 
   // Infinite scroll handler
   const handleScroll = useCallback(() => {
@@ -190,9 +214,14 @@ export function LiveOrderBook({
           <span className="text-white text-xl font-bold">Order Book</span>
           <HelpCircle size={18} color="#6E7681" strokeWidth={2.5} />
           {isConnected && (
-            <span className="flex items-center gap-1.5 text-xs text-[#5BA3D9] bg-[#1e3a5f] px-2 py-0.5 rounded">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#5BA3D9] animate-pulse" />
+            <span className="flex items-center gap-1.5 text-xs text-[#22c55e] bg-[#22c55e]/20 px-2 py-0.5 rounded">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse" />
               LIVE
+            </span>
+          )}
+          {updateCount > 0 && (
+            <span className="text-[10px] text-[#6b7a8a] tabular-nums">
+              {updateCount} updates
             </span>
           )}
         </div>
@@ -268,13 +297,41 @@ export function LiveOrderBook({
                 })}
 
                 {/* Spread / Mid Price - sticky in middle */}
-                <div className="flex items-center justify-between px-4 py-3 border-y-2 border-[#2c3f4f] bg-[#2a3d4e]/60">
+                <div
+                  className={`flex items-center justify-between px-4 py-3 border-y-2 border-[#2c3f4f] transition-colors duration-150 ${
+                    priceFlash
+                      ? priceDirection === 'up'
+                        ? 'bg-[#22c55e]/30'
+                        : 'bg-red-500/30'
+                      : 'bg-[#2a3d4e]/60'
+                  }`}
+                >
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl font-bold text-white tabular-nums">{midPrice.toFixed(1)}¢</span>
+                    <span
+                      className={`text-2xl font-bold tabular-nums transition-colors duration-150 ${
+                        priceFlash
+                          ? priceDirection === 'up'
+                            ? 'text-[#22c55e]'
+                            : 'text-red-400'
+                          : 'text-white'
+                      }`}
+                    >
+                      {midPrice.toFixed(1)}¢
+                    </span>
                     <div className="flex flex-col">
                       <span className="text-xs text-[#22c55e]">Best Bid</span>
                       <span className="text-xs text-red-400">Best Ask</span>
                     </div>
+                    {/* Price change indicator */}
+                    {priceFlash && (
+                      <span
+                        className={`text-xs font-medium animate-pulse ${
+                          priceDirection === 'up' ? 'text-[#22c55e]' : 'text-red-400'
+                        }`}
+                      >
+                        {priceDirection === 'up' ? '▲' : '▼'}
+                      </span>
+                    )}
                   </div>
                   <div className="text-right">
                     <div className="text-xs text-[#6b7a8a]">Spread: {spread.toFixed(1)}¢</div>
