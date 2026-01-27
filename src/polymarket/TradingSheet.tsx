@@ -7,6 +7,7 @@ import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import type { Market, Outcome } from "./types";
 import { saveTradeRecord, type TradeRecord } from "./PortfolioPage";
 import { emitTrade, type LiveTrade } from "../hooks/useLiveTrades";
+import { ensureAptForGas } from "../hooks/useAutoFundApt";
 
 interface TradingSheetProps {
   market: Market;
@@ -151,7 +152,7 @@ export function TradingSheet({
       return;
     }
 
-    if (!connected) {
+    if (!connected || !account?.address) {
       setTxStatus("error");
       setTxMessage("Please connect your wallet first");
       setTimeout(() => setTxStatus("idle"), 2000);
@@ -163,6 +164,14 @@ export function TradingSheet({
     setTxHash(null);
 
     try {
+      // Ensure user has APT for gas (important for X-Chain wallets)
+      const address = account.address.toString();
+      console.log("[TradingSheet] Ensuring APT for gas...", address);
+      const hasGas = await ensureAptForGas(address);
+      if (!hasGas) {
+        console.warn("[TradingSheet] Could not ensure APT for gas, proceeding anyway");
+      }
+
       // Convert amount to APT (divide by 100 to get APT from cents-based UI amount)
       const amountAPT = (amount / 100).toString();
       let result: any;
@@ -247,9 +256,26 @@ export function TradingSheet({
       setTxMessage("Transaction submitted!");
       // Don't auto-close - let user click "Done" or drag down
     } catch (error: any) {
-      console.error("Trade error:", error);
+      console.error("[TradingSheet] Trade error:", error);
+      console.error("[TradingSheet] Error details:", {
+        message: error?.message,
+        code: error?.code,
+        name: error?.name,
+        data: error?.data,
+      });
+
+      // Provide more helpful error messages
+      let errorMsg = error.message || "Transaction failed";
+      if (errorMsg.includes("rejected") || errorMsg.includes("denied") || errorMsg.includes("cancelled")) {
+        errorMsg = "Transaction was cancelled";
+      } else if (errorMsg.includes("insufficient") || errorMsg.includes("gas")) {
+        errorMsg = "Insufficient funds for gas";
+      } else if (errorMsg.includes("INSUFFICIENT_BALANCE")) {
+        errorMsg = "Insufficient USD1 balance";
+      }
+
       setTxStatus("error");
-      setTxMessage(error.message || "Transaction failed");
+      setTxMessage(errorMsg);
       setTimeout(() => setTxStatus("idle"), 3000);
     } finally {
       setIsLoading(false);
