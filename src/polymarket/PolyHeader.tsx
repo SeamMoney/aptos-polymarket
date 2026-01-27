@@ -57,26 +57,11 @@ export function PolyHeader() {
   const [fundStatus, setFundStatus] = useState<"idle" | "funding_apt" | "minting" | "success" | "error">("idle");
   const [balance, setBalance] = useState<number>(0);
   const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
-  const [aptFundedNotification, setAptFundedNotification] = useState<string | null>(null);
-
   // Use Aptos wallet adapter
   const { account, connected, disconnect, wallet, signAndSubmitTransaction } = useWallet();
 
   // Auto-fund APT for new users (runs on wallet connect)
   useAutoFundApt();
-
-  // Listen for APT funded events (auto-funding for new users)
-  useEffect(() => {
-    const handleAptFunded = (event: CustomEvent<{ address: string; amount: number }>) => {
-      console.log("[PolyHeader] APT funded notification:", event.detail);
-      setAptFundedNotification(`Welcome! You've been funded with ${event.detail.amount} APT for gas fees.`);
-      // Clear notification after 5 seconds
-      setTimeout(() => setAptFundedNotification(null), 5000);
-    };
-
-    window.addEventListener('apt-funded', handleAptFunded as EventListener);
-    return () => window.removeEventListener('apt-funded', handleAptFunded as EventListener);
-  }, []);
 
   // Check if connected via X-Chain (derived wallet from EVM/Solana)
   const isXChainWallet = wallet?.name?.toLowerCase().includes('ethereum') ||
@@ -318,24 +303,7 @@ export function PolyHeader() {
   };
 
   return (
-    <>
-      {/* APT Funded Notification Toast */}
-      {aptFundedNotification && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-fade-in">
-          <div className="bg-[#22c55e] text-black px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 text-sm font-medium">
-            <span>✨</span>
-            {aptFundedNotification}
-            <button
-              onClick={() => setAptFundedNotification(null)}
-              className="ml-2 hover:opacity-70"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
-
-      <header className="sticky top-0 z-[60] px-4 py-2 flex items-center justify-between" style={{ backgroundColor: '#1c2b3a' }}>
+    <header className="sticky top-0 z-[60] px-4 py-2 flex items-center justify-between" style={{ backgroundColor: '#1c2b3a' }}>
         {/* Logo */}
         <button
           onClick={() => navigate("/polymarket")}
@@ -548,13 +516,12 @@ export function PolyHeader() {
         </div>
       )}
 
-        {/* Wallet Selector Modal */}
-        <WalletSelector
-          isOpen={showWalletSelector}
-          onClose={() => setShowWalletSelector(false)}
-        />
-      </header>
-    </>
+      {/* Wallet Selector Modal */}
+      <WalletSelector
+        isOpen={showWalletSelector}
+        onClose={() => setShowWalletSelector(false)}
+      />
+    </header>
   );
 }
 
