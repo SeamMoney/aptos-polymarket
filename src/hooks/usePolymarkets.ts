@@ -290,9 +290,38 @@ export function usePolymarkets(): PolymarketsHook {
     });
   }, [multiMarkets]);
 
-  // Combine all markets
+  // Priority order for markets on home page
+  const MARKET_ORDER_KEYWORDS = [
+    'republican', '2028 nominee',  // 1. Republican 2028 Nominee
+    'khamenei', 'supreme leader',  // 2. Khamenei
+    'taiwan', 'china invade',      // 3. China Taiwan
+    'wlfi', 'banking charter',     // 4. WLFI Banking Charter
+  ];
+
+  // Sort markets by priority (featured markets first)
+  const sortMarketsByPriority = (markets: Market[]): Market[] => {
+    return [...markets].sort((a, b) => {
+      const aQuestion = a.question.toLowerCase();
+      const bQuestion = b.question.toLowerCase();
+
+      // Find priority index for each market
+      const aPriority = MARKET_ORDER_KEYWORDS.findIndex(kw => aQuestion.includes(kw));
+      const bPriority = MARKET_ORDER_KEYWORDS.findIndex(kw => bQuestion.includes(kw));
+
+      // Markets with priority keywords come first
+      if (aPriority !== -1 && bPriority === -1) return -1;
+      if (aPriority === -1 && bPriority !== -1) return 1;
+      if (aPriority !== -1 && bPriority !== -1) return aPriority - bPriority;
+
+      // For non-priority markets, keep original order
+      return 0;
+    });
+  };
+
+  // Combine all markets and sort by priority
   const allMarkets = useMemo(() => {
-    return [...convertedMultiMarkets, ...convertedBinaryMarkets];
+    const combined = [...convertedMultiMarkets, ...convertedBinaryMarkets];
+    return sortMarketsByPriority(combined);
   }, [convertedBinaryMarkets, convertedMultiMarkets]);
 
   // Get market by ID (supports both prefixed IDs and raw addresses)

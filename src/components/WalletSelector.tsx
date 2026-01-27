@@ -40,7 +40,7 @@ const GoogleIcon = () => (
 
 // Apple icon SVG
 const AppleIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="#000000">
     <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
   </svg>
 );
@@ -99,13 +99,15 @@ function WalletButton({
           className="w-full flex items-center gap-3 p-3 bg-[#1c2b3a] hover:bg-[#2a3d4e] rounded-xl transition-colors"
         >
           {walletIcon ? (
-            <img
-              src={walletIcon}
-              alt={baseName}
-              className="w-9 h-9 rounded-lg opacity-50"
-            />
+            <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center bg-white/5 opacity-50 shrink-0">
+              <img
+                src={walletIcon}
+                alt={baseName}
+                className="w-8 h-8 object-contain"
+              />
+            </div>
           ) : (
-            <div className="w-9 h-9 rounded-lg bg-[#3a4f60] flex items-center justify-center opacity-50">
+            <div className="w-9 h-9 rounded-lg bg-[#3a4f60] flex items-center justify-center opacity-50 shrink-0">
               <span className="text-white font-bold text-sm">{baseName[0]}</span>
             </div>
           )}
@@ -119,13 +121,15 @@ function WalletButton({
             className="w-full flex items-center gap-3 p-3 bg-[#1c2b3a] hover:bg-[#2a3d4e] rounded-xl transition-colors"
           >
             {walletIcon ? (
-              <img
-                src={walletIcon}
-                alt={baseName}
-                className="w-9 h-9 rounded-lg"
-              />
+              <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center bg-white/5 shrink-0">
+                <img
+                  src={walletIcon}
+                  alt={baseName}
+                  className="w-8 h-8 object-contain"
+                />
+              </div>
             ) : (
-              <div className="w-9 h-9 rounded-lg bg-[#3a4f60] flex items-center justify-center">
+              <div className="w-9 h-9 rounded-lg bg-[#3a4f60] flex items-center justify-center shrink-0">
                 <span className="text-white font-bold text-sm">{baseName[0]}</span>
               </div>
             )}
@@ -161,11 +165,11 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
     const googleWallet = petraWebWallets.find(w => w.name.toLowerCase().includes('google'));
     const appleWallet = petraWebWallets.find(w => w.name.toLowerCase().includes('apple'));
 
-    // Deduplicate wallets - keep only one per base name, prefer detected over installable
+    // Deduplicate wallets - keep only one per base name (case-insensitive), prefer detected over installable
     const dedupeWallets = (wallets: (AdapterWallet | AdapterNotDetectedWallet)[]) => {
       const seen = new Set<string>();
       return wallets.filter(w => {
-        const baseName = w.name.replace(' (Solana)', '').replace(' (Ethereum)', '');
+        const baseName = w.name.replace(' (Solana)', '').replace(' (Ethereum)', '').toLowerCase();
         if (seen.has(baseName)) return false;
         seen.add(baseName);
         return true;
@@ -242,25 +246,23 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
             <h2 className="text-lg font-semibold text-white">Connect Wallet</h2>
           </div>
 
-          {/* Social Login Buttons - Side by Side */}
+          {/* Social Login Buttons - Full Width */}
           {(googleWallet || appleWallet) && (
-            <div className="px-5 pb-4">
-              <div className="flex gap-3">
-                {googleWallet && (
-                  <AptosConnectButton
-                    wallet={googleWallet}
-                    onConnect={onClose}
-                    variant="half"
-                  />
-                )}
-                {appleWallet && (
-                  <AptosConnectButton
-                    wallet={appleWallet}
-                    onConnect={onClose}
-                    variant="half"
-                  />
-                )}
-              </div>
+            <div className="px-5 pb-4 space-y-2">
+              {googleWallet && (
+                <AptosConnectButton
+                  wallet={googleWallet}
+                  onConnect={onClose}
+                  variant="full"
+                />
+              )}
+              {appleWallet && (
+                <AptosConnectButton
+                  wallet={appleWallet}
+                  onConnect={onClose}
+                  variant="full"
+                />
+              )}
 
               <div className="flex items-center gap-3 py-4">
                 <div className="flex-1 h-px bg-[#3a4f60]" />
