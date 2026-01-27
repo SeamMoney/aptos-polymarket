@@ -127,6 +127,15 @@ body {
   background-color: var(--poly-bg-primary);
 }
 
+/* Safe area utility classes for iOS notch/Dynamic Island */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 #root {
   width: 100%;
   min-height: 100vh;

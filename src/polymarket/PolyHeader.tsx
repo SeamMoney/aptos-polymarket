@@ -303,7 +303,13 @@ export function PolyHeader() {
   };
 
   return (
-    <header className="sticky top-0 z-[60] px-4 py-2 flex items-center justify-between" style={{ backgroundColor: '#1c2b3a' }}>
+    <header
+      className="sticky top-0 z-[60] px-4 py-2 flex items-center justify-between"
+      style={{
+        backgroundColor: '#1c2b3a',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)'
+      }}
+    >
         {/* Logo */}
         <button
           onClick={() => navigate("/polymarket")}
