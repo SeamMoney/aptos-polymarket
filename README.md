@@ -231,15 +231,15 @@ flowchart TD
 
     B --> D[cmd_standby]
     D --> D1[SSH to workers]
-    D1 --> D2[Export env vars:<br/>ACCOUNT_START_INDEX, ACCOUNT_COUNT,<br/>CONTRACT_ADDRESS, MULTI_MARKETS,<br/>RPC_MODE=internal, USE_ORDERLESS=false]
-    D2 --> D3[Start AMM server in screen<br/>server/hft-piscina-server.ts]
+    D1 --> D2[Export env vars:\nACCOUNT_START_INDEX, ACCOUNT_COUNT,\nCONTRACT_ADDRESS, MULTI_MARKETS,\nRPC_MODE=internal, USE_ORDERLESS=false]
+    D2 --> D3[Start AMM server in screen\nserver/hft-piscina-server.ts]
 
     B --> E[cmd_launch (duration)]
-    E --> E1[HTTP POST /start?duration=N<br/>to each worker :3001]
-    E --> E2[Optional --dual: SSH start<br/>server/transfer-tps-server.ts]
+    E --> E1[HTTP POST /start?duration=N\nto each worker :3001]
+    E --> E2[Optional --dual: SSH start\nserver/transfer-tps-server.ts]
 
     B --> F[cmd_collect]
-    F --> F1[SCP /tmp/hft-submitted-txns.json<br/>from each worker into results/]
+    F --> F1[SCP /tmp/hft-submitted-txns.json\nfrom each worker into results/]
     F1 --> F2[Merge into results/*/all-amm.json]
 
     B --> G[cmd_analyze]
@@ -251,21 +251,21 @@ flowchart TD
 
   subgraph WorkerVM["Worker VM (x3) - /opt/aptos-hft"]
     S[Main thread: hft-piscina-server.ts]
-    S --> S1[Express HTTP API<br/>GET /health /status /stats<br/>POST /start /stop]
-    S --> S2[WebSocket broadcast<br/>state + stats]
-    S --> S3[Spawn worker threads<br/>server/trading-worker.js]
+    S --> S1[Express HTTP API\nGET /health /status /stats\nPOST /start /stop]
+    S --> S2[WebSocket broadcast\nstate + stats]
+    S --> S3[Spawn worker threads\nserver/trading-worker.js]
     S --> S4[Aggregate stats + tx hashes]
-    S4 --> S5[Write results:<br/>/tmp/hft-submitted-txns.json<br/>~/.aptos-tps-history/runId.json]
+    S4 --> S5[Write results:\n/tmp/hft-submitted-txns.json\n~/.aptos-tps-history/runId.json]
   end
 
   subgraph TradingWorkers["Worker threads (per VM)"]
     W1[trading-worker.ts]
     W1 --> W2[Derive accounts from SEED_MNEMONIC]
     W2 --> W3[Per-account trading loop]
-    W3 --> W4[Build payloads<br/>buy_outcome / sell_outcome]
-    W4 --> W5[Build txs<br/>orderless nonce or sequence]
+    W3 --> W4[Build payloads\nbuy_outcome / sell_outcome]
+    W4 --> W5[Build txs\norderless nonce or sequence]
     W5 --> W6[Sign locally]
-    W6 --> W7[Submit via Aptos SDK<br/>parallel + fire-and-forget]
+    W6 --> W7[Submit via Aptos SDK\nparallel + fire-and-forget]
     W7 --> W8[Adaptive backoff on mempool_full]
     W7 --> W9[Record tx hashes in circular buffer]
     W9 --> W10[Report stats + txs to main thread]
@@ -276,7 +276,7 @@ flowchart TD
 
   subgraph Chain["Aptos Testnet"]
     RPC[Internal VFN RPC]
-    Contracts[Move contracts<br/>contracts/sources/*]
+    Contracts[Move contracts\ncontracts/sources/*]
   end
 
   W7 --> RPC --> Contracts
