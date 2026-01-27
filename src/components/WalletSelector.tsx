@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useWallet, WalletItem, isInstallRequired } from '@aptos-labs/wallet-adapter-react';
 import {
   groupAndSortWallets,
+  WalletReadyState,
   type AdapterWallet,
   type AdapterNotDetectedWallet,
 } from '@aptos-labs/wallet-adapter-core';
@@ -205,7 +206,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
         name: 'Rabby',
         icon: rabbyLogo,
         url: 'https://rabby.io/',
-        readyState: 'NotDetected',
+        readyState: WalletReadyState.NotDetected,
       } as AdapterNotDetectedWallet);
     }
     if (!seenEthereum.has('rainbow')) {
@@ -213,7 +214,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
         name: 'Rainbow',
         icon: rainbowLogo,
         url: 'https://rainbow.me/',
-        readyState: 'NotDetected',
+        readyState: WalletReadyState.NotDetected,
       } as AdapterNotDetectedWallet);
     }
     if (!seenEthereum.has('metamask')) {
@@ -221,7 +222,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
         name: 'MetaMask',
         icon: WALLET_ICONS['metamask'],
         url: 'https://metamask.io/',
-        readyState: 'NotDetected',
+        readyState: WalletReadyState.NotDetected,
       } as AdapterNotDetectedWallet);
     }
 
@@ -231,7 +232,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
         name: 'Phantom',
         icon: WALLET_ICONS['phantom'],
         url: 'https://phantom.app/',
-        readyState: 'NotDetected',
+        readyState: WalletReadyState.NotDetected,
       } as AdapterNotDetectedWallet);
     }
     if (!seenSolana.has('backpack')) {
@@ -239,7 +240,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
         name: 'Backpack',
         icon: backpackLogo,
         url: 'https://backpack.app/',
-        readyState: 'NotDetected',
+        readyState: WalletReadyState.NotDetected,
       } as AdapterNotDetectedWallet);
     }
 
