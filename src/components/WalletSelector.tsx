@@ -199,14 +199,48 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
       }
     });
 
-    // Add Rabby to Ethereum if not already present (Rabby is Ethereum-only)
+    // Add wallets to Ethereum tab if not already present
     if (!seenEthereum.has('rabby')) {
       ethereumWallets.push({
-        name: 'Rabby (Ethereum)',
+        name: 'Rabby',
         icon: rabbyLogo,
         url: 'https://rabby.io/',
         readyState: 'NotDetected',
       } as AdapterNotDetectedWallet);
+    }
+    if (!seenEthereum.has('rainbow')) {
+      ethereumWallets.push({
+        name: 'Rainbow',
+        icon: rainbowLogo,
+        url: 'https://rainbow.me/',
+        readyState: 'NotDetected',
+      } as AdapterNotDetectedWallet);
+    }
+    if (!seenEthereum.has('metamask')) {
+      ethereumWallets.push({
+        name: 'MetaMask',
+        icon: WALLET_ICONS['metamask'],
+        url: 'https://metamask.io/',
+        readyState: 'NotDetected',
+      } as AdapterNotDetectedWallet);
+    }
+
+    // Add wallets to Solana tab if not already present
+    if (!seenSolana.has('phantom')) {
+      solanaWallets.push({
+        name: 'Phantom',
+        icon: WALLET_ICONS['phantom'],
+        url: 'https://phantom.app/',
+        readyState: 'NotDetected',
+      } as AdapterNotDetectedWallet);
+    }
+    if (!seenSolana.has('backpack')) {
+      solanaWallets.push({
+        name: 'Backpack',
+        icon: backpackLogo,
+        url: 'https://backpack.app/',
+        readyState: 'NotDetected',
+    }
     }
 
     return {
