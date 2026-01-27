@@ -43,8 +43,7 @@ reference/
 .ralphy/
 
 # Remotion video files (local only)
-remotion-video/out/
-remotion-video/*.mp4
+remotion-video/
 *.mp4
 .playwright-mcp/
 aptos-move-agent-skills/
