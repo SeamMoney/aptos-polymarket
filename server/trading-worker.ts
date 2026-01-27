@@ -87,6 +87,10 @@ const TX_BUFFER_SIZE = 100000;
 const txBuffer: TxRecord[] = [];
 let txBufferIndex = 0;
 
+// Track holdings per market per outcome (for balanced trading)
+// Key: marketAddress, Value: Map of outcomeIndex -> tokens held
+type HoldingsMap = Map<string, Map<number, number>>;
+
 // Account state within worker
 interface AccountState {
   account: Account;
@@ -94,6 +98,7 @@ interface AccountState {
   successCount: number;
   failCount: number;
   isActive: boolean;
+  holdings: HoldingsMap;  // Track what we've bought so we can sell it
 }
 
 // Extract config from workerData
@@ -198,6 +203,7 @@ async function initialize(): Promise<void> {
       successCount: 0,
       failCount: 0,
       isActive: true,
+      holdings: new Map(),  // Initialize empty holdings tracker
     };
 
     accounts.push(accState);
@@ -245,9 +251,12 @@ function getNextMarket(): string {
 }
 
 /**
- * Build random trade payload
+ * Build random trade payload with balanced trading
+ *
+ * CRITICAL FIX: Only sell outcomes that have been previously bought.
+ * This prevents INSUFFICIENT_BALANCE errors from trying to sell tokens we don't own.
  */
-function buildPayload(marketAddress: string): {
+function buildPayload(marketAddress: string, holdings: HoldingsMap): {
   payload: InputGenerateTransactionPayloadData;
   isBuy: boolean;
   outcomeIndex: number;
@@ -259,10 +268,32 @@ function buildPayload(marketAddress: string): {
   const outcomeCount = 4;
   const outcomeIndex = Math.floor(Math.random() * outcomeCount);
 
-  // 70% buys, 30% sells
-  const isBuy = Math.random() < 0.7;
+  // Get holdings for this market
+  let marketHoldings = holdings.get(marketAddress);
+  if (!marketHoldings) {
+    marketHoldings = new Map();
+    holdings.set(marketAddress, marketHoldings);
+  }
+
+  // Find outcomes we can sell (have holdings > 0)
+  const sellableOutcomes: number[] = [];
+  for (let i = 0; i < outcomeCount; i++) {
+    const held = marketHoldings.get(i) || 0;
+    if (held > 0) {
+      sellableOutcomes.push(i);
+    }
+  }
+
+  // Decide buy vs sell: 70% buy, 30% sell (but only if we have something to sell)
+  const wantToSell = Math.random() >= 0.7;
+  const canSell = sellableOutcomes.length > 0;
+  const isBuy = !wantToSell || !canSell;
 
   if (isBuy) {
+    // Track that we're buying this outcome
+    const currentHeld = marketHoldings.get(outcomeIndex) || 0;
+    marketHoldings.set(outcomeIndex, currentHeld + 1);
+
     return {
       payload: {
         function: `${MULTI_MODULE}::buy_outcome`,
@@ -272,15 +303,20 @@ function buildPayload(marketAddress: string): {
       outcomeIndex,
     };
   } else {
-    // Sell a different outcome (arbitrage simulation)
-    const otherOutcome = (outcomeIndex + 1) % outcomeCount;
+    // Sell one of the outcomes we actually hold
+    const sellOutcome = sellableOutcomes[Math.floor(Math.random() * sellableOutcomes.length)];
+
+    // Decrement holdings (we're selling)
+    const currentHeld = marketHoldings.get(sellOutcome) || 0;
+    marketHoldings.set(sellOutcome, Math.max(0, currentHeld - 1));
+
     return {
       payload: {
         function: `${MULTI_MODULE}::sell_outcome`,
-        functionArguments: [marketAddress, otherOutcome, amount, 0n],
+        functionArguments: [marketAddress, sellOutcome, amount, 0n],
       },
       isBuy: false,
-      outcomeIndex: otherOutcome,
+      outcomeIndex: sellOutcome,
     };
   }
 }
@@ -309,11 +345,11 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
   const startTime = Date.now();
   const baseSeq = accState.sequenceNumber;
 
-  // Build payloads
+  // Build payloads (using account's holdings for balanced trading)
   const payloads: { payload: InputGenerateTransactionPayloadData; isBuy: boolean; outcomeIndex: number; market: string }[] = [];
   for (let i = 0; i < batchSize; i++) {
     const market = getNextMarket();
-    const info = buildPayload(market);
+    const info = buildPayload(market, accState.holdings);
     payloads.push({ ...info, market });
   }
 
@@ -453,10 +489,10 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
     accState.sequenceNumber += BigInt(batchSize);
   }
 
-  // Build and submit without waiting
+  // Build and submit without waiting (using account's holdings for balanced trading)
   for (let i = 0; i < batchSize; i++) {
     const market = getNextMarket();
-    const { payload, isBuy, outcomeIndex } = buildPayload(market);
+    const { payload, isBuy, outcomeIndex } = buildPayload(market, accState.holdings);
 
     const options: any = config.useOrderless
       ? {
