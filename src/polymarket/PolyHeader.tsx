@@ -4,6 +4,7 @@ import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { ChevronDown, LogOut, Copy, Check, Loader2, RefreshCw } from "lucide-react";
 import { WalletSelector, getWalletIcon } from "../components/WalletSelector";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
+import { useAutoFundApt, ensureAptForGas } from "../hooks/useAutoFundApt";
 
 // Polymarket P logo without background (white version)
 function PolymarketLogo() {
@@ -44,6 +45,8 @@ const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0x1bd17a9cb5a
 const USD1_METADATA = import.meta.env.VITE_USD1_METADATA || "0xa89bf8c3480600cf0b30914b3370fed8ebfd7a638df6a6edee0e45b2a1dfff82";
 const FUND_AMOUNT_USD1 = 1000; // $1000 worth of USD1 (8 decimals)
 
+// ensureAptForGas is now imported from useAutoFundApt hook
+
 export function PolyHeader() {
   const navigate = useNavigate();
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -51,12 +54,29 @@ export function PolyHeader() {
   const [showWalletSelector, setShowWalletSelector] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
-  const [fundStatus, setFundStatus] = useState<"idle" | "success" | "error">("idle");
+  const [fundStatus, setFundStatus] = useState<"idle" | "funding_apt" | "minting" | "success" | "error">("idle");
   const [balance, setBalance] = useState<number>(0);
   const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
+  const [aptFundedNotification, setAptFundedNotification] = useState<string | null>(null);
 
   // Use Aptos wallet adapter
   const { account, connected, disconnect, wallet, signAndSubmitTransaction } = useWallet();
+
+  // Auto-fund APT for new users (runs on wallet connect)
+  useAutoFundApt();
+
+  // Listen for APT funded events (auto-funding for new users)
+  useEffect(() => {
+    const handleAptFunded = (event: CustomEvent<{ address: string; amount: number }>) => {
+      console.log("[PolyHeader] APT funded notification:", event.detail);
+      setAptFundedNotification(`Welcome! You've been funded with ${event.detail.amount} APT for gas fees.`);
+      // Clear notification after 5 seconds
+      setTimeout(() => setAptFundedNotification(null), 5000);
+    };
+
+    window.addEventListener('apt-funded', handleAptFunded as EventListener);
+    return () => window.removeEventListener('apt-funded', handleAptFunded as EventListener);
+  }, []);
 
   // Check if connected via X-Chain (derived wallet from EVM/Solana)
   const isXChainWallet = wallet?.name?.toLowerCase().includes('ethereum') ||
@@ -201,9 +221,45 @@ export function PolyHeader() {
 
     try {
       const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
+      const address = account.address.toString();
 
       // USD1 has 8 decimals, mint 1000 USD1
       const amountUnits = Math.floor(FUND_AMOUNT_USD1 * 100_000_000);
+
+      // Check if this is an X-Chain wallet (needs gas funding from faucet)
+      // X-Chain wallets derive Aptos addresses from Ethereum/Solana keys via AIP-113
+      const walletNameLower = wallet?.name?.toLowerCase() || '';
+      const isXChain = walletNameLower.includes('ethereum') ||
+                       walletNameLower.includes('solana') ||
+                       walletNameLower.includes('metamask') ||
+                       walletNameLower.includes('phantom') ||
+                       walletNameLower.includes('backpack') ||
+                       walletNameLower.includes('rainbow') ||
+                       walletNameLower.includes('coinbase') ||
+                       walletNameLower.includes('trust') ||
+                       // Also detect by the X-CHAIN badge presence (all non-native Aptos wallets)
+                       (account?.ansName === undefined && !walletNameLower.includes('petra') &&
+                        !walletNameLower.includes('martian') && !walletNameLower.includes('pontem') &&
+                        !walletNameLower.includes('fewcha') && !walletNameLower.includes('rise'));
+
+      console.log("[USD1 Mint] Starting mint for address:", address);
+      console.log("[USD1 Mint] Amount units:", amountUnits);
+      console.log("[USD1 Mint] Wallet type:", wallet?.name);
+      console.log("[USD1 Mint] Is X-Chain:", isXChain);
+
+      // For X-Chain wallets, ensure they have APT for gas fees
+      if (isXChain) {
+        console.log("[USD1 Mint] X-Chain wallet detected, checking APT for gas...");
+        setFundStatus("funding_apt");
+        const hasGas = await ensureAptForGas(address);
+        if (!hasGas) {
+          console.error("[USD1 Mint] Failed to ensure APT for gas");
+          // Continue anyway - the transaction will fail with a clear error
+        }
+      }
+
+      // Now mint USD1
+      setFundStatus("minting");
 
       // Call mint_to_self - anyone can mint in demo mode
       const response = await signAndSubmitTransaction({
@@ -213,10 +269,14 @@ export function PolyHeader() {
         },
       });
 
+      console.log("[USD1 Mint] Transaction submitted, hash:", response.hash);
+
       // Wait for transaction confirmation
       const result = await aptos.waitForTransaction({
         transactionHash: response.hash,
       });
+
+      console.log("[USD1 Mint] Transaction result:", result.success, result);
 
       if (result.success) {
         setFundStatus("success");
@@ -228,11 +288,28 @@ export function PolyHeader() {
           setFundStatus("idle");
         }, 2000);
       } else {
+        console.error("[USD1 Mint] Transaction failed on-chain:", result);
         setFundStatus("error");
         setTimeout(() => setFundStatus("idle"), 3000);
       }
     } catch (error) {
-      console.error("USD1 minting error:", error);
+      // Enhanced error logging for X-Chain debugging
+      console.error("[USD1 Mint] Error details:", {
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorName: error instanceof Error ? error.name : 'Unknown',
+        walletName: wallet?.name,
+        accountAddress: account?.address?.toString(),
+      });
+
+      // Check for specific X-Chain errors
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      if (errorMsg.includes('rejected') || errorMsg.includes('cancelled') || errorMsg.includes('denied')) {
+        console.log("[USD1 Mint] User rejected the transaction");
+      } else if (errorMsg.includes('insufficient') || errorMsg.includes('gas')) {
+        console.log("[USD1 Mint] Gas/fee issue - X-Chain wallets need APT for gas on Aptos");
+      }
+
       setFundStatus("error");
       setTimeout(() => setFundStatus("idle"), 3000);
     } finally {
@@ -241,11 +318,28 @@ export function PolyHeader() {
   };
 
   return (
-    <header className="sticky top-0 z-[60] px-4 py-2 flex items-center justify-between" style={{ backgroundColor: '#1c2b3a' }}>
-      {/* Logo */}
-      <button
-        onClick={() => navigate("/polymarket")}
-        className="flex items-center hover:opacity-90 transition-opacity"
+    <>
+      {/* APT Funded Notification Toast */}
+      {aptFundedNotification && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-fade-in">
+          <div className="bg-[#22c55e] text-black px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 text-sm font-medium">
+            <span>✨</span>
+            {aptFundedNotification}
+            <button
+              onClick={() => setAptFundedNotification(null)}
+              className="ml-2 hover:opacity-70"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      <header className="sticky top-0 z-[60] px-4 py-2 flex items-center justify-between" style={{ backgroundColor: '#1c2b3a' }}>
+        {/* Logo */}
+        <button
+          onClick={() => navigate("/polymarket")}
+          className="flex items-center hover:opacity-90 transition-opacity"
       >
         <PolymarketLogo />
         <span className="text-white tracking-tight" style={{ fontSize: '20px', fontWeight: 700, fontFamily: '"Open Sauce One", sans-serif' }}>
@@ -412,8 +506,12 @@ export function PolyHeader() {
                     ? "+$1,000 USD1 Minted!"
                     : fundStatus === "error"
                     ? "Failed - Try Again"
-                    : isFunding
+                    : fundStatus === "funding_apt"
+                    ? "Funding APT for gas..."
+                    : fundStatus === "minting"
                     ? "Minting USD1..."
+                    : isFunding
+                    ? "Preparing..."
                     : "Mint $1,000"}
                 </button>
               </div>
@@ -450,12 +548,13 @@ export function PolyHeader() {
         </div>
       )}
 
-      {/* Wallet Selector Modal */}
-      <WalletSelector
-        isOpen={showWalletSelector}
-        onClose={() => setShowWalletSelector(false)}
-      />
-    </header>
+        {/* Wallet Selector Modal */}
+        <WalletSelector
+          isOpen={showWalletSelector}
+          onClose={() => setShowWalletSelector(false)}
+        />
+      </header>
+    </>
   );
 }
 

@@ -41,3 +41,9 @@ reference/
 *.sw?
 .vercel
 .ralphy/
+
+# Remotion video files (local only)
+remotion-video/out/
+remotion-video/*.mp4
+*.mp4
+.playwright-mcp/
