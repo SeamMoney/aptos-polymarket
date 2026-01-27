@@ -431,8 +431,8 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
               // If an outcome is highlighted, dim all others
               const isHighlighted = !highlightedOutcomeId || highlightedOutcomeId === id;
               const lineColor = isHighlighted ? color : "#4a5568";
-              const lineOpacity = isHighlighted ? 1 : 0.4;
-              const lineWidth = isHighlighted ? 1.8 : 1.2;
+              const lineOpacity = isHighlighted ? 1 : 0.15;
+              const lineWidth = isHighlighted ? 2 : 0.8;
 
               return (
                 <g key={id} style={{ opacity: lineOpacity, transition: 'opacity 0.2s ease' }}>

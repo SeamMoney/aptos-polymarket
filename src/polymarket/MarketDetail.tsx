@@ -1093,30 +1093,28 @@ export function MarketDetail() {
         </div>
 
         {/* Outcome Legend - colored dots with prices (shown above chart) */}
-        {market?.outcomes && market.outcomes.length > 0 && (
+        {chartOutcomes && chartOutcomes.length > 0 && (
           <div
             className={`px-4 pb-3 transition-all duration-300 delay-200 ${
               isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
             <div className="flex flex-wrap gap-x-4 gap-y-1">
-              {market.outcomes.map((outcome, index) => {
-                const price = outcome.price;
-                const color = outcome.color || ['#00c853', '#5b9cf6', '#f5a623', '#00bcd4'][index % 4];
-                const outcomeId = outcome.id || `outcome-${index}`;
-                const isHighlighted = highlightedOutcomeId === outcomeId;
-                const isOtherHighlighted = highlightedOutcomeId !== null && highlightedOutcomeId !== outcomeId;
+              {chartOutcomes.map((outcome, index) => {
+                const price = outcome.prices[outcome.prices.length - 1] || 0;
+                const isHighlighted = highlightedOutcomeId === outcome.id;
+                const isOtherHighlighted = highlightedOutcomeId !== null && highlightedOutcomeId !== outcome.id;
                 return (
                   <button
-                    key={outcomeId}
-                    onClick={() => setHighlightedOutcomeId(isHighlighted ? null : outcomeId)}
+                    key={outcome.id}
+                    onClick={() => setHighlightedOutcomeId(isHighlighted ? null : outcome.id)}
                     className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-all cursor-pointer hover:bg-white/10 ${
                       isOtherHighlighted ? 'opacity-40' : 'opacity-100'
                     }`}
                   >
                     <div
                       className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: color }}
+                      style={{ backgroundColor: outcome.color }}
                     />
                     <span className="text-sm text-white">
                       {outcome.name} <span className="font-semibold">{Math.round(price * 100)}%</span>
@@ -1247,7 +1245,7 @@ export function MarketDetail() {
               isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
-            {market.outcomes.map((outcome, index) => {
+            {chartOutcomes.map((outcome, index) => {
               // Map "Other" to "Donald Trump Jr." for display
               const displayName = outcome.name === "Other" ? "Donald Trump Jr." : outcome.name;
 
