@@ -240,8 +240,7 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
         icon: backpackLogo,
         url: 'https://backpack.app/',
         readyState: 'NotDetected',
-    }
-    }
+      } as AdapterNotDetectedWallet);
 
     return {
       googleWallet,
