@@ -209,6 +209,100 @@ The orchestrator uses **quantum mode** for `./scripts/orchestrator.sh demo`.
 
 ---
 
+## Demo Script Flow (Max TPS)
+
+For the highest TPS using the 2000-account demo script, run AMM-only full mode:
+
+```bash
+./scripts/demo.sh full 60
+```
+
+Mermaid flow of how `scripts/demo.sh` ties into the codebase and the execution path:
+
+```mermaid
+flowchart TD
+  A[Run ./scripts/demo.sh full 60] --> B[cmd_full in scripts/demo.sh]
+
+  subgraph Local["Local machine (project root)"]
+    B --> C[cmd_preflight]
+    C --> C1[Load SEED_MNEMONIC from .env.seed]
+    C --> C2[SSH to workers + check /health :3001]
+    C --> C3[Check internal VFN RPC reachable]
+
+    B --> D[cmd_standby]
+    D --> D1[SSH to workers]
+    D1 --> D2[Export env vars:<br/>ACCOUNT_START_INDEX, ACCOUNT_COUNT,<br/>CONTRACT_ADDRESS, MULTI_MARKETS,<br/>RPC_MODE=internal, USE_ORDERLESS=false]
+    D2 --> D3[Start AMM server in screen<br/>server/hft-piscina-server.ts]
+
+    B --> E[cmd_launch (duration)]
+    E --> E1[HTTP POST /start?duration=N<br/>to each worker :3001]
+    E --> E2[Optional --dual: SSH start<br/>server/transfer-tps-server.ts]
+
+    B --> F[cmd_collect]
+    F --> F1[SCP /tmp/hft-submitted-txns.json<br/>from each worker into results/]
+    F1 --> F2[Merge into results/*/all-amm.json]
+
+    B --> G[cmd_analyze]
+    G --> G1[auto-analyze.ts]
+    G1 --> G2[analyze-submitted-txns.ts]
+    G1 --> G3[deep-tps-analysis.ts]
+    G1 --> G4[analyze-tps.ts]
+  end
+
+  subgraph WorkerVM["Worker VM (x3) - /opt/aptos-hft"]
+    S[Main thread: hft-piscina-server.ts]
+    S --> S1[Express HTTP API<br/>GET /health /status /stats<br/>POST /start /stop]
+    S --> S2[WebSocket broadcast<br/>state + stats]
+    S --> S3[Spawn worker threads<br/>server/trading-worker.js]
+    S --> S4[Aggregate stats + tx hashes]
+    S4 --> S5[Write results:<br/>/tmp/hft-submitted-txns.json<br/>~/.aptos-tps-history/runId.json]
+  end
+
+  subgraph TradingWorkers["Worker threads (per VM)"]
+    W1[trading-worker.ts]
+    W1 --> W2[Derive accounts from SEED_MNEMONIC]
+    W2 --> W3[Per-account trading loop]
+    W3 --> W4[Build payloads<br/>buy_outcome / sell_outcome]
+    W4 --> W5[Build txs<br/>orderless nonce or sequence]
+    W5 --> W6[Sign locally]
+    W6 --> W7[Submit via Aptos SDK<br/>parallel + fire-and-forget]
+    W7 --> W8[Adaptive backoff on mempool_full]
+    W7 --> W9[Record tx hashes in circular buffer]
+    W9 --> W10[Report stats + txs to main thread]
+  end
+
+  S3 --> W1
+  W10 --> S4
+
+  subgraph Chain["Aptos Testnet"]
+    RPC[Internal VFN RPC]
+    Contracts[Move contracts<br/>contracts/sources/*]
+  end
+
+  W7 --> RPC --> Contracts
+
+  subgraph UI["Frontend demo UI"]
+    UI1[HFTDemoPage.tsx]
+    UI2[HFTLaunchControl.tsx]
+    UI3[useHFTConnection.ts]
+  end
+
+  UI1 --> UI3
+  UI2 --> S1
+  UI3 --> S2
+
+  subgraph Monitoring["Monitoring"]
+    L1[scripts/live-feed.ts --workers]
+    L2[GET /stats + /status]
+  end
+
+  L1 --> L2 --> S1
+```
+
+Notes:
+- `--dual` splits accounts between AMM and USD1 transfers; AMM-only maximizes TPS.
+- `cmd_deploy` syncs `server/` to `/opt/aptos-hft` on each worker if you changed server code.
+
 ## Trade Size Distribution (Full Demo)
 
 To create visual impact (chart spikes) while conserving APT:
