@@ -185,9 +185,10 @@ async function checkMarkets(aptos: Aptos, marketAddresses: string[]): Promise<nu
 
   for (const market of marketAddresses) {
     try {
+      // Use get_multi_market_info (not get_market_info which doesn't exist)
       await aptos.view({
         payload: {
-          function: `${MULTI_MODULE}::get_market_info`,
+          function: `${MULTI_MODULE}::get_multi_market_info`,
           functionArguments: [market],
         },
       });
