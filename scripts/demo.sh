@@ -731,6 +731,88 @@ cmd_deploy() {
 }
 
 # ============================================
+# FULL COMMAND - One command to rule them all
+# ============================================
+
+cmd_full() {
+    DURATION=${1:-60}
+
+    print_banner
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                    FULL AUTOMATED DEMO                                ║${NC}"
+    echo -e "${CYAN}║              Preflight → Standby → Launch → Analyze                   ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo "Duration: ${DURATION} seconds"
+    echo "Mode: ${DUAL_MODE:+Dual (AMM + Transfers)}${DUAL_MODE:-AMM Only}"
+    echo ""
+
+    # Step 1: Preflight
+    echo -e "${BOLD}[Step 1/5] Running pre-flight check...${NC}"
+    echo "────────────────────────────────────────────────────────────────"
+    if ! cmd_preflight; then
+        echo -e "${RED}Pre-flight failed. Aborting.${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Pre-flight passed${NC}"
+    echo ""
+
+    # Step 2: Start workers
+    echo -e "${BOLD}[Step 2/5] Starting workers in standby...${NC}"
+    echo "────────────────────────────────────────────────────────────────"
+    cmd_standby
+    echo ""
+
+    # Step 3: Wait for workers to be ready
+    echo -e "${BOLD}[Step 3/5] Verifying all workers ready...${NC}"
+    echo "────────────────────────────────────────────────────────────────"
+    sleep 3
+    READY_COUNT=0
+    for i in 1 2 3; do
+        eval "IP=\${WORKER${i}_IP}"
+        if check_server $IP 3001; then
+            READY_COUNT=$((READY_COUNT + 1))
+        fi
+    done
+
+    if [ "$READY_COUNT" -lt 3 ]; then
+        echo -e "${RED}Only $READY_COUNT/3 workers ready. Aborting.${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ All 3 workers ready${NC}"
+    echo ""
+
+    # Step 4: Countdown and launch
+    echo -e "${BOLD}[Step 4/5] Launching demo in 5 seconds...${NC}"
+    echo "────────────────────────────────────────────────────────────────"
+    for i in 5 4 3 2 1; do
+        echo -n "$i... "
+        sleep 1
+    done
+    echo "GO!"
+    echo ""
+
+    cmd_launch "$DURATION"
+    echo ""
+
+    # Step 5: Collect and analyze
+    echo -e "${BOLD}[Step 5/5] Collecting results and analyzing...${NC}"
+    echo "────────────────────────────────────────────────────────────────"
+    cmd_collect
+    echo ""
+    cmd_analyze
+    echo ""
+
+    # Final summary
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║                      DEMO COMPLETE                                    ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo "Results saved to: results/"
+    echo ""
+}
+
+# ============================================
 # MAIN
 # ============================================
 
@@ -750,6 +832,9 @@ for arg in "$@"; do
 done
 
 case "${ARGS[0]:-help}" in
+    full)
+        cmd_full "${ARGS[1]:-60}"
+        ;;
     preflight)
         cmd_preflight
         ;;
@@ -781,13 +866,17 @@ case "${ARGS[0]:-help}" in
         print_banner
         echo "Usage: ./scripts/demo.sh <command> [options]"
         echo ""
+        echo -e "${GREEN}ONE COMMAND TO RUN EVERYTHING:${NC}"
+        echo "  ./scripts/demo.sh full 60 --dual"
+        echo ""
+        echo "This runs: preflight → standby → launch → collect → analyze"
+        echo ""
         echo "Commands:"
+        echo "  full [N]             Run full demo (N seconds) - does everything automatically"
+        echo "  full [N] --dual      Full demo with AMM + transfers"
         echo "  preflight            Pre-flight check (validates all 2000 accounts)"
-        echo "  preflight --dual     Pre-flight with transfer account checks"
-        echo "  standby              Start AMM workers (2000 accounts)"
-        echo "  standby --dual       Start AMM + Transfer workers (1500 + 500)"
+        echo "  standby              Start workers via SSH (handles everything)"
         echo "  launch [N]           Trigger N-second demo (default: 60)"
-        echo "  launch [N] --dual    Trigger dual demo (AMM + transfers)"
         echo "  stop                 Stop all workers"
         echo "  status               Check worker status"
         echo "  logs                 View worker logs"
@@ -795,12 +884,9 @@ case "${ARGS[0]:-help}" in
         echo "  analyze [path]       Run unified post-run analysis"
         echo "  deploy               Deploy latest code to VMs"
         echo ""
-        echo "Full Demo Workflow:"
-        echo "  1. ./scripts/demo.sh preflight --dual  # Validate setup"
-        echo "  2. ./scripts/demo.sh standby --dual    # Start workers"
-        echo "  3. ./scripts/demo.sh launch 60 --dual  # Run demo"
-        echo "  4. ./scripts/demo.sh collect           # Gather results"
-        echo "  5. ./scripts/demo.sh analyze           # Run analysis"
+        echo "Examples:"
+        echo "  ./scripts/demo.sh full 60 --dual   # Full 60s demo with transfers"
+        echo "  ./scripts/demo.sh full 30          # Quick 30s AMM-only demo"
         echo ""
         ;;
 esac
