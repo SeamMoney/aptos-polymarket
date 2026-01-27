@@ -438,8 +438,11 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
   }
 
   // Update sequence number (non-orderless mode)
+  // CRITICAL: Must increment by batchSize, not successCount!
+  // Even failed txns consume sequence numbers once submitted to mempool.
+  // If we only add successes, we desync and ALL future txns fail.
   if (!config.useOrderless) {
-    accState.sequenceNumber += BigInt(successCount);
+    accState.sequenceNumber += BigInt(batchSize);
   }
 
   // Adaptive delay
