@@ -75,65 +75,6 @@ const PolymarketLogo = () => (
   </svg>
 );
 
-// Wallet icon button for bottom row - uses ORIGINAL working styling
-function WalletIconButton({
-  wallet,
-  onConnect,
-}: {
-  wallet: AdapterWallet | AdapterNotDetectedWallet;
-  onConnect: () => void;
-}) {
-  const walletIcon = getWalletIcon(wallet.name, wallet.icon);
-  const needsInstall = isInstallRequired(wallet);
-
-  if (needsInstall) {
-    return (
-      <a
-        href={wallet.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="w-full aspect-square flex flex-col items-center justify-center bg-[#2a3d4e] hover:bg-[#3a5060] rounded-lg transition-colors border border-[#3a4f60]"
-        title={wallet.name.replace(' (Solana)', '').replace(' (Ethereum)', '')}
-      >
-        {walletIcon ? (
-          <img
-            src={walletIcon}
-            alt={wallet.name}
-            className="w-10 h-10 rounded-xl opacity-50"
-          />
-        ) : (
-          <div className="w-10 h-10 rounded-xl bg-[#3a4f60] flex items-center justify-center opacity-50">
-            <span className="text-white font-bold text-lg">{wallet.name[0]}</span>
-          </div>
-        )}
-      </a>
-    );
-  }
-
-  return (
-    <WalletItem wallet={wallet} onConnect={onConnect}>
-      <WalletItem.ConnectButton asChild>
-        <button
-          className="w-full aspect-square flex flex-col items-center justify-center bg-[#2a3d4e] hover:bg-[#3a5060] rounded-lg transition-colors border border-[#3a4f60]"
-          title={wallet.name.replace(' (Solana)', '').replace(' (Ethereum)', '')}
-        >
-          {walletIcon ? (
-            <img
-              src={walletIcon}
-              alt={wallet.name}
-              className="w-10 h-10 rounded-xl"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-xl bg-[#3a4f60] flex items-center justify-center">
-              <span className="text-white font-bold text-lg">{wallet.name[0]}</span>
-            </div>
-          )}
-        </button>
-      </WalletItem.ConnectButton>
-    </WalletItem>
-  );
-}
-
 type ChainTab = 'Aptos' | 'Solana' | 'Ethereum';
 
 // Wallet list row component

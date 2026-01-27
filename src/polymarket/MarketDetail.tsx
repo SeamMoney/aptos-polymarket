@@ -1100,7 +1100,7 @@ export function MarketDetail() {
             }`}
           >
             <div className="flex flex-wrap gap-x-4 gap-y-1">
-              {chartOutcomes.map((outcome, index) => {
+              {chartOutcomes.map((outcome, _index) => {
                 const price = outcome.prices[outcome.prices.length - 1] || 0;
                 const isHighlighted = highlightedOutcomeId === outcome.id;
                 const isOtherHighlighted = highlightedOutcomeId !== null && highlightedOutcomeId !== outcome.id;
@@ -1250,7 +1250,7 @@ export function MarketDetail() {
               const displayName = outcome.name === "Other" ? "Donald Trump Jr." : outcome.name;
 
               // Always use live on-chain price
-              const realPrice = outcome.price;
+              const realPrice = outcome.prices[outcome.prices.length - 1] || 0;
               const yesPrice = Math.round(realPrice * 100);
               const noPrice = 100 - yesPrice;
               const yesPriceDisplay = yesPrice < 1 ? `${(realPrice * 100).toFixed(1)}` : yesPrice.toString();
@@ -1297,7 +1297,7 @@ export function MarketDetail() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => {
-                        setSelectedOutcome(outcome);
+                        const mo = market.outcomes?.find(o => o.id === outcome.id || o.name === outcome.name); if (mo) setSelectedOutcome(mo);
                         setTradeType('yes');
                         setShowTradingSheet(true);
                       }}
@@ -1318,7 +1318,7 @@ export function MarketDetail() {
                     </button>
                     <button
                       onClick={() => {
-                        setSelectedOutcome(outcome);
+                        const mo = market.outcomes?.find(o => o.id === outcome.id || o.name === outcome.name); if (mo) setSelectedOutcome(mo);
                         setTradeType('no');
                         setShowTradingSheet(true);
                       }}
@@ -1619,7 +1619,7 @@ export function MarketDetail() {
                 <>
                   <button
                     onClick={() => {
-                      if (outcome) setSelectedOutcome(outcome);
+                      if (outcome) { const mo = market.outcomes?.find(o => o.id === outcome.id || o.name === outcome.name); if (mo) setSelectedOutcome(mo); }
                       setTradeType('yes');
                       setShowTradingSheet(true);
                     }}
@@ -1640,7 +1640,7 @@ export function MarketDetail() {
                   </button>
                   <button
                     onClick={() => {
-                      if (outcome) setSelectedOutcome(outcome);
+                      if (outcome) { const mo = market.outcomes?.find(o => o.id === outcome.id || o.name === outcome.name); if (mo) setSelectedOutcome(mo); }
                       setTradeType('no');
                       setShowTradingSheet(true);
                     }}
