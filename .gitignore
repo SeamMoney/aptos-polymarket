@@ -47,3 +47,4 @@ remotion-video/out/
 remotion-video/*.mp4
 *.mp4
 .playwright-mcp/
+aptos-move-agent-skills/
