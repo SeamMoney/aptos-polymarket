@@ -175,15 +175,15 @@ turbo: {
   BATCH_DELAY_MS: 40,          // NOT 20
   FIRE_AND_FORGET_RATIO: 0.85,
   USE_BATCH_SUBMIT: false,     // CRITICAL - causes BCS errors
-  USE_ORDERLESS: true,
+  USE_ORDERLESS: false,        // CRITICAL - true causes ~50% nonce failures
 }
 ```
 
-**Latest Piscina Server:**
+**Latest Piscina Server (2000 accounts):**
 ```bash
 SEED_MNEMONIC="..." \
-ACCOUNT_COUNT=500 \
-WORKER_COUNT=4 \
+ACCOUNT_COUNT=2000 \
+USE_ORDERLESS=false \
 RPC_MODE=internal \
 npx tsx server/hft-piscina-server.ts turbo
 ```

@@ -166,8 +166,9 @@ export BATCH_SIZE=20
 
 ### High failure rate (>30%)
 ```bash
-# Likely sequence number issues
-# Ensure USE_ORDERLESS=true is set
+# Likely the balanced trading bug (selling tokens not owned)
+# Ensure USE_ORDERLESS=false (true causes ~50% nonce failures)
+export USE_ORDERLESS=false
 
 # Or reduce concurrent accounts
 export ACCOUNT_COUNT=1000
