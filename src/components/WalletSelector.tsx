@@ -4,52 +4,23 @@ import {
   groupAndSortWallets,
   type AdapterWallet,
   type AdapterNotDetectedWallet,
-  APTOS_CONNECT_ACCOUNT_URL
 } from '@aptos-labs/wallet-adapter-core';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ExternalLink, Smartphone } from 'lucide-react';
-
-// Detect if user is on mobile device
-const isMobileDevice = () => {
-  if (typeof window === 'undefined') return false;
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-};
-
-// Detect iOS Safari specifically (has popup issues)
-const isIOSSafari = () => {
-  if (typeof window === 'undefined') return false;
-  const ua = navigator.userAgent;
-  const isIOS = /iPad|iPhone|iPod/.test(ua);
-  const isWebkit = /WebKit/.test(ua);
-  const isChrome = /CriOS/.test(ua);
-  const isFirefox = /FxiOS/.test(ua);
-  // iOS Safari is iOS + WebKit but not Chrome or Firefox
-  return isIOS && isWebkit && !isChrome && !isFirefox;
-};
-
-// Generate Petra deep link to open this dApp in Petra mobile browser
-// Note: The URL should NOT be encoded per Petra docs
-// Example: https://petra.app/explore?link=https://app.example.com
-const getPetraDeepLink = () => {
-  if (typeof window === 'undefined') return '';
-  // Use the base URL without query params for cleaner deep link
-  const baseUrl = `${window.location.origin}${window.location.pathname}`;
-  return `https://petra.app/explore?link=${baseUrl}`;
-};
+import { X, ExternalLink } from 'lucide-react';
 
 // Custom wallet icons (override outdated icons from adapters)
-// All icons have consistent rounded corners (rx="24-26") for sleek appearance
 const WALLET_ICONS: Record<string, string> = {
-  // Petra - official logo from wallet-adapter-core registry
-  'Petra': 'data:image/png;base64,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',
-  // Phantom - official logo with rounded corners
+  'Petra': 'data:image/png;base64,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',
   'Phantom': 'data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iMjYiIGZpbGw9IiNBQjlGRjIiLz4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik01NS42NDE2IDgyLjE0NzdDNTAuODc0NCA4OS40NTI1IDQyLjg4NjIgOTguNjk2NiAzMi4yNTY4IDk4LjY5NjZDMjcuMjMyIDk4LjY5NjYgMjIuNDAwNCA5Ni42MjggMjIuNDAwNCA4Ny42NDI0QzIyLjQwMDQgNjQuNzU4NCA1My42NDQ1IDI5LjMzMzUgODIuNjMzOSAyOS4zMzM1Qzk5LjEyNTcgMjkuMzMzNSAxMDUuNjk3IDQwLjc3NTUgMTA1LjY5NyA1My43Njg5QzEwNS42OTcgNzAuNDQ3MSA5NC44NzM5IDg5LjUxNzEgODQuMTE1NiA4OS41MTcxQzgwLjcwMTMgODkuNTE3MSA3OS4wMjY0IDg3LjY0MjQgNzkuMDI2NCA4NC42Njg4Qzc5LjAyNjQgODMuODkzMSA3OS4xNTUyIDgzLjA1MjcgNzkuNDEyOSA4Mi4xNDc3Qzc1Ljc0MDkgODguNDE4MiA2OC42NTQ2IDk0LjIzNjEgNjIuMDE5MiA5NC4yMzYxQzU3LjE4NzcgOTQuMjM2MSA1NC43Mzk3IDkxLjE5NzkgNTQuNzM5NyA4Ni45MzE0QzU0LjczOTcgODUuMzc5OSA1NS4wNjE4IDgzLjc2MzggNTUuNjQxNiA4Mi4xNDc3Wk04MC42MTMzIDUzLjMxODJDODAuNjEzMyA1Ny4xMDQ0IDc4LjM3OTUgNTguOTk3NSA3NS44ODA2IDU4Ljk5NzVDNzMuMzQzOCA1OC45OTc1IDcxLjE0NzkgNTcuMTA0NCA3MS4xNDc5IDUzLjMxODJDNzEuMTQ3OSA0OS41MzIgNzMuMzQzOCA0Ny42Mzg5IDc1Ljg4MDYgNDcuNjM4OUM3OC4zNzk1IDQ3LjYzODkgODAuNjEzMyA0OS41MzIgODAuNjEzMyA1My4zMTgyWk05NC44MTAyIDUzLjMxODRDOTQuODEwMiA1Ny4xMDQ2IDkyLjU3NjMgNTguOTk3NyA5MC4wNzc1IDU4Ljk5NzdDODcuNTQwNyA1OC45OTc3IDg1LjM0NDcgNTcuMTA0NiA4NS4zNDQ3IDUzLjMxODRDODUuMzQ0NyA0OS41MzIzIDg3LjU0MDcgNDcuNjM5MiA5MC4wNzc1IDQ3LjYzOTJDOTIuNTc2MyA0Ny42MzkyIDk0LjgxMDIgNDkuNTMyMyA5NC44MTAyIDUzLjMxODRaIiBmaWxsPSIjRkZGREY4Ii8+Cjwvc3ZnPg==',
-  'Phantom (Solana)': 'data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iMjYiIGZpbGw9IiNBQjlGRjIiLz4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik01NS42NDE2IDgyLjE0NzdDNTAuODc0NCA4OS40NTI1IDQyLjg4NjIgOTguNjk2NiAzMi4yNTY4IDk4LjY5NjZDMjcuMjMyIDk4LjY5NjYgMjIuNDAwNCA5Ni42MjggMjIuNDAwNCA4Ny42NDI0QzIyLjQwMDQgNjQuNzU4NCA1My42NDQ1IDI5LjMzMzUgODIuNjMzOSAyOS4zMzM1Qzk5LjEyNTcgMjkuMzMzNSAxMDUuNjk3IDQwLjc3NTUgMTA1LjY5NyA1My43Njg5QzEwNS42OTcgNzAuNDQ3MSA5NC44NzM5IDg5LjUxNzEgODQuMTE1NiA4OS41MTcxQzgwLjcwMTMgODkuNTE3MSA3OS4wMjY0IDg3LjY0MjQgNzkuMDI2NCA4NC42Njg4Qzc5LjAyNjQgODMuODkzMSA3OS4xNTUyIDgzLjA1MjcgNzkuNDEyOSA4Mi4xNDc3Qzc1Ljc0MDkgODguNDE4MiA2OC42NTQ2IDk0LjIzNjEgNjIuMDE5MiA5NC4yMzYxQzU3LjE4NzcgOTQuMjM2MSA1NC43Mzk3IDkxLjE5NzkgNTQuNzM5NyA4Ni45MzE0QzU0LjczOTcgODUuMzc5OSA1NS4wNjE4IDgzLjc2MzggNTUuNjQxNiA4Mi4xNDc3Wk04MC42MTMzIDUzLjMxODJDODAuNjEzMyA1Ny4xMDQ0IDc4LjM3OTUgNTguOTk3NSA3NS44ODA2IDU4Ljk5NzVDNzMuMzQzOCA1OC45OTc1IDcxLjE0NzkgNTcuMTA0NCA3MS4xNDc5IDUzLjMxODJDNzEuMTQ3OSA0OS41MzIgNzMuMzQzOCA0Ny42Mzg5IDc1Ljg4MDYgNDcuNjM4OUM3OC4zNzk1IDQ3LjYzODkgODAuNjEzMyA0OS41MzIgODAuNjEzMyA1My4zMTgyWk05NC44MTAyIDUzLjMxODRDOTQuODEwMiA1Ny4xMDQ2IDkyLjU3NjMgNTguOTk3NyA5MC4wNzc1IDU4Ljk5NzdDODcuNTQwNyA1OC45OTc3IDg1LjM0NDcgNTcuMTA0NiA4NS4zNDQ3IDUzLjMxODRDODUuMzQ0NyA0OS41MzIzIDg3LjU0MDcgNDcuNjM5MiA5MC4wNzc1IDQ3LjYzOTJDOTIuNTc2MyA0Ny42MzkyIDk0LjgxMDIgNDkuNTMyMyA5NC44MTAyIDUzLjMxODRaIiBmaWxsPSIjRkZGREY4Ii8+Cjwvc3ZnPg==',
+  'MetaMask': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMjEyIDIxMiI+PHJlY3Qgd2lkdGg9IjIxMiIgaGVpZ2h0PSIyMTIiIHJ4PSI0MCIgZmlsbD0iI2ZmZiIvPjxwYXRoIGZpbGw9IiNFMTc3MjYiIHN0cm9rZT0iI0UxNzcyNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBkPSJtMTY3LjggMzQuMi03Mi4zIDUzLjggMTMuNC0zMS42eiIvPjxwYXRoIGZpbGw9IiNFMjc2MjUiIHN0cm9rZT0iI0UyNzYyNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBkPSJNNDQgMzQuMmw3MS43IDU0LjMtMTIuNy0zMi4xem0xMDUuNyA5OS41LTE5LjMgMjkuNSA0MS4zIDExLjQgMTEuOC00MHptLTE0Mi4yLjkgMTEuNyA0MCA0MS4zLTExLjQtMTkuMi0yOS41eiIvPjxwYXRoIGZpbGw9IiNFMjc2MjUiIHN0cm9rZT0iI0UyNzYyNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBkPSJNNTguNiA5Mi4xbC0xMS41IDE3LjQgNDEgMS45LTEuNC00NC40em05NC42IDBMMTIyIDY2LjRsLTEgNDUgNDEtMS45em0tOTIuOCA3MS4xIDE0LjctMjMuNS0yNSAzMy0yLjQtMTguOHptMTAzLTkuNS0yLjQgMTguOSAyNS0zMy0xNC42LTIzLjZ6Ii8+PHBhdGggZmlsbD0iI0Q1QkZCMiIgc3Ryb2tlPSIjRDVCRkIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGQ9Im0xNjMuMiAxNjMuMi0yNC44LTcuMiA0IDEyLjEtLjQgNS4xem0tMTE0LjYgMCAyMC45IDEwIDQtNS0yNS0xMi4xeiIvPjxwYXRoIGZpbGw9IiMyMzM0NDciIHN0cm9rZT0iIzIzMzQ0NyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBkPSJNNjkuMiAxNDMuOS05LTI2LjkgNDAuMSAxLjl6bTczLjcgMGwtMzEuMi0yNSA0MC4xLTEuOXptLTgyLjUtMzQuNCAzMS41IDE3IDEuMi0zNS42em04Ni43LTE4LjQgMS4yIDM1LjYgMzEuNS0xN3oiLz48cGF0aCBmaWxsPSIjQ0M2MjI4IiBzdHJva2U9IiNDQzYyMjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgZD0ibTYwLjQgMTA5LjUtMS4yIDM1LjYgMzEuNi0yNC4xek0xNTEuNyA5MWwtMS4yIDM1LjYtMzAuNS0xMS41eiIvPjxwYXRoIGZpbGw9IiNFMjc1MjUiIHN0cm9rZT0iI0UyNzUyNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBkPSJtOTEgMTIxLTMxLjQgMjQuMSAyNC42IDcuMyAzMS4yLTcuMy0yNC40LTI0LjF6bTU5LjQgMjQuMSAyNC42LTcuMy0zMS40LTI0LjEtMjQuNCwyNC4xIDMxLjIgNy4zeiIvPjxwYXRoIGZpbGw9IiNGNTg0MUIiIHN0cm9rZT0iI0Y1ODQxQiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBkPSJtNDguNiAxNjMuMiAyMC45IDEwLTI0LjgtMzMtMTkuMyAyMy4xem0xMTQuOCAwIDE5LjMtMjMuMS0xOS4yIDIzLjEgMjAuOS0xMHoiLz48cGF0aCBmaWxsPSIjQzAyOTJFIiBzdHJva2U9IiNDMDI5MkUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgZD0ibTg0LjMgMTUyLjQtMjQuNyA3LjMgOC43IDQuMiA2LjIgMTUuMy0xLjctMjYuOHptNDMuNC4xLTExLjUgMjYuNy0xLjctMTUuMiA2LjItMTUuNCA4LjctNC4yeiIvPjxwYXRoIGZpbGw9IiMxNjE2MTYiIHN0cm9rZT0iIzE2MTYxNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBkPSJNNTkuNiAxNjMuN2wyNS04LjEtMjQuNyA3LjN6bTkyLjgtLjgtMjQuNyA3LjMgMjUtOC4xeiIvPjwvc3ZnPg==',
+  'Backpack': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIyNiIgZmlsbD0iI2UzMzIzMiIvPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik02NCAyNGMtMjIgMC00MCAyMi00MCA0NHY0MGg4MFY2OGMwLTIyLTE4LTQ0LTQwLTQ0em0wIDE2YzEzLjMgMCAyNCAxMy40IDI0IDMwdjI0SDQwVjcwYzAtMTYuNiAxMC43LTMwIDI0LTMweiIvPjwvc3ZnPg==',
+  'Coinbase Wallet': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIyNiIgZmlsbD0iIzAwNTJGRiIvPjxwYXRoIGZpbGw9IiNmZmYiIGQ9Ik02NCAyNGMtMjIuMSAwLTQwIDE3LjktNDAgNDBzMTcuOSA0MCA0MCA0MCA0MC0xNy45IDQwLTQwLTE3LjktNDAtNDAtNDB6bTAgNjRjLTEzLjMgMC0yNC0xMC43LTI0LTI0czEwLjctMjQgMjQtMjQgMjQgMTAuNyAyNCAyNC0xMC43IDI0LTI0IDI0eiIvPjxyZWN0IHg9IjUyIiB5PSI1MiIgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiByeD0iNCIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg==',
 };
 
 // Helper to get wallet icon
 export const getWalletIcon = (walletName: string, fallbackIcon?: string): string => {
-  return WALLET_ICONS[walletName] || WALLET_ICONS[walletName.replace(' (Solana)', '').replace(' (Ethereum)', '')] || fallbackIcon || '';
+  const baseName = walletName.replace(' (Solana)', '').replace(' (Ethereum)', '');
+  return WALLET_ICONS[walletName] || WALLET_ICONS[baseName] || fallbackIcon || '';
 };
 
 interface WalletSelectorProps {
@@ -69,18 +40,22 @@ const GoogleIcon = () => (
 
 // Apple icon SVG
 const AppleIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="#000000">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
     <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
   </svg>
 );
 
-// Aptos Connect Button for social login - uses official WalletItem component
+type ChainTab = 'aptos' | 'solana' | 'ethereum';
+
+// Aptos Connect Button for social login
 function AptosConnectButton({
   wallet,
   onConnect,
+  variant = 'full',
 }: {
   wallet: AdapterWallet;
   onConnect: () => void;
+  variant?: 'full' | 'half';
 }) {
   const isGoogle = wallet.name.toLowerCase().includes('google');
   const isApple = wallet.name.toLowerCase().includes('apple');
@@ -89,12 +64,12 @@ function AptosConnectButton({
     <WalletItem wallet={wallet} onConnect={onConnect}>
       <WalletItem.ConnectButton asChild>
         <button
-          className="w-full flex items-center justify-center gap-3 p-3 bg-white hover:bg-gray-100 rounded-xl transition-colors disabled:opacity-50 border border-gray-200"
+          className={`${variant === 'half' ? 'flex-1' : 'w-full'} flex items-center justify-center gap-2 p-3 bg-white hover:bg-gray-100 rounded-xl transition-colors border border-gray-200`}
         >
           {isGoogle && <GoogleIcon />}
           {isApple && <AppleIcon />}
-          <span className="text-gray-900 font-medium">
-            {isGoogle ? 'Continue with Google' : isApple ? 'Continue with Apple' : wallet.name}
+          <span className="text-gray-900 font-medium text-sm">
+            {isGoogle ? 'Google' : isApple ? 'Apple' : wallet.name}
           </span>
         </button>
       </WalletItem.ConnectButton>
@@ -102,7 +77,7 @@ function AptosConnectButton({
   );
 }
 
-// Regular wallet button - uses official WalletItem component
+// Regular wallet button
 function WalletButton({
   wallet,
   onConnect,
@@ -110,16 +85,8 @@ function WalletButton({
   wallet: AdapterWallet | AdapterNotDetectedWallet;
   onConnect: () => void;
 }) {
-  // Get chain label from wallet name
-  const getChainLabel = () => {
-    if (wallet.name.includes('Solana')) return 'Solana';
-    if (wallet.name.includes('Ethereum')) return 'Ethereum';
-    return null;
-  };
-
-  const chainLabel = getChainLabel();
-  const displayName = wallet.name.replace(' (Solana)', '').replace(' (Ethereum)', '');
-  const walletIcon = WALLET_ICONS[wallet.name] || WALLET_ICONS[displayName] || wallet.icon;
+  const baseName = wallet.name.replace(' (Solana)', '').replace(' (Ethereum)', '');
+  const walletIcon = getWalletIcon(wallet.name, wallet.icon);
   const needsInstall = isInstallRequired(wallet);
 
   return (
@@ -134,53 +101,35 @@ function WalletButton({
           {walletIcon ? (
             <img
               src={walletIcon}
-              alt={wallet.name}
-              className="w-10 h-10 rounded-xl opacity-50"
+              alt={baseName}
+              className="w-9 h-9 rounded-lg opacity-50"
             />
           ) : (
-            <div className="w-10 h-10 rounded-xl bg-[#3a4f60] flex items-center justify-center opacity-50">
-              <span className="text-white font-bold">{displayName[0]}</span>
+            <div className="w-9 h-9 rounded-lg bg-[#3a4f60] flex items-center justify-center opacity-50">
+              <span className="text-white font-bold text-sm">{baseName[0]}</span>
             </div>
           )}
-          <div className="flex-1 text-left">
-            <div className="flex items-center gap-2">
-              <span className="text-white font-medium opacity-50">
-                {displayName}
-              </span>
-              {chainLabel && (
-                <span className="text-[10px] text-[#8297a3]">({chainLabel})</span>
-              )}
-            </div>
-            <span className="text-[10px] text-[#6b7a8a]">Not installed</span>
-          </div>
-          <ExternalLink size={16} className="text-[#6b7a8a]" />
+          <span className="flex-1 text-white/50 font-medium text-left">{baseName}</span>
+          <span className="px-2 py-1 text-xs text-[#6b7a8a]">Install</span>
+          <ExternalLink size={14} className="text-[#6b7a8a]" />
         </a>
       ) : (
         <WalletItem.ConnectButton asChild>
           <button
-            className="w-full flex items-center gap-3 p-3 bg-[#1c2b3a] hover:bg-[#2a3d4e] rounded-xl transition-colors disabled:opacity-50"
+            className="w-full flex items-center gap-3 p-3 bg-[#1c2b3a] hover:bg-[#2a3d4e] rounded-xl transition-colors"
           >
             {walletIcon ? (
               <img
                 src={walletIcon}
-                alt={wallet.name}
-                className="w-10 h-10 rounded-xl"
+                alt={baseName}
+                className="w-9 h-9 rounded-lg"
               />
             ) : (
-              <div className="w-10 h-10 rounded-xl bg-[#3a4f60] flex items-center justify-center">
-                <span className="text-white font-bold">{displayName[0]}</span>
+              <div className="w-9 h-9 rounded-lg bg-[#3a4f60] flex items-center justify-center">
+                <span className="text-white font-bold text-sm">{baseName[0]}</span>
               </div>
             )}
-            <div className="flex-1 text-left">
-              <div className="flex items-center gap-2">
-                <span className="text-white font-medium">
-                  {displayName}
-                </span>
-                {chainLabel && (
-                  <span className="text-[10px] text-[#8297a3]">({chainLabel})</span>
-                )}
-              </div>
-            </div>
+            <span className="flex-1 text-white font-medium text-left">{baseName}</span>
             <span className="px-3 py-1.5 bg-[#60a5fa] hover:bg-[#3b82f6] text-white text-sm font-medium rounded-lg">
               Connect
             </span>
@@ -191,32 +140,9 @@ function WalletButton({
   );
 }
 
-// Clear Aptos Connect cached state (useful when having auth issues)
-const clearAptosConnectCache = () => {
-  const keysToRemove = [
-    '@aptos-connect/connectedAccount',
-    '@aptos-connect/dapp-local-state',
-    '@aptos-connect/client-identity-key',
-  ];
-  keysToRemove.forEach(key => {
-    try {
-      localStorage.removeItem(key);
-    } catch (e) {
-      console.warn(`Failed to remove ${key}:`, e);
-    }
-  });
-  console.log('[WalletSelector] Cleared Aptos Connect cache');
-};
-
 export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
   const { wallets, notDetectedWallets = [], connected } = useWallet();
-  const [error, setError] = useState<string | null>(null);
-  const [showTroubleshooting, setShowTroubleshooting] = useState(false);
-
-  // Check if on mobile and iOS Safari
-  const isMobile = useMemo(() => isMobileDevice(), []);
-  const isMobileSafari = useMemo(() => isIOSSafari(), []);
-  const petraDeepLink = useMemo(() => getPetraDeepLink(), []);
+  const [activeTab, setActiveTab] = useState<ChainTab>('aptos');
 
   // Close modal when connected
   useEffect(() => {
@@ -225,28 +151,67 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
     }
   }, [connected, isOpen, onClose]);
 
-  // Memoize wallet grouping and filtering to prevent lag on modal open
-  const { petraWebWallets, aptosWallets, solanaWallets, ethereumWallets, aptosInstallable, solanaInstallable, ethereumInstallable } = useMemo(() => {
+  // Memoize wallet grouping
+  const { googleWallet, appleWallet, aptosWallets, solanaWallets, ethereumWallets } = useMemo(() => {
     const { petraWebWallets, availableWallets, installableWallets } = groupAndSortWallets(
       [...(wallets || []), ...notDetectedWallets]
     );
 
+    // Find Google and Apple wallets from petraWebWallets
+    const googleWallet = petraWebWallets.find(w => w.name.toLowerCase().includes('google'));
+    const appleWallet = petraWebWallets.find(w => w.name.toLowerCase().includes('apple'));
+
+    // Deduplicate wallets - keep only one per base name, prefer detected over installable
+    const dedupeWallets = (wallets: (AdapterWallet | AdapterNotDetectedWallet)[]) => {
+      const seen = new Set<string>();
+      return wallets.filter(w => {
+        const baseName = w.name.replace(' (Solana)', '').replace(' (Ethereum)', '');
+        if (seen.has(baseName)) return false;
+        seen.add(baseName);
+        return true;
+      });
+    };
+
+    // Combine available and installable, then dedupe
+    const allAptosWallets = [
+      ...availableWallets.filter(w => !w.name.includes('Solana') && !w.name.includes('Ethereum')),
+      ...installableWallets.filter(w => !w.name.includes('Solana') && !w.name.includes('Ethereum')),
+    ];
+    const allSolanaWallets = [
+      ...availableWallets.filter(w => w.name.includes('Solana')),
+      ...installableWallets.filter(w => w.name.includes('Solana')),
+    ];
+    const allEthereumWallets = [
+      ...availableWallets.filter(w => w.name.includes('Ethereum')),
+      ...installableWallets.filter(w => w.name.includes('Ethereum')),
+    ];
+
     return {
-      petraWebWallets,
-      aptosWallets: availableWallets.filter(w =>
-        !w.name.includes('Solana') && !w.name.includes('Ethereum')
-      ),
-      solanaWallets: availableWallets.filter(w => w.name.includes('Solana')),
-      ethereumWallets: availableWallets.filter(w => w.name.includes('Ethereum')),
-      aptosInstallable: installableWallets.filter(w =>
-        !w.name.includes('Solana') && !w.name.includes('Ethereum')
-      ),
-      solanaInstallable: installableWallets.filter(w => w.name.includes('Solana')),
-      ethereumInstallable: installableWallets.filter(w => w.name.includes('Ethereum')),
+      googleWallet,
+      appleWallet,
+      aptosWallets: dedupeWallets(allAptosWallets),
+      solanaWallets: dedupeWallets(allSolanaWallets),
+      ethereumWallets: dedupeWallets(allEthereumWallets),
     };
   }, [wallets, notDetectedWallets]);
 
+  // Get wallets for active tab
+  const currentWallets = useMemo(() => {
+    switch (activeTab) {
+      case 'aptos': return aptosWallets;
+      case 'solana': return solanaWallets;
+      case 'ethereum': return ethereumWallets;
+      default: return [];
+    }
+  }, [activeTab, aptosWallets, solanaWallets, ethereumWallets]);
+
   if (!isOpen) return null;
+
+  const tabs: { id: ChainTab; label: string; count: number }[] = [
+    { id: 'aptos', label: 'Aptos', count: aptosWallets.length },
+    { id: 'solana', label: 'Solana', count: solanaWallets.length },
+    { id: 'ethereum', label: 'Ethereum', count: ethereumWallets.length },
+  ];
 
   return (
     <AnimatePresence>
@@ -262,217 +227,86 @@ export function WalletSelector({ isOpen, onClose }: WalletSelectorProps) {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           transition={{ duration: 0.2 }}
-          className="w-full max-w-md bg-[#1c2b3a] border-2 border-[#3a4f60] rounded-2xl shadow-2xl overflow-hidden"
+          className="w-full max-w-sm bg-[#1c2b3a] border border-[#3a4f60] rounded-2xl shadow-2xl overflow-hidden"
           onClick={e => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="relative p-6 pb-4">
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[300px] h-[150px] bg-gradient-to-b from-[#60a5fa]/20 via-[#22c55e]/10 to-transparent rounded-full blur-3xl" />
-            </div>
-
+          <div className="relative p-5 pb-4">
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 p-2 hover:bg-[#2a3d4e] rounded-lg transition-colors"
+              className="absolute top-4 right-4 p-1.5 hover:bg-[#2a3d4e] rounded-lg transition-colors"
             >
-              <X size={20} color="#8297a3" />
+              <X size={18} className="text-[#8297a3]" />
             </button>
 
-            <div className="relative text-center mb-2">
-              <h2 className="text-xl font-bold text-white">Connect to Polymarket</h2>
-              <p className="text-[#8297a3] text-sm mt-2">
-                Sign in with your social account or connect a wallet
-              </p>
-            </div>
+            <h2 className="text-lg font-semibold text-white">Connect Wallet</h2>
           </div>
 
-          {/* Error Message with Troubleshooting */}
-          {error && (
-            <div className="px-6 mb-4">
-              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                <p className="text-red-400 text-sm">{error}</p>
-                <button
-                  onClick={() => setShowTroubleshooting(!showTroubleshooting)}
-                  className="text-xs text-red-300 underline mt-2"
-                >
-                  {showTroubleshooting ? 'Hide troubleshooting' : 'Having issues? Click here'}
-                </button>
-                {showTroubleshooting && (
-                  <div className="mt-3 space-y-2">
-                    <p className="text-xs text-gray-400">Try these steps:</p>
-                    <ol className="text-xs text-gray-400 list-decimal ml-4 space-y-1">
-                      <li>Make sure popups are allowed for this site</li>
-                      <li>Clear the connection cache below and try again</li>
-                      <li>Try a different browser or incognito mode</li>
-                    </ol>
-                    <button
-                      onClick={() => {
-                        clearAptosConnectCache();
-                        setError(null);
-                        setShowTroubleshooting(false);
-                      }}
-                      className="mt-2 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs rounded-lg transition-colors"
-                    >
-                      Clear Cache & Retry
-                    </button>
-                  </div>
+          {/* Social Login Buttons - Side by Side */}
+          {(googleWallet || appleWallet) && (
+            <div className="px-5 pb-4">
+              <div className="flex gap-3">
+                {googleWallet && (
+                  <AptosConnectButton
+                    wallet={googleWallet}
+                    onConnect={onClose}
+                    variant="half"
+                  />
                 )}
+                {appleWallet && (
+                  <AptosConnectButton
+                    wallet={appleWallet}
+                    onConnect={onClose}
+                    variant="half"
+                  />
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 py-4">
+                <div className="flex-1 h-px bg-[#3a4f60]" />
+                <span className="text-xs text-[#6b7a8a]">or</span>
+                <div className="flex-1 h-px bg-[#3a4f60]" />
               </div>
             </div>
           )}
 
+          {/* Chain Tabs */}
+          <div className="px-5">
+            <div className="flex bg-[#0f1a24] rounded-lg p-1">
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-1 py-2 px-3 text-sm font-medium rounded-md transition-colors ${
+                    activeTab === tab.id
+                      ? 'bg-[#2a3d4e] text-white'
+                      : 'text-[#6b7a8a] hover:text-white'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Wallet List */}
-          <div className="px-6 pb-6 max-h-[400px] overflow-y-auto">
-            <div className="space-y-3">
-              {/* On mobile (especially iOS Safari), show Petra App option FIRST */}
-              {isMobile && (
-                <div className="space-y-2">
-                  <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider mb-2">
-                    Recommended for Mobile
-                  </div>
-                  <a
-                    href={petraDeepLink}
-                    className="w-full flex items-center gap-3 p-3 bg-[#6C5CE7] hover:bg-[#5B4ED6] rounded-xl transition-colors"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-                      <Smartphone size={20} className="text-white" />
-                    </div>
-                    <div className="flex-1 text-left">
-                      <span className="text-white font-medium">Open in Petra App</span>
-                      <p className="text-white/70 text-xs">Best experience on mobile</p>
-                    </div>
-                    <ExternalLink size={16} className="text-white/70" />
-                  </a>
-
-                  {isMobileSafari && (
-                    <p className="text-xs text-amber-400/80 px-1">
-                      Note: Google/Apple login may not work in Safari. Use Petra App for best results.
-                    </p>
-                  )}
-
-                  <div className="flex items-center gap-3 py-2">
-                    <div className="flex-1 h-px bg-[#3a4f60]" />
-                    <span className="text-xs text-[#6b7a8a]">or try social login</span>
-                    <div className="flex-1 h-px bg-[#3a4f60]" />
-                  </div>
-                </div>
-              )}
-
-              {/* Social Login (Aptos Connect) - show after Petra on mobile */}
-              {petraWebWallets.length > 0 && (
-                <div className="space-y-2">
-                  {!isMobile && (
-                    <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider mb-2">
-                      Quick Sign In
-                    </div>
-                  )}
-                  {petraWebWallets.map(wallet => (
-                    <AptosConnectButton
-                      key={wallet.name}
-                      wallet={wallet}
-                      onConnect={onClose}
-                    />
-                  ))}
-
-                  <div className="flex items-center gap-3 py-2">
-                    <div className="flex-1 h-px bg-[#3a4f60]" />
-                    <span className="text-xs text-[#6b7a8a]">or connect wallet</span>
-                    <div className="flex-1 h-px bg-[#3a4f60]" />
-                  </div>
-                </div>
-              )}
-
-              {/* Aptos Wallets */}
-              {aptosWallets.length > 0 && (
-                <div className="space-y-2">
-                  <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider">
-                    Aptos Wallets
-                  </div>
-                  {aptosWallets.map(wallet => (
-                    <WalletButton
-                      key={wallet.name}
-                      wallet={wallet}
-                      onConnect={onClose}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Solana Wallets (X-Chain) */}
-              {solanaWallets.length > 0 && (
-                <div className="space-y-2">
-                  <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider flex items-center gap-2">
-                    Solana Wallets
-                    <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 text-[8px] rounded">X-CHAIN</span>
-                  </div>
-                  {solanaWallets.map(wallet => (
-                    <WalletButton
-                      key={wallet.name}
-                      wallet={wallet}
-                      onConnect={onClose}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Ethereum Wallets (X-Chain) */}
-              {ethereumWallets.length > 0 && (
-                <div className="space-y-2">
-                  <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider flex items-center gap-2">
-                    Ethereum Wallets
-                    <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 text-[8px] rounded">X-CHAIN</span>
-                  </div>
-                  {ethereumWallets.map(wallet => (
-                    <WalletButton
-                      key={wallet.name}
-                      wallet={wallet}
-                      onConnect={onClose}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Installable Wallets */}
-              {(aptosInstallable.length > 0 || solanaInstallable.length > 0 || ethereumInstallable.length > 0) && (
-                <div className="space-y-2 pt-2">
-                  <div className="text-[10px] text-[#6b7a8a] uppercase tracking-wider">
-                    Available to Install
-                  </div>
-                  {[...aptosInstallable, ...solanaInstallable, ...ethereumInstallable].slice(0, 4).map(wallet => (
-                    <WalletButton
-                      key={wallet.name}
-                      wallet={wallet}
-                      onConnect={onClose}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Empty state */}
-              {petraWebWallets.length === 0 &&
-               aptosWallets.length === 0 && solanaWallets.length === 0 && ethereumWallets.length === 0 &&
-               aptosInstallable.length === 0 && solanaInstallable.length === 0 && ethereumInstallable.length === 0 && (
-                <div className="text-center py-8 text-[#6b7a8a]">
-                  No wallets available
+          <div className="px-5 py-4 max-h-[280px] overflow-y-auto">
+            <div className="space-y-2">
+              {currentWallets.length > 0 ? (
+                currentWallets.map(wallet => (
+                  <WalletButton
+                    key={wallet.name}
+                    wallet={wallet}
+                    onConnect={onClose}
+                  />
+                ))
+              ) : (
+                <div className="text-center py-8 text-[#6b7a8a] text-sm">
+                  No {activeTab} wallets available
                 </div>
               )}
             </div>
           </div>
-
-          {/* Footer with Aptos Connect link */}
-          {petraWebWallets.length > 0 && (
-            <div className="px-6 py-3 border-t border-[#3a4f60] bg-[#1c2b3a]/50">
-              <a
-                href={APTOS_CONNECT_ACCOUNT_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-[#60a5fa] hover:text-[#3b82f6] flex items-center justify-center gap-1"
-              >
-                Learn more about Aptos Connect
-                <ExternalLink size={10} />
-              </a>
-            </div>
-          )}
         </motion.div>
       </motion.div>
     </AnimatePresence>
