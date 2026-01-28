@@ -179,10 +179,10 @@ turbo: {
 }
 ```
 
-**Latest Piscina Server (2000 accounts):**
+**Latest Piscina Server (5000 accounts):**
 ```bash
 SEED_MNEMONIC="..." \
-ACCOUNT_COUNT=2000 \
+ACCOUNT_COUNT=5000 \
 USE_ORDERLESS=false \
 RPC_MODE=internal \
 npx tsx server/hft-piscina-server.ts turbo
@@ -217,9 +217,9 @@ If errors start during demo:
 |-----------|---------|--------|-------|
 | Internal VFN | `http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1` | - | Aptos Labs VFN (may be unreliable) |
 | Custom Fullnode | `http://aptos.cash.trading:8080/v1` | - | Fallback fullnode |
-| Worker 1 | 178.128.177.88 | SFO2 | Accounts 0-165 |
-| Worker 2 | 167.99.164.45 | SFO2 | Accounts 166-332 (NEW Jan 28) |
-| Worker 3 | 138.68.0.124 | SFO2 | Accounts 333-499 (NEW Jan 28) |
+| Worker 1 | 178.128.177.88 | SFO2 | Accounts 0-1666 (1667 accounts) |
+| Worker 2 | 167.99.164.45 | SFO2 | Accounts 1667-3333 (1667 accounts) |
+| Worker 3 | 138.68.0.124 | SFO2 | Accounts 3334-4999 (1666 accounts) |
 
 **IMPORTANT:** All workers must be in the SAME DigitalOcean region (SFO2) with identical specs for reliable operation.
 
@@ -274,14 +274,14 @@ Created 2 fresh droplets in SFO2 (same region as Worker 1) with identical specs:
 - Ubuntu 24.04 LTS
 - Node.js 20.x
 
-### New Worker Setup
+### New Worker Setup (5000 Accounts)
 ```bash
-# Worker 1: 178.128.177.88 (accounts 0-165)
-# Worker 2: 167.99.164.45 (accounts 166-332) - NEW
-# Worker 3: 138.68.0.124 (accounts 333-499) - NEW
+# Worker 1: 178.128.177.88 (accounts 0-1666)     - 1667 accounts
+# Worker 2: 167.99.164.45 (accounts 1667-3333)   - 1667 accounts
+# Worker 3: 138.68.0.124 (accounts 3334-4999)    - 1666 accounts
 ```
 
-### Verified Results (3-worker parallel test)
+### Verified Results (3-worker parallel test with 500 accounts)
 | Worker | Success Rate | Peak TPS | Total Trades |
 |--------|-------------|----------|--------------|
 | Worker 1 | 98.7% | 1,181 | 117,390 |
@@ -294,8 +294,8 @@ Each worker has `/opt/aptos-hft/start-hft.sh`:
 ```bash
 #!/bin/bash
 export SEED_MNEMONIC="<mnemonic>"
-export ACCOUNT_START_INDEX=<start>  # 0, 166, or 333
-export ACCOUNT_COUNT=<count>        # 166 or 167
+export ACCOUNT_START_INDEX=<start>  # 0, 1667, or 3334
+export ACCOUNT_COUNT=<count>        # 1667 or 1666
 export USE_ORDERLESS=false
 export RPC_MODE=custom
 export FULLNODE_URL="http://aptos.cash.trading:8080/v1"

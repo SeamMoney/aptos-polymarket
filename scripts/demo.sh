@@ -2,13 +2,13 @@
 #
 # APTOS POLYMARKET - DEMO ORCHESTRATOR
 # =====================================
-# Simplified demo script for 2000-account high TPS demos
+# Simplified demo script for 5000-account high TPS demos
 #
 # Usage:
 #   ./scripts/demo.sh preflight         # Pre-flight validation
 #   ./scripts/demo.sh preflight --dual  # Pre-flight with transfer checks
-#   ./scripts/demo.sh standby           # AMM only (2000 accounts)
-#   ./scripts/demo.sh standby --dual    # AMM + USD1 transfers (1500 + 500)
+#   ./scripts/demo.sh standby           # AMM only (5000 accounts)
+#   ./scripts/demo.sh standby --dual    # AMM + USD1 transfers (4000 + 1000)
 #   ./scripts/demo.sh launch N          # Trigger N-second demo
 #   ./scripts/demo.sh stop              # Stop all workers
 #   ./scripts/demo.sh status            # Check all workers
@@ -27,37 +27,37 @@ DUAL_MODE=false
 # CONFIGURATION
 # ============================================
 
-# Cloud Worker VMs
+# Cloud Worker VMs (all in SFO2 region)
 WORKER1_IP="178.128.177.88"
-WORKER2_IP="147.182.237.239"
-WORKER3_IP="161.35.231.0"
+WORKER2_IP="167.99.164.45"
+WORKER3_IP="138.68.0.124"
 WORKER_USER="root"
 
-# Account Distribution - AMM Only (2000 total)
-# Each worker gets ~667 accounts to avoid nonce conflicts
+# Account Distribution - AMM Only (5000 total)
+# Each worker gets ~1667 accounts to avoid nonce conflicts
 WORKER1_AMM_START=0
-WORKER1_AMM_COUNT=667
-WORKER2_AMM_START=667
-WORKER2_AMM_COUNT=667
-WORKER3_AMM_START=1334
-WORKER3_AMM_COUNT=666
+WORKER1_AMM_COUNT=1667
+WORKER2_AMM_START=1667
+WORKER2_AMM_COUNT=1667
+WORKER3_AMM_START=3334
+WORKER3_AMM_COUNT=1666
 
-# Account Distribution - Dual Mode (AMM 1500 + Transfers 500)
-# AMM: accounts 0-1499 (500 per worker)
-# Transfers: accounts 1500-1999 (~167 per worker)
+# Account Distribution - Dual Mode (AMM 4000 + Transfers 1000)
+# AMM: accounts 0-3999 (~1333 per worker)
+# Transfers: accounts 4000-4999 (~333 per worker)
 WORKER1_AMM_DUAL_START=0
-WORKER1_AMM_DUAL_COUNT=500
-WORKER2_AMM_DUAL_START=500
-WORKER2_AMM_DUAL_COUNT=500
-WORKER3_AMM_DUAL_START=1000
-WORKER3_AMM_DUAL_COUNT=500
+WORKER1_AMM_DUAL_COUNT=1333
+WORKER2_AMM_DUAL_START=1333
+WORKER2_AMM_DUAL_COUNT=1334
+WORKER3_AMM_DUAL_START=2667
+WORKER3_AMM_DUAL_COUNT=1333
 
-WORKER1_TRANSFER_START=1500
-WORKER1_TRANSFER_COUNT=167
-WORKER2_TRANSFER_START=1667
-WORKER2_TRANSFER_COUNT=167
-WORKER3_TRANSFER_START=1834
-WORKER3_TRANSFER_COUNT=166
+WORKER1_TRANSFER_START=4000
+WORKER1_TRANSFER_COUNT=333
+WORKER2_TRANSFER_START=4333
+WORKER2_TRANSFER_COUNT=334
+WORKER3_TRANSFER_START=4667
+WORKER3_TRANSFER_COUNT=333
 
 # Contract Configuration (AMM-fixed contract, Jan 14 2026)
 # SYNCED WITH .env.local and .env.seed - DO NOT EDIT MANUALLY
@@ -95,7 +95,7 @@ print_banner() {
     echo -e "${CYAN}"
     echo "╔══════════════════════════════════════════════════════════════════════╗"
     echo "║              APTOS POLYMARKET - DEMO ORCHESTRATOR                     ║"
-    echo "║                    2000 Accounts | 3 Workers                          ║"
+    echo "║                    5000 Accounts | 3 Workers                          ║"
     echo "╚══════════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -202,13 +202,13 @@ cmd_standby() {
     if [ "$DUAL_MODE" = true ]; then
         print_header "STARTING WORKERS IN DUAL MODE (AMM + TRANSFERS)"
         echo "Configuration:"
-        echo "  - AMM Accounts: 1500 (500 per worker)"
-        echo "  - Transfer Accounts: 500 (~167 per worker)"
-        echo "  - Total: 2000 accounts"
+        echo "  - AMM Accounts: 4000 (~1333 per worker)"
+        echo "  - Transfer Accounts: 1000 (~333 per worker)"
+        echo "  - Total: 5000 accounts"
     else
         print_header "STARTING WORKERS IN STANDBY MODE (AMM ONLY)"
         echo "Configuration:"
-        echo "  - Accounts: 2000 total (split across 3 workers)"
+        echo "  - Accounts: 5000 total (split across 3 workers)"
     fi
 
     echo "  - Mode: ${DEFAULT_MODE}"
@@ -627,7 +627,7 @@ cmd_collect() {
 # ============================================
 
 cmd_preflight() {
-    print_header "PRE-FLIGHT CHECK FOR 2000 ACCOUNTS"
+    print_header "PRE-FLIGHT CHECK FOR 5000 ACCOUNTS"
 
     if ! get_seed_mnemonic; then
         exit 1
@@ -642,8 +642,8 @@ cmd_preflight() {
     echo ""
 
     SEED_MNEMONIC="${SEED_MNEMONIC}" \
-    ACCOUNT_COUNT=2000 \
-    AMM_ACCOUNTS=1500 \
+    ACCOUNT_COUNT=5000 \
+    AMM_ACCOUNTS=4000 \
     FULLNODE_URL="${INTERNAL_VFN}" \
     CONTRACT_ADDRESS="${CONTRACT_ADDRESS}" \
     MULTI_MARKETS="${MULTI_MARKETS}" \
@@ -874,7 +874,7 @@ case "${ARGS[0]:-help}" in
         echo "Commands:"
         echo "  full [N]             Run full demo (N seconds) - does everything automatically"
         echo "  full [N] --dual      Full demo with AMM + transfers"
-        echo "  preflight            Pre-flight check (validates all 2000 accounts)"
+        echo "  preflight            Pre-flight check (validates all 5000 accounts)"
         echo "  standby              Start workers via SSH (handles everything)"
         echo "  launch [N]           Trigger N-second demo (default: 60)"
         echo "  stop                 Stop all workers"

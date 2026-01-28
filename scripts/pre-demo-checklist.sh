@@ -19,10 +19,10 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 BOLD='\033[1m'
 
-# Infrastructure
+# Infrastructure (all workers in SFO2 region)
 WORKER1_IP="178.128.177.88"
-WORKER2_IP="147.182.237.239"
-WORKER3_IP="161.35.231.0"
+WORKER2_IP="167.99.164.45"
+WORKER3_IP="138.68.0.124"
 FULLNODE_IP="aptos.cash.trading"
 WORKER_USER="root"
 

@@ -23,10 +23,10 @@ set -e
 FULLNODE_IP="aptos.cash.trading"
 FULLNODE_URL="http://${FULLNODE_IP}:8080/v1"
 
-# All 3 Worker VMs (no local Mac needed!)
-WORKER_VM1_IP="178.128.177.88"   # Worker 1: 7 accounts (1-7)
-WORKER_VM2_IP="147.182.237.239"  # Worker 2: 8 accounts (8-15)
-WORKER_VM3_IP="161.35.231.0"     # Worker 3: 5 accounts (16-20)
+# All 3 Worker VMs (all in SFO2 region for optimal performance)
+WORKER_VM1_IP="178.128.177.88"   # Worker 1: accounts 0-1666
+WORKER_VM2_IP="167.99.164.45"    # Worker 2: accounts 1667-3333
+WORKER_VM3_IP="138.68.0.124"     # Worker 3: accounts 3334-4999
 WORKER_VM_USER="root"
 
 # AMM-Fixed Contract (per-outcome base_reserve) - Jan 14, 2026
