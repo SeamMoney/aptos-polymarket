@@ -156,7 +156,7 @@ export const FULLNODE_URL = "https://aptos.cash.trading/v1";
 
 export const WORKERS = {
   worker1: { ip: "178.128.177.88", accounts: getWorkerKeys(1), isMaster: true },
-  worker2: { ip: "147.182.237.239", accounts: getWorkerKeys(2), isMaster: false },
-  worker3: { ip: "161.35.231.0", accounts: getWorkerKeys(3), isMaster: false },
+  worker2: { ip: "167.99.164.45", accounts: getWorkerKeys(2), isMaster: false },
+  worker3: { ip: "138.68.0.124", accounts: getWorkerKeys(3), isMaster: false },
   fullnode: { host: "aptos.cash.trading", ip: "164.92.117.18" },
 };

@@ -22,11 +22,11 @@ import {
   Check,
 } from 'lucide-react';
 
-// Cloud worker IPs
+// Cloud worker IPs (all in SFO2 region - Jan 28 2026)
 const WORKER_IPS = [
   '178.128.177.88',
-  '147.182.237.239',
-  '161.35.231.0',
+  '167.99.164.45',
+  '138.68.0.124',
 ];
 
 interface WorkerStatus {

@@ -118,14 +118,14 @@ The demo viewers show beautiful real-time logs:
 
 ## Infrastructure
 
-### Cloud Workers (3 VMs)
+### Cloud Workers (3 VMs - all SFO2 region)
 
-| Worker | IP | Accounts | APT Balance | Est. TPS |
-|--------|-----|----------|-------------|----------|
-| Worker 1 | 178.128.177.88 | 9 | ~12,660 APT | ~13K |
-| Worker 2 | 147.182.237.239 | 8 | ~18,800 APT | ~12K |
-| Worker 3 | 161.35.231.0 | 8 | ~89,600 APT | ~12K |
-| **Total** | | **25** | **~121,000 APT** | **~37K** |
+| Worker | IP | Accounts | Role |
+|--------|-----|----------|------|
+| Worker 1 | 178.128.177.88 | 0-1666 (1667) | Primary |
+| Worker 2 | 167.99.164.45 | 1667-3333 (1667) | Secondary |
+| Worker 3 | 138.68.0.124 | 3334-4999 (1666) | Secondary |
+| **Total** | | **5000** | |
 
 ### Account Audit Summary
 
@@ -182,9 +182,9 @@ The orchestrator uses **quantum mode** for `./scripts/orchestrator.sh demo`.
      │                                                                    │
      │   ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐   │
      │   │   Worker 1      │  │   Worker 2      │  │   Worker 3      │   │
-     │   │ 178.128.177.88  │  │ 147.182.237.239 │  │ 161.35.231.0    │   │
-     │   │ 9 accounts      │  │ 8 accounts      │  │ 8 accounts      │   │
-     │   │ ~13K TPS        │  │ ~12K TPS        │  │ ~12K TPS        │   │
+     │   │ 178.128.177.88  │  │ 167.99.164.45   │  │ 138.68.0.124    │   │
+     │   │ 1667 accounts   │  │ 1667 accounts   │  │ 1666 accounts   │   │
+     │   │ ~1K TPS         │  │ ~1K TPS         │  │ ~1K TPS         │   │
      │   └────────┬────────┘  └────────┬────────┘  └────────┬────────┘   │
      │            │                    │                    │            │
      └────────────┼────────────────────┼────────────────────┼────────────┘

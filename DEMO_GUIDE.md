@@ -4,10 +4,12 @@
 
 | VM | IP | Role | Accounts |
 |----|-----|------|----------|
-| Worker 1 | 178.128.177.88 | **MASTER** (UI connects here) | 7 |
-| Worker 2 | 147.182.237.239 | Secondary | 7 |
-| Worker 3 | 161.35.231.0 | Secondary | 6 |
+| Worker 1 | 178.128.177.88 | **MASTER** (UI connects here) | 0-1666 (1667) |
+| Worker 2 | 167.99.164.45 | Secondary | 1667-3333 (1667) |
+| Worker 3 | 138.68.0.124 | Secondary | 3334-4999 (1666) |
 | Fullnode | aptos.cash.trading | Aptos Fullnode | - |
+
+**All workers are in SFO2 region for optimal performance.**
 
 **RPC Endpoints:**
 - Your Fullnode: http://aptos.cash.trading:8080/v1

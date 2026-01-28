@@ -56,8 +56,8 @@ The HFT system uses a coordinator pattern for aggregated TPS display:
 │        │                                           │                    │
 │  ┌─────┴───────────────┐                 ┌────────┴──────────────┐    │
 │  │    WORKER 2         │                 │      WORKER 3         │    │
-│  │ 147.182.237.239:3001│                 │  161.35.231.0:3001    │    │
-│  │   8 accounts        │                 │    8 accounts         │    │
+│  │  167.99.164.45:3001 │                 │  138.68.0.124:3001    │    │
+│  │   1667 accounts     │                 │    1666 accounts      │    │
 │  │   (secondary)       │                 │    (secondary)        │    │
 │  └─────────────────────┘                 └───────────────────────┘    │
 │                                                                         │
@@ -66,12 +66,12 @@ The HFT system uses a coordinator pattern for aggregated TPS display:
 
 ### Worker Configuration
 
-| Worker | IP | Port | Accounts | Role | Est. TPS |
-|--------|-----|------|----------|------|----------|
-| Worker 1 | 178.128.177.88 | 3001 | 9 | **Coordinator** | ~13K |
-| Worker 2 | 147.182.237.239 | 3001 | 8 | Secondary | ~12K |
-| Worker 3 | 161.35.231.0 | 3001 | 8 | Secondary | ~12K |
-| **Total** | | | **25** | | **~37K** |
+| Worker | IP | Port | Accounts | Role |
+|--------|-----|------|----------|------|
+| Worker 1 | 178.128.177.88 | 3001 | 0-1666 (1667) | **Coordinator** |
+| Worker 2 | 167.99.164.45 | 3001 | 1667-3333 (1667) | Secondary |
+| Worker 3 | 138.68.0.124 | 3001 | 3334-4999 (1666) | Secondary |
+| **Total** | | | **5000** | |
 
 ### Environment Variables
 

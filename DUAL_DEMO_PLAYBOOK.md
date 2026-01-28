@@ -20,9 +20,9 @@ This runs everything automatically: preflight → standby → launch → collect
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| Worker 1 | ✓ Online | 178.128.177.88 (SSH OK) |
-| Worker 2 | ✓ Online | 147.182.237.239 (SSH OK) |
-| Worker 3 | ✓ Online | 161.35.231.0 (SSH OK) |
+| Worker 1 | ✓ Online | 178.128.177.88 (SFO2) |
+| Worker 2 | ✓ Online | 167.99.164.45 (SFO2) |
+| Worker 3 | ✓ Online | 138.68.0.124 (SFO2) |
 | Internal VFN | ✓ Online | vfn0.usce1-0.testnet.aptoslabs.com:80/v1 |
 | Custom RPC | ✓ Online | aptos.cash.trading/v1 |
 

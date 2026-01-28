@@ -18,10 +18,10 @@
 - Added “Ended” badges for markets past end time or resolved.
 
 ## Verified Canonical Data
-- Worker IPs (from `scripts/orchestrator.sh`):
-  - Worker 1: `178.128.177.88` (9 accounts)
-  - Worker 2: `147.182.237.239` (8 accounts)
-  - Worker 3: `161.35.231.0` (8 accounts)
+- Worker IPs (from `scripts/orchestrator.sh` - all in SFO2 region):
+  - Worker 1: `178.128.177.88` (accounts 0-1666)
+  - Worker 2: `167.99.164.45` (accounts 1667-3333)
+  - Worker 3: `138.68.0.124` (accounts 3334-4999)
   - Fullnode: `aptos.cash.trading:8080`
 - On-chain outcome labels:
   - `["J.D. Vance","Marco Rubio","Donald Trump","Ron DeSantis","Tucker Carlson","Other"]`

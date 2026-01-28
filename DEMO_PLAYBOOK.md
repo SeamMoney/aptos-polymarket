@@ -146,10 +146,10 @@ npx tsx scripts/deep-tps-analysis.ts --minutes 5
 
 ### Workers won't start
 ```bash
-# Check SSH connectivity
+# Check SSH connectivity (all workers in SFO2 region)
 ssh root@178.128.177.88 "echo OK"
-ssh root@147.182.237.239 "echo OK"
-ssh root@161.35.231.0 "echo OK"
+ssh root@167.99.164.45 "echo OK"
+ssh root@138.68.0.124 "echo OK"
 
 # Redeploy code
 ./scripts/demo.sh deploy

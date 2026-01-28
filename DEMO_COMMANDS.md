@@ -166,10 +166,10 @@ This uploads the updated `run-hft.sh` with USD1 configuration to all 3 VMs.
 # All VMs
 ./scripts/orchestrator.sh logs
 
-# Specific VM
+# Specific VM (all in SFO2 region)
 ssh root@178.128.177.88 "tail -50 /tmp/hft-worker.log"
-ssh root@147.182.237.239 "tail -50 /tmp/hft-worker.log"
-ssh root@161.35.231.0 "tail -50 /tmp/hft-worker.log"
+ssh root@167.99.164.45 "tail -50 /tmp/hft-worker.log"
+ssh root@138.68.0.124 "tail -50 /tmp/hft-worker.log"
 ```
 
 ### Stop All Workers
@@ -179,8 +179,8 @@ ssh root@161.35.231.0 "tail -50 /tmp/hft-worker.log"
 # Or manually:
 pkill -f hft-ultra-server
 ssh root@178.128.177.88 "pkill -f hft-ultra-server"
-ssh root@147.182.237.239 "pkill -f hft-ultra-server"
-ssh root@161.35.231.0 "pkill -f hft-ultra-server"
+ssh root@167.99.164.45 "pkill -f hft-ultra-server"
+ssh root@138.68.0.124 "pkill -f hft-ultra-server"
 ```
 
 ---
@@ -209,13 +209,12 @@ USD1 Metadata: 0x4e977d5ee91d77d680972a44b38b9c7a2c5694439169eeae060a48324e5c459
 | 11 | BTC $150K | 0x35df09c98f8668c06f6777e98e3a0405fe894c271f06ba2fed0b322e2a5c2f16 |
 | 12 | Iran Date | 0xd3227afa81dce5fa0e8f86f61dc7f3215ee799a0d2e6a112a988e5ac732bf719 |
 
-### VM Workers
+### VM Workers (all in SFO2 region - Jan 28 2026)
 | Worker | VM IP | Accounts | Port |
 |--------|-------|----------|------|
-| Local (Mac) | localhost | 1-7 (7 accounts) | 3001 |
-| VM1 | 178.128.177.88 | 8-14 (7 accounts) | 3001 |
-| VM2 | 147.182.237.239 | 15-20 (6 accounts) | 3002 |
-| VM3 | 161.35.231.0 | - | 3003 |
+| Worker 1 | 178.128.177.88 | 0-1666 (1667) | 3001 |
+| Worker 2 | 167.99.164.45 | 1667-3333 (1667) | 3001 |
+| Worker 3 | 138.68.0.124 | 3334-4999 (1666) | 3001 |
 
 ### TPS Modes
 | Mode | Target TPS | Use Case |

@@ -106,11 +106,11 @@ Then in browser: ARM → LAUNCH
 
 | Component | IP | Accounts | Role |
 |-----------|-----|----------|------|
-| Worker 1 | 178.128.177.88 | 9 | **Coordinator** |
-| Worker 2 | 147.182.237.239 | 8 | Secondary |
-| Worker 3 | 161.35.231.0 | 8 | Secondary |
+| Worker 1 | 178.128.177.88 | 0-1666 (1667) | **Coordinator** |
+| Worker 2 | 167.99.164.45 | 1667-3333 (1667) | Secondary |
+| Worker 3 | 138.68.0.124 | 3334-4999 (1666) | Secondary |
 | Fullnode | aptos.cash.trading | N/A | Aptos Fullnode |
-| **Total** | | **25** | |
+| **Total** | | **5000** | |
 
 **Worker Coordination:**
 - Frontend connects to Worker 1 via WebSocket
@@ -166,9 +166,9 @@ curl -X POST http://178.128.177.88:3001/stop
 # Check if all workers are reporting
 curl http://178.128.177.88:3001/aggregated-stats
 
-# Check individual workers
-curl http://147.182.237.239:3001/status
-curl http://161.35.231.0:3001/status
+# Check individual workers (all in SFO2 region)
+curl http://167.99.164.45:3001/status
+curl http://138.68.0.124:3001/status
 ```
 
 ### Workers not aggregating

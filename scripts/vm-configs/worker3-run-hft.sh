@@ -1,5 +1,5 @@
 #!/bin/bash
-# WORKER 3 - VM 161.35.231.0 - accounts 15-20
+# WORKER 3 - VM 138.68.0.124 (SFO2) - accounts 3334-4999
 cd /opt/aptos-hft
 
 # USD1 v2 Contract with admin drainers (Jan 11, 2026)
@@ -27,7 +27,7 @@ MODE=${1:-}
 DURATION=${2:-60}
 
 echo "════════════════════════════════════════════════════════════════"
-echo "  WORKER 3 - USD1 HFT (161.35.231.0)"
+echo "  WORKER 3 - USD1 HFT (138.68.0.124)"
 echo "  6 accounts @ 10K USD1 each | 12 markets"
 if [ -z "$MODE" ]; then
   echo "  Mode: STANDBY (waiting for UI to launch)"

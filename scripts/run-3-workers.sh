@@ -10,10 +10,10 @@
 MODE=${1:-normal}
 DURATION=${2:-60}
 
-# Worker VMs (match pre-demo-checklist.sh)
+# Worker VMs (all in SFO2 region - Jan 28 2026)
 VM1="178.128.177.88"
-VM2="147.182.237.239"
-VM3="161.35.231.0"
+VM2="167.99.164.45"
+VM3="138.68.0.124"
 
 echo "════════════════════════════════════════════════════════════════"
 echo "  USD1 3-WORKER HFT - TARGET: 10K+ TPS (was 3.7K with APT)"

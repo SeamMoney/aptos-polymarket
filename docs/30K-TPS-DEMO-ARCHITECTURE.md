@@ -38,8 +38,8 @@
 │        │                                           │                        │
 │  ┌─────┴───────────────┐                 ┌────────┴──────────────┐        │
 │  │    WORKER 2         │                 │      WORKER 3         │        │
-│  │ 147.182.237.239:3001│                 │  161.35.231.0:3001    │        │
-│  │   8 accounts        │                 │    8 accounts         │        │
+│  │  167.99.164.45:3001 │                 │  138.68.0.124:3001    │        │
+│  │   1667 accounts     │                 │    1666 accounts      │        │
 │  │   (secondary)       │                 │    (secondary)        │        │
 │  └─────────────────────┘                 └───────────────────────┘        │
 │                                                                              │
@@ -90,13 +90,13 @@
 
 ### Digital Ocean Droplets (3 Workers + 1 Fullnode)
 
-| Worker | IP | Accounts | Role | Est. TPS |
-|--------|-----|----------|------|----------|
-| Worker 1 | 178.128.177.88 | 9 | **Coordinator** | ~13K |
-| Worker 2 | 147.182.237.239 | 8 | Secondary | ~12K |
-| Worker 3 | 161.35.231.0 | 8 | Secondary | ~12K |
-| Fullnode | aptos.cash.trading | N/A | Aptos Fullnode (32GB) | - |
-| **Total** | | **25** | | **~37K** |
+| Worker | IP | Accounts | Role |
+|--------|-----|----------|------|
+| Worker 1 | 178.128.177.88 | 0-1666 (1667) | **Coordinator** |
+| Worker 2 | 167.99.164.45 | 1667-3333 (1667) | Secondary |
+| Worker 3 | 138.68.0.124 | 3334-4999 (1666) | Secondary |
+| Fullnode | aptos.cash.trading | N/A | Aptos Fullnode (32GB) |
+| **Total** | | **5000** | |
 
 **Worker Coordination:**
 - Worker 1 is the **coordinator** - frontend connects via WebSocket here
