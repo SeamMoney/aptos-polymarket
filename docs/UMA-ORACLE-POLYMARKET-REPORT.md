@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-Polymarket, the leading prediction market with $9B+ trading volume in 2024, relies on UMA's Optimistic Oracle for market resolution. This oracle has critical flaws including 2+ hour delays, vulnerability to whale attacks ($7M stolen in March 2025), and documented wrong resolutions.
+Polymarket, the leading prediction market with $9B+ trading volume in 2024, relies on UMA's Optimistic Oracle for market resolution. This oracle has critical flaws including 2+ hour delays, vulnerability to whale attacks ($7M stolen in March 2025), documented wrong resolutions, and **systematic conflicts of interest** where voters hold positions in markets they're deciding (January 2026 research by coldvision.xyz).
 
 We have built a complete multi-tier oracle system on Aptos that solves these problems:
 - **Crypto markets:** Instant resolution (~125ms) via Pyth
@@ -27,6 +27,7 @@ This document includes full implementation code, migration options, and partners
 | Date | Incident | Impact | Root Cause |
 |------|----------|--------|------------|
 | **March 2025** | Governance Attack | **$7M stolen** | Single whale with 25% UMA voting power manipulated Ukraine mineral deal market outcome |
+| **Jan 2026** | Voter Conflict Research | Systematic manipulation | coldvision.xyz found voters consistently winning on markets they vote on |
 | **2024-2025** | Wrong Resolutions | Millions lost | Polymarket publicly confirmed UMA resolved multiple markets incorrectly |
 | **Every Resolution** | 2+ Hour Delays | User friction | Minimum optimistic challenge period even for obvious outcomes |
 | **Disputes** | 48-72 Hour Delays | Trading frozen | DVM (Data Verification Mechanism) token voting process |
@@ -34,10 +35,12 @@ This document includes full implementation code, migration options, and partners
 ### Why UMA Fails
 
 1. **Concentrated Voting Power**: Large token holders can manipulate outcomes through token-weighted voting
-2. **No Real-Time Data**: Cannot use price feeds for crypto markets - everything goes through 2+ hour optimistic period
-3. **Slow Resolution**: Even obvious outcomes (e.g., "BTC above $50K") take 2+ hours
-4. **Ambiguous Markets**: Human interpretation creates disputes with no clear resolution
-5. **No Appeal Process**: "Code is law" even when outcomes are clearly wrong
+2. **Voter Conflict of Interest**: Voters hold positions in markets they decide - no disclosure required (see Section 1.3)
+3. **No Real-Time Data**: Cannot use price feeds for crypto markets - everything goes through 2+ hour optimistic period
+4. **Slow Resolution**: Even obvious outcomes (e.g., "BTC above $50K") take 2+ hours
+5. **Ambiguous Markets**: Human interpretation creates disputes with no clear resolution
+6. **No Appeal Process**: "Code is law" even when outcomes are clearly wrong
+7. **Zero Accountability**: Anonymous voters face no consequences for conflicts or manipulation
 
 ## 1.2 Polymarket Infrastructure Issues
 
@@ -70,6 +73,111 @@ This document includes full implementation code, migration options, and partners
 > "The platform is about to take its own Layer 2 (L2) seriously... It's the #1 priority."
 >
 > — Polymarket team member (Discord, December 2024)
+
+## 1.3 UMA Voter Conflict of Interest (January 2026 Research)
+
+**Source:** coldvision.xyz research by @wenkafka (January 24, 2026)
+
+### The Problem: Voters Betting on Their Own Decisions
+
+UMA voters control Polymarket dispute outcomes, yet **nobody officially tracks if they're voting on markets where they have positions**. This creates a massive conflict of interest.
+
+### Key Findings
+
+| Metric | Value |
+|--------|-------|
+| Average monthly UMA voters | 600-700 |
+| Whales voting on own positions | Multiple identified |
+| Win rate of position-holding voters | **Consistently high** |
+
+### On-Chain Analysis
+
+The coldvision team traversed on-chain data for UMA voters, tracking:
+- Most active voters
+- Total position sizing
+- Amount of votes cast
+- Market participation overlap
+
+**Critical Discovery:** Whales who vote AND have positions in those markets win consistently most of the time.
+
+### Flagged Accounts
+
+| Account | Behavior |
+|---------|----------|
+| [`0x9a3fa403a6666eef75f92f181fcf13f9c051914a`](https://polymarket.com/profile/0x9a3fa403a6666eef75f92f181fcf13f9c051914a) | High position/vote overlap |
+| [`0x2a019dc0089ea8c6edbbafc8a7cc9ba77b4b6397`](https://polymarket.com/profile/0x2a019dc0089ea8c6edbbafc8a7cc9ba77b4b6397) | Multiple flagged votes |
+| [`Taikatalvi`](https://polymarket.com/@Taikatalvi) | **100% participation rate** in markets voted on |
+
+### Deep Dive: Taikatalvi
+
+This trader exhibited the most suspicious behavior:
+
+| Metric | Value |
+|--------|-------|
+| Total UMA votes | 6 |
+| Votes where trader had position | **6 (100%)** |
+| Win rate on voted markets | **Excellent** |
+| Profile | South Korean trader, political markets focus |
+
+**On-chain investigation revealed:**
+- Outflow to specific Binance deposit address
+- Connected to main account: `0x62B599DE152f8e689088f0011e39824858BC1Ef1`
+- Excellent win rate specifically on markets where votes were cast
+
+### The Manipulation Vectors
+
+1. **Information Asymmetry**: Voters have insider knowledge of how disputes will resolve
+2. **Majority Campaigns**: Whales coordinate to swing votes in their favor
+3. **Proposal Creation**: Sophisticated players create disputes on markets they hold
+4. **Fact Distortion**: Voters twist interpretations to match their positions
+
+### Why This Matters
+
+```
+Traditional Financial Markets:
+- SEC requires disclosure of conflicts of interest
+- Trading on inside information is illegal
+- Fiduciary duty to act in client interest
+
+UMA/Polymarket:
+- No conflict disclosure required
+- Voting on own positions is allowed
+- Zero accountability for voters
+```
+
+### Public Watchdog Tool
+
+coldvision.xyz released a public intel tool for tracking UMA voters:
+- **URL:** https://www.coldvision.xyz/watchdog
+- Leaderboard-style dashboard
+- Voters' recent transactions
+- Win/loss data per vote
+- Graph visualization of shared markets
+
+### How Our Solution Fixes This
+
+| UMA Problem | Aptos Committee Solution |
+|-------------|-------------------------|
+| Anonymous voters with positions | **Named committee members with $50K stake** |
+| No conflict disclosure | **Public voting records** |
+| Vote on own markets | **Committee cannot hold positions in voted markets** |
+| Token-weighted voting | **1 member = 1 vote** |
+| No accountability | **Accuracy scores tracked, bad actors removed** |
+
+### Committee Anti-Conflict Rules (Proposed)
+
+```move
+/// Committee members CANNOT:
+/// 1. Hold positions in any market they vote on
+/// 2. Vote on markets where they have financial interest
+/// 3. Receive compensation tied to specific outcomes
+/// 4. Trade on any market within 24 hours of voting
+///
+/// Violations result in:
+/// - Stake slashing (up to 100%)
+/// - Permanent committee removal
+/// - Public disclosure
+```
 
 ---
 
@@ -113,6 +221,7 @@ This document includes full implementation code, migration options, and partners
 | Event Resolution | 2+ hours | < 5 min (Switchboard) | **24x faster** |
 | Subjective Markets | 2-72 hours | 15 min - 4 hr | **8-18x faster** |
 | Manipulation Risk | HIGH ($7M attack) | None | **Eliminated** |
+| Voter Conflict of Interest | Allowed (no disclosure) | Prohibited + $50K stake | **Eliminated** |
 | Dispute Mechanism | Token voting (whale attacks) | Committee (1 vote each) | **No concentration** |
 | Wrong Resolutions | Final (no appeal) | Emergency override | **Recoverable** |
 | Proposer Bond | $750 | $5,000 | **6.7x higher** |
