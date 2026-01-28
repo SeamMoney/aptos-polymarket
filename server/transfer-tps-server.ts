@@ -143,12 +143,22 @@ interface RpcEndpoint {
   network: 'mainnet' | 'testnet';
 }
 
-const TESTNET_ENDPOINTS: RpcEndpoint[] = [
-  { url: 'https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1', name: 'QuikNode', network: 'testnet' },
-  { url: 'https://aptos.cash.trading/v1', name: 'Custom Fullnode', network: 'testnet' },
-  { url: 'http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1', name: 'Internal VFN', network: 'testnet' },
-  { url: 'https://fullnode.testnet.aptoslabs.com/v1', name: 'Aptos Labs', network: 'testnet' },
-];
+// RPC_MODE: 'internal' (Aptos Labs VFN - default for demos), 'custom' (your fullnode)
+const RPC_MODE = process.env.RPC_MODE || 'internal';
+const APTOS_INTERNAL_FULLNODE = 'http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1';
+const CUSTOM_FULLNODE = process.env.FULLNODE_URL || 'https://aptos.cash.trading/v1';
+
+const TESTNET_ENDPOINTS: RpcEndpoint[] = (() => {
+  switch (RPC_MODE) {
+    case 'internal':
+      return [{ url: APTOS_INTERNAL_FULLNODE, name: 'Internal VFN', network: 'testnet' as const }];
+    case 'custom':
+      return [{ url: CUSTOM_FULLNODE, name: 'Custom Fullnode', network: 'testnet' as const }];
+    default:
+      // Default to internal VFN only for demos - ensures single endpoint
+      return [{ url: APTOS_INTERNAL_FULLNODE, name: 'Internal VFN', network: 'testnet' as const }];
+  }
+})();
 
 const MAINNET_ENDPOINTS: RpcEndpoint[] = [
   { url: 'https://fullnode.mainnet.aptoslabs.com/v1', name: 'Aptos Labs', network: 'mainnet' },

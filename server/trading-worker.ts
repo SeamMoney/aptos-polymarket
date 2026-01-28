@@ -337,9 +337,10 @@ async function refreshSequenceNumber(accState: AccountState): Promise<void> {
 
 /**
  * Execute batch for a single account
+ * Returns true if batch was clean (no errors), false if refresh needed
  */
-async function executeBatchForAccount(accState: AccountState): Promise<void> {
-  if (!accState.isActive) return;
+async function executeBatchForAccount(accState: AccountState): Promise<boolean> {
+  if (!accState.isActive) return true;
 
   const batchSize = config.batchSize;
   const startTime = Date.now();
@@ -373,6 +374,9 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
   });
 
   const builtTxs = await Promise.all(buildPromises);
+
+  // Check for build failures - these create sequence gaps
+  const hasBuildFailure = builtTxs.some(tx => tx === null);
 
   // Sign transactions
   const signedTxs = builtTxs.map((tx) => {
@@ -459,11 +463,6 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
     }
   }
 
-  // Sequence refresh on error
-  if (hasSequenceError && !config.useOrderless) {
-    refreshSequenceNumber(accState).catch(() => {});
-  }
-
   const batchTime = Date.now() - startTime;
 
   // Log progress occasionally
@@ -475,6 +474,11 @@ async function executeBatchForAccount(accState: AccountState): Promise<void> {
       `total: ${stats.totalTrades}`
     );
   }
+
+  // Return whether batch had errors that require sequence refresh
+  // Build failures create sequence gaps, sequence errors mean we're desynced
+  const needsRefresh = (hasBuildFailure || hasSequenceError) && !config.useOrderless;
+  return !needsRefresh;
 }
 
 /**
@@ -541,10 +545,18 @@ async function accountTradingLoop(accState: AccountState, accountIndex: number):
   while (isRunning && accState.isActive) {
     try {
       // Hybrid mode: fire-and-forget vs safe mode
+      let batchClean = true;
       if (Math.random() < config.fireAndForgetRatio) {
         await fireAndForgetBatch(accState);
+        // fireAndForget doesn't track errors precisely, so assume clean
       } else {
-        await executeBatchForAccount(accState);
+        batchClean = await executeBatchForAccount(accState);
+      }
+
+      // CRITICAL: If batch had errors, refresh sequence SYNCHRONOUSLY before next batch
+      // This prevents cascading sequence desync from build failures
+      if (!batchClean && !config.useOrderless) {
+        await refreshSequenceNumber(accState);
       }
 
       // Apply adaptive delay
@@ -558,7 +570,7 @@ async function accountTradingLoop(accState: AccountState, accountIndex: number):
       }
     } catch (e: any) {
       if (!config.useOrderless) {
-        refreshSequenceNumber(accState).catch(() => {});
+        await refreshSequenceNumber(accState);
       }
       await new Promise(r => setTimeout(r, 30));
     }

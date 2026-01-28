@@ -1,8 +1,8 @@
 #!/usr/bin/env npx tsx
 /**
- * Fund 500 Seed-Derived Accounts
+ * Fund Seed-Derived Accounts
  *
- * Funds accounts with APT and USD1 in parallel for maximum speed.
+ * Funds accounts with APT and USD1. Supports start index for scaling.
  *
  * Prerequisites:
  *   - Run generate-seed-accounts.ts first to get the seed
@@ -13,6 +13,7 @@
  *   SEED_MNEMONIC="..." npx tsx scripts/fund-seed-accounts.ts --apt-only
  *   SEED_MNEMONIC="..." npx tsx scripts/fund-seed-accounts.ts --usd1-only
  *   SEED_MNEMONIC="..." npx tsx scripts/fund-seed-accounts.ts --count 100
+ *   SEED_MNEMONIC="..." npx tsx scripts/fund-seed-accounts.ts --start 2000 --count 3000
  */
 
 import {
@@ -23,7 +24,7 @@ import {
   Ed25519PrivateKey,
 } from '@aptos-labs/ts-sdk';
 import {
-  deriveAccounts,
+  deriveAccount,
   validateMnemonic,
 } from '../config/seed-accounts';
 import { WALLETS, CONTRACTS, cleanKey } from '../config/wallets';
@@ -46,6 +47,8 @@ const aptOnly = args.includes('--apt-only');
 const usd1Only = args.includes('--usd1-only');
 const countIdx = args.indexOf('--count');
 const count = countIdx >= 0 ? parseInt(args[countIdx + 1]) : ACCOUNT_COUNT;
+const startIdx = args.indexOf('--start');
+const startIndex = startIdx >= 0 ? parseInt(args[startIdx + 1]) : 0;
 
 async function fundWithAPT(
   aptos: Aptos,
@@ -209,15 +212,20 @@ async function main() {
 
   console.log(`RPC: ${rpcUrl}`);
   console.log(`Accounts to fund: ${count}`);
+  console.log(`Account range: ${startIndex} to ${startIndex + count - 1}`);
   console.log(`APT per account: ${APT_PER_ACCOUNT}`);
   console.log(`USD1 per account: ${USD1_PER_ACCOUNT}`);
   console.log(`Mode: ${aptOnly ? 'APT only' : usd1Only ? 'USD1 only' : 'Both APT and USD1'}`);
   console.log();
 
-  // Derive accounts
-  console.log(`Deriving ${count} accounts from seed...`);
+  // Derive accounts from startIndex
+  const endIndex = startIndex + count;
+  console.log(`Deriving ${count} accounts from seed (indices ${startIndex} to ${endIndex - 1})...`);
   const startDerive = Date.now();
-  const accounts = deriveAccounts(mnemonic, count);
+  const accounts: Account[] = [];
+  for (let i = startIndex; i < endIndex; i++) {
+    accounts.push(deriveAccount(mnemonic, i));
+  }
   console.log(`Derived ${accounts.length} accounts in ${Date.now() - startDerive}ms`);
   console.log();
 

@@ -230,18 +230,17 @@ const APTOS_INTERNAL_FULLNODE = 'http://vfn0.usce1-0.testnet.aptoslabs.com:80';
 // Custom fullnode - no rate limits
 const CUSTOM_FULLNODE = process.env.FULLNODE_URL || 'https://aptos.cash.trading/v1';
 
-// RPC_MODE: 'internal' (Aptos stress test node), 'custom' (your fullnode), 'balanced' (both)
-const RPC_MODE = process.env.RPC_MODE || 'custom'; // Default to custom for backward compatibility
+// RPC_MODE: 'internal' (Aptos Labs VFN - default for demos), 'custom' (your fullnode)
+const RPC_MODE = process.env.RPC_MODE || 'internal';
 const RPC_ENDPOINTS = (() => {
-  const extraEndpoints = process.env.EXTRA_RPC_ENDPOINTS ? process.env.EXTRA_RPC_ENDPOINTS.split(',') : [];
   switch (RPC_MODE) {
     case 'internal':
-      return [APTOS_INTERNAL_FULLNODE, ...extraEndpoints];
-    case 'balanced':
-      return [APTOS_INTERNAL_FULLNODE, CUSTOM_FULLNODE, ...extraEndpoints];
+      return [APTOS_INTERNAL_FULLNODE];
     case 'custom':
+      return [process.env.FULLNODE_URL || CUSTOM_FULLNODE];
     default:
-      return [CUSTOM_FULLNODE, ...extraEndpoints];
+      // Default to internal VFN for demos - ensures single endpoint
+      return [APTOS_INTERNAL_FULLNODE];
   }
 })();
 console.log(`RPC Mode: ${RPC_MODE}, Endpoints: ${RPC_ENDPOINTS.join(', ')}`);

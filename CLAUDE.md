@@ -213,13 +213,15 @@ If errors start during demo:
 
 ### Infrastructure
 
-| Component | Address |
-|-----------|---------|
-| Internal VFN | `http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1` |
-| Custom Fullnode | `http://aptos.cash.trading:8080/v1` |
-| Worker 1 | 178.128.177.88 |
-| Worker 2 | 147.182.237.239 |
-| Worker 3 | 161.35.231.0 |
+| Component | Address | Region | Notes |
+|-----------|---------|--------|-------|
+| Internal VFN | `http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1` | - | Aptos Labs VFN (may be unreliable) |
+| Custom Fullnode | `http://aptos.cash.trading:8080/v1` | - | Fallback fullnode |
+| Worker 1 | 178.128.177.88 | SFO2 | Accounts 0-165 |
+| Worker 2 | 167.99.164.45 | SFO2 | Accounts 166-332 (NEW Jan 28) |
+| Worker 3 | 138.68.0.124 | SFO2 | Accounts 333-499 (NEW Jan 28) |
+
+**IMPORTANT:** All workers must be in the SAME DigitalOcean region (SFO2) with identical specs for reliable operation.
 
 ### Key Docs
 - `docs/TPS_BENCHMARKS.md` - Verified on-chain proof of TPS
@@ -253,3 +255,75 @@ npx tsx server/hft-piscina-server.ts turbo
 ```
 
 Then: `curl -X POST "http://localhost:3001/start?duration=60"`
+
+---
+
+## Jan 28 2026 - Multi-Worker Setup Fixed
+
+### Problem
+Workers 2 and 3 (old IPs: 147.182.237.239, 161.35.231.0) were not executing trades while Worker 1 worked fine.
+
+### Root Cause
+- Old Worker 2 was a **2-year-old droplet** with different specs (120GB Intel disk)
+- Old Worker 3 was in a **different region** (SFO3 vs SFO2)
+- Internal VFN became unreachable during testing
+
+### Solution
+Created 2 fresh droplets in SFO2 (same region as Worker 1) with identical specs:
+- `s-2vcpu-4gb` (4GB RAM, 2 vCPUs, 80GB disk)
+- Ubuntu 24.04 LTS
+- Node.js 20.x
+
+### New Worker Setup
+```bash
+# Worker 1: 178.128.177.88 (accounts 0-165)
+# Worker 2: 167.99.164.45 (accounts 166-332) - NEW
+# Worker 3: 138.68.0.124 (accounts 333-499) - NEW
+```
+
+### Verified Results (3-worker parallel test)
+| Worker | Success Rate | Peak TPS | Total Trades |
+|--------|-------------|----------|--------------|
+| Worker 1 | 98.7% | 1,181 | 117,390 |
+| Worker 2 | 98.8% | 818 | 124,800 |
+| Worker 3 | 99.2% | 954 | 133,770 |
+| **Combined** | **98.9%** | **~2,953** | **375,960** |
+
+### Worker Startup Script Template
+Each worker has `/opt/aptos-hft/start-hft.sh`:
+```bash
+#!/bin/bash
+export SEED_MNEMONIC="<mnemonic>"
+export ACCOUNT_START_INDEX=<start>  # 0, 166, or 333
+export ACCOUNT_COUNT=<count>        # 166 or 167
+export USE_ORDERLESS=false
+export RPC_MODE=custom
+export FULLNODE_URL="http://aptos.cash.trading:8080/v1"
+export CONTRACT_ADDRESS="0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea"
+export USD1_METADATA="0x14b1ec8a5f31554d0cd19c390be83444ed519be2d7108c3e27dcbc4230c01fa3"
+export MULTI_MARKETS="<comma-separated market IDs>"
+export PORT=3001
+
+cd /opt/aptos-hft
+npx tsx server/hft-piscina-server.ts turbo
+```
+
+### Starting All Workers
+```bash
+# Start all 3 workers
+ssh root@178.128.177.88 'cd /opt/aptos-hft && nohup ./start-hft.sh > /tmp/hft.log 2>&1 &'
+ssh root@167.99.164.45 'cd /opt/aptos-hft && nohup ./start-hft.sh > /tmp/hft.log 2>&1 &'
+ssh root@138.68.0.124 'cd /opt/aptos-hft && nohup ./start-hft.sh > /tmp/hft.log 2>&1 &'
+
+# Wait for initialization (~20 seconds), then start trading
+sleep 20
+curl -X POST "http://178.128.177.88:3001/start?duration=30" &
+curl -X POST "http://167.99.164.45:3001/start?duration=30" &
+curl -X POST "http://138.68.0.124:3001/start?duration=30" &
+```
+
+### Key Lessons
+1. **All workers must be in the same region** - SFO2 works, mixing regions causes issues
+2. **Use fresh droplets** - 2-year-old droplets can have hidden issues
+3. **Internal VFN may be unreliable** - Fall back to `aptos.cash.trading` when needed
+4. **RPC_MODE=custom** with explicit FULLNODE_URL for reliability

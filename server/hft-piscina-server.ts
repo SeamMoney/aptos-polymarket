@@ -18,7 +18,7 @@
  *   SEED_MNEMONIC     - BIP-39 seed phrase (required)
  *   ACCOUNT_COUNT     - Total accounts (default: 500)
  *   WORKER_COUNT      - Worker threads (default: 4)
- *   RPC_MODE          - internal|custom|balanced (default: internal)
+ *   RPC_MODE          - internal|custom (default: internal, uses Aptos Labs VFN)
  *   USE_ORDERLESS     - true|false (default: true)
  */
 
@@ -49,11 +49,11 @@ const getRpcEndpoints = (): string[] => {
   switch (RPC_MODE) {
     case 'internal':
       return [APTOS_INTERNAL_FULLNODE];
-    case 'balanced':
-      return [APTOS_INTERNAL_FULLNODE, CUSTOM_FULLNODE];
     case 'custom':
+      return [process.env.FULLNODE_URL || CUSTOM_FULLNODE];
     default:
-      return [CUSTOM_FULLNODE];
+      // Default to internal VFN for demos - ensures single endpoint
+      return [APTOS_INTERNAL_FULLNODE];
   }
 };
 
@@ -75,31 +75,31 @@ const MODE_CONFIGS: Record<RunMode, {
   light: {
     batchSize: 3,
     batchDelayMs: 80,
-    fireAndForgetRatio: 0.6,
+    fireAndForgetRatio: 0,  // Disable fire-and-forget for reliable error recovery
     targetTps: 100,
   },
   normal: {
     batchSize: 10,
     batchDelayMs: 50,
-    fireAndForgetRatio: 0.7,
+    fireAndForgetRatio: 0,  // Disable fire-and-forget for reliable error recovery
     targetTps: 1000,
   },
   turbo: {
     batchSize: 30,
     batchDelayMs: 40,
-    fireAndForgetRatio: 0.85,
+    fireAndForgetRatio: 0,  // Disable fire-and-forget for reliable error recovery
     targetTps: 3000,
   },
   quantum: {
     batchSize: 50,  // Per-worker batch size
     batchDelayMs: 20,
-    fireAndForgetRatio: 0.90,
+    fireAndForgetRatio: 0,  // Disable fire-and-forget for reliable error recovery
     targetTps: 5000,
   },
   max2k: {
     batchSize: 25,            // Smaller batches for 2000 accounts
     batchDelayMs: 30,         // Slightly more delay for stability
-    fireAndForgetRatio: 0.90, // High fire-and-forget
+    fireAndForgetRatio: 0,    // Disable fire-and-forget for reliable error recovery
     targetTps: 8000,          // Target 8K TPS with 2000 accounts
   },
 };
