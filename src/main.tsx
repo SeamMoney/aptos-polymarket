@@ -7,6 +7,7 @@ import { DemoMode } from './components';
 import { PolymarketHome, MarketDetail, OutcomeDetail, SearchPage, BreakingPage, MorePage, PortfolioPage, LoginPage, BottomNav, HFTDemoPage } from './polymarket';
 import { NetworkProvider } from './contexts/NetworkContext';
 import { WalletProvider } from './contexts/WalletContext';
+import { TradePollerProvider } from './contexts/TradePollerProvider';
 
 // Register Service Worker for PWA
 if ('serviceWorker' in navigator) {
@@ -26,6 +27,7 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <NetworkProvider>
         <WalletProvider>
+          <TradePollerProvider>
           <Routes>
             <Route path="/" element={<App />} />
             <Route path="/demo" element={<DemoMode />} />
@@ -43,6 +45,7 @@ createRoot(document.getElementById('root')!).render(
             {/* Catch-all route - redirect unknown paths to home */}
             <Route path="*" element={<Navigate to="/polymarket" replace />} />
           </Routes>
+          </TradePollerProvider>
         </WalletProvider>
       </NetworkProvider>
     </BrowserRouter>
