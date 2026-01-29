@@ -87,6 +87,9 @@ const TX_BUFFER_SIZE = 100000;
 const txBuffer: TxRecord[] = [];
 let txBufferIndex = 0;
 
+// Error logging flag (log first error only)
+let firstErrorLogged = false;
+
 // Track holdings per market per outcome (for balanced trading)
 // Key: marketAddress, Value: Map of outcomeIndex -> tokens held
 type HoldingsMap = Map<string, Map<number, number>>;
@@ -359,18 +362,24 @@ async function executeBatchForAccount(accState: AccountState): Promise<boolean> 
     const options: any = config.useOrderless
       ? {
           replayProtectionNonce: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
-          expireTimestamp: Math.floor(Date.now() / 1000) + 55,
+          expireTimestamp: Math.floor(Date.now() / 1000) + 120,
         }
       : {
           accountSequenceNumber: baseSeq + BigInt(i),
-          expireTimestamp: Math.floor(Date.now() / 1000) + 30,
+          expireTimestamp: Math.floor(Date.now() / 1000) + 60,
         };
 
     return aptos.transaction.build.simple({
       sender: accState.account.accountAddress,
       data: payload,
       options,
-    }).catch(() => null);
+    }).catch((e) => {
+      if (!firstErrorLogged) {
+        firstErrorLogged = true;
+        console.log(`[Worker ${config.workerId}] TX_BUILD_ERROR: ${e.message || 'Unknown'}`);
+      }
+      return null;
+    });
   });
 
   const builtTxs = await Promise.all(buildPromises);
@@ -396,6 +405,11 @@ async function executeBatchForAccount(accState: AccountState): Promise<boolean> 
 
   const submitPromises = builtTxs.map((tx, i) => {
     if (!tx || !signedTxs[i]) {
+      // Log build/sign failures
+      if (!firstErrorLogged) {
+        firstErrorLogged = true;
+        console.log(`[Worker ${config.workerId}] BUILD_FAILED: tx=${!!tx}, signed=${!!signedTxs[i]}`);
+      }
       return Promise.resolve({ success: false, error: 'Build/sign failed', hash: '' });
     }
 
@@ -410,6 +424,16 @@ async function executeBatchForAccount(accState: AccountState): Promise<boolean> 
         mempoolFull = true;
       } else if (errMsg.includes('sequence') || errMsg.includes('invalid_transaction_update')) {
         hasSequenceError = true;
+      }
+      // Log first error from each worker (using console.log since console.error might not show)
+      if (!firstErrorLogged) {
+        firstErrorLogged = true;
+        console.log(`[Worker ${config.workerId}] FIRST_ERROR: ${errMsg.slice(0, 400)}`);
+        // Also send to parent thread
+        parentPort?.postMessage({
+          type: 'error_log',
+          data: { workerId: config.workerId, error: errMsg.slice(0, 400) },
+        });
       }
       return { success: false, error: errMsg, hash: '' };
     });
@@ -504,11 +528,11 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
     const options: any = config.useOrderless
       ? {
           replayProtectionNonce: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
-          expireTimestamp: Math.floor(Date.now() / 1000) + 55,
+          expireTimestamp: Math.floor(Date.now() / 1000) + 120,
         }
       : {
           accountSequenceNumber: baseSeq + BigInt(i),
-          expireTimestamp: Math.floor(Date.now() / 1000) + 30,
+          expireTimestamp: Math.floor(Date.now() / 1000) + 60,
         };
 
     aptos.transaction.build.simple({

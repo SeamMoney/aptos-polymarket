@@ -250,7 +250,8 @@ cmd_standby() {
             export ACCOUNT_START_INDEX=${AMM_START}
             export ACCOUNT_COUNT=${AMM_COUNT}
             export USE_ORDERLESS=false
-            export RPC_MODE=internal
+            export RPC_MODE=custom
+            export FULLNODE_URL='http://aptos.cash.trading:8080/v1'
             export CONTRACT_ADDRESS='${CONTRACT_ADDRESS}'
             export USD1_METADATA='${USD1_METADATA}'
             export MULTI_MARKETS='${MULTI_MARKETS}'
