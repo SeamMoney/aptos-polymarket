@@ -327,3 +327,94 @@ curl -X POST "http://138.68.0.124:3001/start?duration=30" &
 2. **Use fresh droplets** - 2-year-old droplets can have hidden issues
 3. **Internal VFN may be unreliable** - Fall back to `aptos.cash.trading` when needed
 4. **RPC_MODE=custom** with explicit FULLNODE_URL for reliability
+
+---
+
+## Jan 29 2026 - CRITICAL: Worker Code Deployment
+
+### The Problem
+Workers 2 and 3 showed 0 trades even though:
+- SSH worked fine
+- RPC connectivity was fine
+- Accounts were funded
+- Code files were deployed
+
+### Root Cause
+**The server loads pre-compiled `trading-worker.js`, NOT `trading-worker.ts`!**
+
+The Piscina worker pool loads workers from `server/trading-worker.js` (compiled JavaScript), not the TypeScript source. Deploying only `.ts` files does nothing - the old `.js` continues to run.
+
+### Solution: Always Rebuild Before Deploy
+
+```bash
+# CORRECT: Rebuild JS then deploy
+npx esbuild server/trading-worker.ts \
+  --bundle \
+  --platform=node \
+  --outfile=server/trading-worker.js \
+  --format=esm \
+  --external:@aptos-labs/ts-sdk \
+  --external:bip39 \
+  --external:@scure/bip32
+
+# Then deploy the .js file
+scp server/trading-worker.js root@<worker-ip>:/opt/aptos-hft/server/
+```
+
+### Deployment Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `./scripts/deploy-workers.sh` | **FULL DEPLOY**: Rebuild → Deploy → Restart → Verify → Test |
+| `./scripts/deploy-workers.sh --build-only` | Just rebuild locally |
+| `./scripts/deploy-workers.sh --verify` | Check workers have correct version |
+| `./scripts/worker-status.sh` | Quick status check of all workers |
+
+### Pre-Demo Checklist
+
+```bash
+# 1. Check current worker status
+./scripts/worker-status.sh
+
+# 2. If ANY changes were made to trading-worker.ts, MUST redeploy:
+./scripts/deploy-workers.sh
+
+# 3. Verify all workers ready
+./scripts/worker-status.sh
+
+# 4. Run demo
+curl -X POST "http://178.128.177.88:3001/start?duration=60" &
+curl -X POST "http://167.99.164.45:3001/start?duration=60" &
+curl -X POST "http://138.68.0.124:3001/start?duration=60" &
+```
+
+### Version Tracking
+
+The `trading-worker.ts` includes a version marker:
+```typescript
+const WORKER_VERSION = '2026-01-29-v3';
+console.log(`[WORKER_VERSION] ${WORKER_VERSION}`);
+```
+
+Check loaded version:
+```bash
+ssh root@<ip> "grep 'WORKER_VERSION' /tmp/hft.log | tail -1"
+```
+
+### Results After Fix (3 Workers, 5000 Accounts)
+
+| Worker | Trades | Success Rate |
+|--------|--------|--------------|
+| Worker 1 | 15,660 | 100% |
+| Worker 2 | 29,460 | 100% |
+| Worker 3 | 27,180 | 100% |
+| **TOTAL** | **72,300** | **100%** |
+
+**~2,400 TPS combined with 100% success rate!**
+
+### Concurrency Control
+
+The trading-worker.ts uses a Semaphore to limit concurrent HTTP requests:
+- `ACCOUNT_CONCURRENCY=40` (env var or workerData)
+- With batchSize=30, this means max 1,200 concurrent HTTP requests per worker thread
+- Prevents socket exhaustion that caused 0 TPS with many accounts

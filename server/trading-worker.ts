@@ -7,6 +7,10 @@
  * Started by: hft-piscina-server.ts using worker_threads
  */
 
+// Version marker - updated by deploy-workers.sh
+const WORKER_VERSION = '2026-01-29-v3';
+console.log(`[WORKER_VERSION] ${WORKER_VERSION}`);
+
 import { parentPort, workerData } from 'worker_threads';
 import http from 'http';
 import https from 'https';
@@ -23,24 +27,31 @@ import {
 } from '../config/seed-accounts';
 
 // Configure HTTP agents for high-throughput connections
-// This increases the default socket limit from ~10 to 100 per origin
+// Increased from 100 to 1000 to handle 5000+ accounts
 const httpAgent = new http.Agent({
   keepAlive: true,
-  maxSockets: 100,           // Max 100 connections per origin
-  maxFreeSockets: 50,
-  timeout: 30_000,
+  maxSockets: 1000,          // Max 1000 connections per origin (was 100)
+  maxFreeSockets: 200,       // Keep more free sockets (was 50)
+  timeout: 60_000,           // Longer timeout for high load (was 30s)
+  scheduling: 'fifo',        // First-in-first-out for fairness
 });
 
 const httpsAgent = new https.Agent({
   keepAlive: true,
-  maxSockets: 100,
-  maxFreeSockets: 50,
-  timeout: 30_000,
+  maxSockets: 1000,
+  maxFreeSockets: 200,
+  timeout: 60_000,
+  scheduling: 'fifo',
 });
 
 // Apply to global http/https module
 http.globalAgent = httpAgent;
 https.globalAgent = httpsAgent;
+
+// Concurrency control: max accounts processing simultaneously per worker thread
+// With batchSize=30, 20 accounts = 600 concurrent HTTP requests (safe for 1000 sockets)
+// Can be tuned via workerData.accountConcurrency
+const ACCOUNT_CONCURRENCY = (workerData as any)?.accountConcurrency || 20;
 
 // Worker configuration passed via workerData
 interface WorkerConfig {
@@ -135,6 +146,45 @@ let marketIndex = 0;
 
 // Control flags
 let isRunning = false;
+
+/**
+ * Simple Semaphore for concurrency control
+ * Limits how many accounts can execute batches simultaneously
+ */
+class Semaphore {
+  private permits: number;
+  private waiting: Array<() => void> = [];
+
+  constructor(permits: number) {
+    this.permits = permits;
+  }
+
+  async acquire(): Promise<void> {
+    if (this.permits > 0) {
+      this.permits--;
+      return;
+    }
+    return new Promise((resolve) => {
+      this.waiting.push(resolve);
+    });
+  }
+
+  release(): void {
+    if (this.waiting.length > 0) {
+      const next = this.waiting.shift()!;
+      next();
+    } else {
+      this.permits++;
+    }
+  }
+
+  get available(): number {
+    return this.permits;
+  }
+}
+
+// Global semaphore for this worker thread
+let accountSemaphore: Semaphore;
 
 // Record a successful transaction
 function recordTx(hash: string, market: string, outcome: number, isBuy: boolean, sender: string): void {
@@ -345,6 +395,11 @@ async function refreshSequenceNumber(accState: AccountState): Promise<void> {
 async function executeBatchForAccount(accState: AccountState): Promise<boolean> {
   if (!accState.isActive) return true;
 
+  // DEBUG: Log entry
+  if (stats.totalTrades === 0 && accState.sequenceNumber < 3n) {
+    console.log(`[Worker ${config.workerId}] BATCH_START seq=${accState.sequenceNumber}`);
+  }
+
   const batchSize = config.batchSize;
   const startTime = Date.now();
   const baseSeq = accState.sequenceNumber;
@@ -366,7 +421,7 @@ async function executeBatchForAccount(accState: AccountState): Promise<boolean> 
         }
       : {
           accountSequenceNumber: baseSeq + BigInt(i),
-          expireTimestamp: Math.floor(Date.now() / 1000) + 60,
+          expireTimestamp: Math.floor(Date.now() / 1000) + 300, // 5 minutes instead of 60 seconds
         };
 
     return aptos.transaction.build.simple({
@@ -382,7 +437,17 @@ async function executeBatchForAccount(accState: AccountState): Promise<boolean> 
     });
   });
 
+  // DEBUG: Before await
+  if (stats.totalTrades === 0) {
+    console.log(`[Worker ${config.workerId}] AWAITING_BUILDS`);
+  }
+
   const builtTxs = await Promise.all(buildPromises);
+
+  // DEBUG: After await
+  if (stats.totalTrades === 0) {
+    console.log(`[Worker ${config.workerId}] BUILDS_DONE count=${builtTxs.filter(t => t !== null).length}`);
+  }
 
   // Check for build failures - these create sequence gaps
   const hasBuildFailure = builtTxs.some(tx => tx === null);
@@ -532,7 +597,7 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
         }
       : {
           accountSequenceNumber: baseSeq + BigInt(i),
-          expireTimestamp: Math.floor(Date.now() / 1000) + 60,
+          expireTimestamp: Math.floor(Date.now() / 1000) + 300, // 5 minutes instead of 60 seconds
         };
 
     aptos.transaction.build.simple({
@@ -558,32 +623,50 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
 
 /**
  * Trading loop for a single account
+ * Uses semaphore to limit concurrent batch executions across all accounts
  */
 async function accountTradingLoop(accState: AccountState, accountIndex: number): Promise<void> {
-  // Stagger start
-  const staggerDelay = accountIndex * Math.ceil(100 / Math.max(accounts.length, 1));
+  // DEBUG: Log loop start (only first account)
+  if (accountIndex === 0) {
+    console.log(`[Worker ${config.workerId}] LOOP_START account=${accountIndex} isRunning=${isRunning} isActive=${accState.isActive} concurrency=${ACCOUNT_CONCURRENCY}`);
+  }
+
+  // Small stagger to spread out initial semaphore acquisition
+  const staggerDelay = (accountIndex % ACCOUNT_CONCURRENCY) * 5;
   if (staggerDelay > 0) {
     await new Promise(r => setTimeout(r, staggerDelay));
   }
 
   while (isRunning && accState.isActive) {
     try {
-      // Hybrid mode: fire-and-forget vs safe mode
-      let batchClean = true;
-      if (Math.random() < config.fireAndForgetRatio) {
-        await fireAndForgetBatch(accState);
-        // fireAndForget doesn't track errors precisely, so assume clean
-      } else {
-        batchClean = await executeBatchForAccount(accState);
+      // Acquire semaphore permit before executing batch
+      // This limits concurrent batch executions to ACCOUNT_CONCURRENCY
+      await accountSemaphore.acquire();
+
+      // DEBUG: Log when first account acquires semaphore
+      if (accountIndex === 0 && stats.totalTrades === 0) {
+        console.log(`[Worker ${config.workerId}] SEMAPHORE_ACQUIRED account=${accountIndex} available=${accountSemaphore.available}`);
       }
 
-      // CRITICAL: If batch had errors, refresh sequence SYNCHRONOUSLY before next batch
-      // This prevents cascading sequence desync from build failures
-      if (!batchClean && !config.useOrderless) {
-        await refreshSequenceNumber(accState);
+      try {
+        // Execute batch for this account
+        let batchClean = true;
+        if (Math.random() < config.fireAndForgetRatio) {
+          await fireAndForgetBatch(accState);
+        } else {
+          batchClean = await executeBatchForAccount(accState);
+        }
+
+        // Refresh sequence if batch had errors
+        if (!batchClean && !config.useOrderless) {
+          await refreshSequenceNumber(accState);
+        }
+      } finally {
+        // Always release semaphore, even on error
+        accountSemaphore.release();
       }
 
-      // Apply adaptive delay
+      // Apply adaptive delay (outside semaphore to not block others)
       if (currentDelay > 0) {
         await new Promise(r => setTimeout(r, currentDelay));
       }
@@ -593,6 +676,9 @@ async function accountTradingLoop(accState: AccountState, accountIndex: number):
         await new Promise(r => setTimeout(r, config.batchDelayMs));
       }
     } catch (e: any) {
+      // Release semaphore on unexpected errors
+      try { accountSemaphore.release(); } catch {}
+
       if (!config.useOrderless) {
         await refreshSequenceNumber(accState);
       }
@@ -636,7 +722,12 @@ async function startTrading(): Promise<void> {
   if (isRunning) return;
 
   console.log(`[Worker ${config.workerId}] Starting trading with ${accounts.length} accounts...`);
+  console.log(`[Worker ${config.workerId}] Account concurrency: ${ACCOUNT_CONCURRENCY} (${accounts.length} accounts will cycle through ${ACCOUNT_CONCURRENCY} slots)`);
   isRunning = true;
+
+  // Initialize semaphore for this trading session
+  // This limits how many accounts can execute batches simultaneously
+  accountSemaphore = new Semaphore(ACCOUNT_CONCURRENCY);
 
   // Reset stats
   stats.totalTrades = 0;
@@ -645,6 +736,7 @@ async function startTrading(): Promise<void> {
   stats.currentTps = 0;
   lastTpsCalcTime = Date.now();
   lastTpsCalcTrades = 0;
+  firstErrorLogged = false; // Reset error logging for new run
 
   // Start stats reporting interval
   const statsInterval = setInterval(() => {
@@ -655,7 +747,9 @@ async function startTrading(): Promise<void> {
     reportStats();
   }, 1000);
 
-  // Start trading loops for all accounts in parallel
+  // Start trading loops for all accounts
+  // The semaphore ensures only ACCOUNT_CONCURRENCY accounts execute batches at once
+  // This prevents socket exhaustion while maintaining high throughput
   const loopPromises = accounts.map((acc, i) => accountTradingLoop(acc, i));
 
   // Wait for all loops (they run until stopped)

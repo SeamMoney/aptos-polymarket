@@ -1,5 +1,7 @@
 // server/trading-worker.ts
 import { parentPort, workerData } from "worker_threads";
+import http from "http";
+import https from "https";
 import {
   Aptos,
   AptosConfig,
@@ -32,9 +34,33 @@ function deriveAccount(mnemonic, index) {
 var DERIVATION_PATH_PREFIX = `m/44'/${APTOS_COIN_TYPE}'/0'/0`;
 
 // server/trading-worker.ts
+var WORKER_VERSION = "2026-01-29-v3";
+console.log(`[WORKER_VERSION] ${WORKER_VERSION}`);
+var httpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: 1e3,
+  // Max 1000 connections per origin (was 100)
+  maxFreeSockets: 200,
+  // Keep more free sockets (was 50)
+  timeout: 6e4,
+  // Longer timeout for high load (was 30s)
+  scheduling: "fifo"
+  // First-in-first-out for fairness
+});
+var httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 1e3,
+  maxFreeSockets: 200,
+  timeout: 6e4,
+  scheduling: "fifo"
+});
+http.globalAgent = httpAgent;
+https.globalAgent = httpsAgent;
+var ACCOUNT_CONCURRENCY = workerData?.accountConcurrency || 20;
 var TX_BUFFER_SIZE = 1e5;
 var txBuffer = [];
 var txBufferIndex = 0;
+var firstErrorLogged = false;
 var config = workerData;
 var MULTI_MODULE = `${config.contractAddress}::multi_outcome_market`;
 var currentDelay = 0;
@@ -54,6 +80,34 @@ var lastTpsCalcTime = Date.now();
 var lastTpsCalcTrades = 0;
 var marketIndex = 0;
 var isRunning = false;
+var Semaphore = class {
+  permits;
+  waiting = [];
+  constructor(permits) {
+    this.permits = permits;
+  }
+  async acquire() {
+    if (this.permits > 0) {
+      this.permits--;
+      return;
+    }
+    return new Promise((resolve) => {
+      this.waiting.push(resolve);
+    });
+  }
+  release() {
+    if (this.waiting.length > 0) {
+      const next = this.waiting.shift();
+      next();
+    } else {
+      this.permits++;
+    }
+  }
+  get available() {
+    return this.permits;
+  }
+};
+var accountSemaphore;
 function recordTx(hash, market, outcome, isBuy, sender) {
   const record = {
     hash,
@@ -102,7 +156,9 @@ async function initialize() {
       sequenceNumber: 0n,
       successCount: 0,
       failCount: 0,
-      isActive: true
+      isActive: true,
+      holdings: /* @__PURE__ */ new Map()
+      // Initialize empty holdings tracker
     };
     accounts.push(accState);
     if ((i + 1) % 50 === 0) {
@@ -135,12 +191,28 @@ function getNextMarket() {
   marketIndex = (marketIndex + 1) % config.markets.length;
   return market;
 }
-function buildPayload(marketAddress) {
+function buildPayload(marketAddress, holdings) {
   const amount = BigInt(Math.floor((Math.random() * 0.09 + 0.01) * 1e8));
   const outcomeCount = 4;
   const outcomeIndex = Math.floor(Math.random() * outcomeCount);
-  const isBuy = Math.random() < 0.7;
+  let marketHoldings = holdings.get(marketAddress);
+  if (!marketHoldings) {
+    marketHoldings = /* @__PURE__ */ new Map();
+    holdings.set(marketAddress, marketHoldings);
+  }
+  const sellableOutcomes = [];
+  for (let i = 0; i < outcomeCount; i++) {
+    const held = marketHoldings.get(i) || 0;
+    if (held > 0) {
+      sellableOutcomes.push(i);
+    }
+  }
+  const wantToSell = Math.random() >= 0.7;
+  const canSell = sellableOutcomes.length > 0;
+  const isBuy = !wantToSell || !canSell;
   if (isBuy) {
+    const currentHeld = marketHoldings.get(outcomeIndex) || 0;
+    marketHoldings.set(outcomeIndex, currentHeld + 1);
     return {
       payload: {
         function: `${MULTI_MODULE}::buy_outcome`,
@@ -150,14 +222,16 @@ function buildPayload(marketAddress) {
       outcomeIndex
     };
   } else {
-    const otherOutcome = (outcomeIndex + 1) % outcomeCount;
+    const sellOutcome = sellableOutcomes[Math.floor(Math.random() * sellableOutcomes.length)];
+    const currentHeld = marketHoldings.get(sellOutcome) || 0;
+    marketHoldings.set(sellOutcome, Math.max(0, currentHeld - 1));
     return {
       payload: {
         function: `${MULTI_MODULE}::sell_outcome`,
-        functionArguments: [marketAddress, otherOutcome, amount, 0n]
+        functionArguments: [marketAddress, sellOutcome, amount, 0n]
       },
       isBuy: false,
-      outcomeIndex: otherOutcome
+      outcomeIndex: sellOutcome
     };
   }
 }
@@ -171,31 +245,48 @@ async function refreshSequenceNumber(accState) {
   }
 }
 async function executeBatchForAccount(accState) {
-  if (!accState.isActive) return;
+  if (!accState.isActive) return true;
+  if (stats.totalTrades === 0 && accState.sequenceNumber < 3n) {
+    console.log(`[Worker ${config.workerId}] BATCH_START seq=${accState.sequenceNumber}`);
+  }
   const batchSize = config.batchSize;
   const startTime = Date.now();
   const baseSeq = accState.sequenceNumber;
   const payloads = [];
   for (let i = 0; i < batchSize; i++) {
     const market = getNextMarket();
-    const info = buildPayload(market);
+    const info = buildPayload(market, accState.holdings);
     payloads.push({ ...info, market });
   }
   const buildPromises = payloads.map(({ payload }, i) => {
     const options = config.useOrderless ? {
       replayProtectionNonce: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
-      expireTimestamp: Math.floor(Date.now() / 1e3) + 55
+      expireTimestamp: Math.floor(Date.now() / 1e3) + 120
     } : {
       accountSequenceNumber: baseSeq + BigInt(i),
-      expireTimestamp: Math.floor(Date.now() / 1e3) + 30
+      expireTimestamp: Math.floor(Date.now() / 1e3) + 300
+      // 5 minutes instead of 60 seconds
     };
     return aptos.transaction.build.simple({
       sender: accState.account.accountAddress,
       data: payload,
       options
-    }).catch(() => null);
+    }).catch((e) => {
+      if (!firstErrorLogged) {
+        firstErrorLogged = true;
+        console.log(`[Worker ${config.workerId}] TX_BUILD_ERROR: ${e.message || "Unknown"}`);
+      }
+      return null;
+    });
   });
+  if (stats.totalTrades === 0) {
+    console.log(`[Worker ${config.workerId}] AWAITING_BUILDS`);
+  }
   const builtTxs = await Promise.all(buildPromises);
+  if (stats.totalTrades === 0) {
+    console.log(`[Worker ${config.workerId}] BUILDS_DONE count=${builtTxs.filter((t) => t !== null).length}`);
+  }
+  const hasBuildFailure = builtTxs.some((tx) => tx === null);
   const signedTxs = builtTxs.map((tx) => {
     if (!tx) return null;
     try {
@@ -210,6 +301,10 @@ async function executeBatchForAccount(accState) {
   let hasSequenceError = false;
   const submitPromises = builtTxs.map((tx, i) => {
     if (!tx || !signedTxs[i]) {
+      if (!firstErrorLogged) {
+        firstErrorLogged = true;
+        console.log(`[Worker ${config.workerId}] BUILD_FAILED: tx=${!!tx}, signed=${!!signedTxs[i]}`);
+      }
       return Promise.resolve({ success: false, error: "Build/sign failed", hash: "" });
     }
     return aptos.transaction.submit.simple({
@@ -221,6 +316,14 @@ async function executeBatchForAccount(accState) {
         mempoolFull = true;
       } else if (errMsg.includes("sequence") || errMsg.includes("invalid_transaction_update")) {
         hasSequenceError = true;
+      }
+      if (!firstErrorLogged) {
+        firstErrorLogged = true;
+        console.log(`[Worker ${config.workerId}] FIRST_ERROR: ${errMsg.slice(0, 400)}`);
+        parentPort?.postMessage({
+          type: "error_log",
+          data: { workerId: config.workerId, error: errMsg.slice(0, 400) }
+        });
       }
       return { success: false, error: errMsg, hash: "" };
     });
@@ -248,7 +351,7 @@ async function executeBatchForAccount(accState) {
     }
   }
   if (!config.useOrderless) {
-    accState.sequenceNumber += BigInt(successCount);
+    accState.sequenceNumber += BigInt(batchSize);
   }
   if (mempoolFull) {
     currentDelay = Math.min(
@@ -262,10 +365,6 @@ async function executeBatchForAccount(accState) {
       currentDelay = Math.floor(currentDelay * 0.5);
     }
   }
-  if (hasSequenceError && !config.useOrderless) {
-    refreshSequenceNumber(accState).catch(() => {
-    });
-  }
   const batchTime = Date.now() - startTime;
   if (stats.totalTrades % 500 === 0) {
     const tps = Math.round(batchSize / (batchTime / 1e3));
@@ -273,6 +372,8 @@ async function executeBatchForAccount(accState) {
       `[Worker ${config.workerId}] ${accState.account.accountAddress.toString().slice(0, 8)} ${successCount}/${batchSize} ${tps} TPS total: ${stats.totalTrades}`
     );
   }
+  const needsRefresh = (hasBuildFailure || hasSequenceError) && !config.useOrderless;
+  return !needsRefresh;
 }
 async function fireAndForgetBatch(accState) {
   if (!accState.isActive) return;
@@ -284,13 +385,14 @@ async function fireAndForgetBatch(accState) {
   }
   for (let i = 0; i < batchSize; i++) {
     const market = getNextMarket();
-    const { payload, isBuy, outcomeIndex } = buildPayload(market);
+    const { payload, isBuy, outcomeIndex } = buildPayload(market, accState.holdings);
     const options = config.useOrderless ? {
       replayProtectionNonce: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
-      expireTimestamp: Math.floor(Date.now() / 1e3) + 55
+      expireTimestamp: Math.floor(Date.now() / 1e3) + 120
     } : {
       accountSequenceNumber: baseSeq + BigInt(i),
-      expireTimestamp: Math.floor(Date.now() / 1e3) + 30
+      expireTimestamp: Math.floor(Date.now() / 1e3) + 300
+      // 5 minutes instead of 60 seconds
     };
     aptos.transaction.build.simple({
       sender: accState.account.accountAddress,
@@ -312,16 +414,31 @@ async function fireAndForgetBatch(accState) {
   }
 }
 async function accountTradingLoop(accState, accountIndex) {
-  const staggerDelay = accountIndex * Math.ceil(100 / Math.max(accounts.length, 1));
+  if (accountIndex === 0) {
+    console.log(`[Worker ${config.workerId}] LOOP_START account=${accountIndex} isRunning=${isRunning} isActive=${accState.isActive} concurrency=${ACCOUNT_CONCURRENCY}`);
+  }
+  const staggerDelay = accountIndex % ACCOUNT_CONCURRENCY * 5;
   if (staggerDelay > 0) {
     await new Promise((r) => setTimeout(r, staggerDelay));
   }
   while (isRunning && accState.isActive) {
     try {
-      if (Math.random() < config.fireAndForgetRatio) {
-        await fireAndForgetBatch(accState);
-      } else {
-        await executeBatchForAccount(accState);
+      await accountSemaphore.acquire();
+      if (accountIndex === 0 && stats.totalTrades === 0) {
+        console.log(`[Worker ${config.workerId}] SEMAPHORE_ACQUIRED account=${accountIndex} available=${accountSemaphore.available}`);
+      }
+      try {
+        let batchClean = true;
+        if (Math.random() < config.fireAndForgetRatio) {
+          await fireAndForgetBatch(accState);
+        } else {
+          batchClean = await executeBatchForAccount(accState);
+        }
+        if (!batchClean && !config.useOrderless) {
+          await refreshSequenceNumber(accState);
+        }
+      } finally {
+        accountSemaphore.release();
       }
       if (currentDelay > 0) {
         await new Promise((r) => setTimeout(r, currentDelay));
@@ -330,9 +447,12 @@ async function accountTradingLoop(accState, accountIndex) {
         await new Promise((r) => setTimeout(r, config.batchDelayMs));
       }
     } catch (e) {
+      try {
+        accountSemaphore.release();
+      } catch {
+      }
       if (!config.useOrderless) {
-        refreshSequenceNumber(accState).catch(() => {
-        });
+        await refreshSequenceNumber(accState);
       }
       await new Promise((r) => setTimeout(r, 30));
     }
@@ -360,13 +480,16 @@ function reportStats() {
 async function startTrading() {
   if (isRunning) return;
   console.log(`[Worker ${config.workerId}] Starting trading with ${accounts.length} accounts...`);
+  console.log(`[Worker ${config.workerId}] Account concurrency: ${ACCOUNT_CONCURRENCY} (${accounts.length} accounts will cycle through ${ACCOUNT_CONCURRENCY} slots)`);
   isRunning = true;
+  accountSemaphore = new Semaphore(ACCOUNT_CONCURRENCY);
   stats.totalTrades = 0;
   stats.successfulTrades = 0;
   stats.failedTrades = 0;
   stats.currentTps = 0;
   lastTpsCalcTime = Date.now();
   lastTpsCalcTrades = 0;
+  firstErrorLogged = false;
   const statsInterval = setInterval(() => {
     if (!isRunning) {
       clearInterval(statsInterval);

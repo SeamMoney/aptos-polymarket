@@ -40,20 +40,45 @@ import { validateMnemonic } from '../config/seed-accounts';
 // Configuration
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS || '0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea';
 
-// RPC endpoints
-const APTOS_INTERNAL_FULLNODE = 'http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1';
+// RPC endpoints - multiple internal VFNs for failover
+const INTERNAL_VFNS = [
+  'http://vfn0.usce1-1.testnet.aptoslabs.com:80/v1',
+  'http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1',
+];
 const CUSTOM_FULLNODE = process.env.FULLNODE_URL || 'https://aptos.cash.trading/v1';
 
+// Find first working VFN endpoint
+async function findWorkingVfn(): Promise<string> {
+  for (const vfn of INTERNAL_VFNS) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const response = await fetch(vfn, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (response.ok) {
+        console.log(`Found working VFN: ${vfn}`);
+        return vfn;
+      }
+    } catch {
+      console.log(`VFN unavailable: ${vfn}`);
+    }
+  }
+  // Fallback to first one even if not responding
+  console.log(`No VFN responding, using default: ${INTERNAL_VFNS[0]}`);
+  return INTERNAL_VFNS[0];
+}
+
 const RPC_MODE = process.env.RPC_MODE || 'internal';
+let selectedVfn: string | null = null;
+
 const getRpcEndpoints = (): string[] => {
   switch (RPC_MODE) {
     case 'internal':
-      return [APTOS_INTERNAL_FULLNODE];
+      return [selectedVfn || INTERNAL_VFNS[0]];
     case 'custom':
       return [process.env.FULLNODE_URL || CUSTOM_FULLNODE];
     default:
-      // Default to internal VFN for demos - ensures single endpoint
-      return [APTOS_INTERNAL_FULLNODE];
+      return [selectedVfn || INTERNAL_VFNS[0]];
   }
 };
 
@@ -135,6 +160,10 @@ const WORKER_COUNT = Math.min(
 const USE_ORDERLESS = process.env.USE_ORDERLESS !== 'false'; // Default true
 const USE_USD1 = process.env.USE_USD1 === 'true';
 const USD1_METADATA = process.env.USD1_METADATA || null;
+
+// Account concurrency per worker thread (controls how many accounts execute batches simultaneously)
+// Higher = more throughput but more HTTP connections. Default 20, can tune based on testing.
+const ACCOUNT_CONCURRENCY = parseInt(process.env.ACCOUNT_CONCURRENCY || '20');
 
 // Markets (comma-separated)
 const MARKETS = (process.env.MULTI_MARKETS || '').split(',').map(m => m.trim()).filter(m => m);
@@ -311,6 +340,7 @@ function createWorker(config: {
     useOrderless: USE_ORDERLESS,
     useUsd1: USE_USD1,
     usd1Metadata: USD1_METADATA,
+    accountConcurrency: ACCOUNT_CONCURRENCY,
   };
 
   // Create worker with compiled JS file (no special execArgv needed)
@@ -384,9 +414,11 @@ async function initializeWorkers(): Promise<void> {
   console.log(`Account Range: ${ACCOUNT_START_INDEX} - ${ACCOUNT_START_INDEX + ACCOUNT_COUNT - 1}`);
   console.log(`Worker Threads: ${WORKER_COUNT}`);
   console.log(`Accounts per Worker: ~${Math.floor(ACCOUNT_COUNT / WORKER_COUNT)}`);
+  console.log(`Account Concurrency: ${ACCOUNT_CONCURRENCY} per thread (${ACCOUNT_CONCURRENCY * WORKER_COUNT} total concurrent batches)`);
   console.log(`Use Orderless: ${USE_ORDERLESS}`);
   console.log(`Markets: ${MARKETS.length}`);
   console.log(`Batch Size: ${MODE_CONFIG.batchSize}`);
+  console.log(`Max Concurrent HTTP Requests: ~${ACCOUNT_CONCURRENCY * MODE_CONFIG.batchSize} per thread`);
   console.log(`Target TPS: ${MODE_CONFIG.targetTps}`);
   console.log();
 
@@ -751,6 +783,11 @@ function startStatsDisplay(): void {
 // Main
 async function main() {
   const PORT = parseInt(process.env.PORT || '3001');
+
+  // Find working VFN endpoint (if using internal mode)
+  if (RPC_MODE === 'internal') {
+    selectedVfn = await findWorkingVfn();
+  }
 
   // Initialize workers
   await initializeWorkers();

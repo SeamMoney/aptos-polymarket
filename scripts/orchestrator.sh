@@ -83,6 +83,91 @@ check_ssh() {
 }
 
 # ============================================
+# PREFLIGHT COMMAND - Test VFN connectivity from each worker
+# ============================================
+
+cmd_preflight() {
+    print_header "PREFLIGHT CHECK: VFN CONNECTIVITY FROM ALL WORKERS"
+
+    # Get VFN URL from worker config or use default
+    VFN_URL="${FULLNODE_URL}"
+
+    # Also test internal VFN
+    INTERNAL_VFN="http://vfn0.usce1-1.testnet.aptoslabs.com:80/v1"
+
+    echo "Testing RPC connectivity FROM each worker's perspective..."
+    echo ""
+
+    ALL_OK=true
+    WORKER_RESULTS=()
+
+    for i in 1 2 3; do
+        eval "VM_IP=\${WORKER_VM${i}_IP}"
+        echo "Worker $i ($VM_IP):"
+
+        # First check SSH
+        echo -n "  SSH: "
+        if ! check_ssh $VM_IP; then
+            echo -e "${RED}✗ Cannot connect${NC}"
+            ALL_OK=false
+            WORKER_RESULTS+=("W$i: SSH FAIL")
+            continue
+        fi
+        echo -e "${GREEN}✓ OK${NC}"
+
+        # Test custom fullnode from worker
+        echo -n "  Custom RPC (${FULLNODE_IP}): "
+        CUSTOM_RESULT=$(ssh ${WORKER_VM_USER}@${VM_IP} "curl -s --connect-timeout 5 '${VFN_URL}' 2>/dev/null | head -c 100" 2>/dev/null)
+        if echo "$CUSTOM_RESULT" | grep -q "chain_id"; then
+            BLOCK=$(echo "$CUSTOM_RESULT" | grep -o '"block_height":"[0-9]*"' | cut -d'"' -f4)
+            echo -e "${GREEN}✓ OK${NC} (block: ${BLOCK:-?})"
+            WORKER_RESULTS+=("W$i: CUSTOM OK")
+        else
+            echo -e "${RED}✗ FAIL${NC}"
+            ALL_OK=false
+            WORKER_RESULTS+=("W$i: CUSTOM FAIL")
+        fi
+
+        # Test internal VFN from worker
+        echo -n "  Internal VFN (usce1-1): "
+        INTERNAL_RESULT=$(ssh ${WORKER_VM_USER}@${VM_IP} "curl -s --connect-timeout 5 '${INTERNAL_VFN}' 2>/dev/null | head -c 100" 2>/dev/null)
+        if echo "$INTERNAL_RESULT" | grep -q "chain_id"; then
+            BLOCK=$(echo "$INTERNAL_RESULT" | grep -o '"block_height":"[0-9]*"' | cut -d'"' -f4)
+            echo -e "${GREEN}✓ OK${NC} (block: ${BLOCK:-?})"
+        else
+            echo -e "${YELLOW}○ Unavailable${NC}"
+        fi
+
+        # Check if HFT process is running
+        echo -n "  HFT Server: "
+        if ssh ${WORKER_VM_USER}@${VM_IP} "pgrep -f 'hft-piscina-server\|hft-ultra-server'" &>/dev/null; then
+            echo -e "${GREEN}✓ Running${NC}"
+        else
+            echo -e "${YELLOW}○ Not running${NC}"
+        fi
+
+        echo ""
+    done
+
+    # Summary
+    echo "════════════════════════════════════════════════════"
+    echo -n "RESULT: "
+    if [ "$ALL_OK" = true ]; then
+        echo -e "${GREEN}ALL WORKERS CAN REACH RPC${NC}"
+        echo ""
+        echo "Safe to start trading!"
+        return 0
+    else
+        echo -e "${RED}SOME WORKERS HAVE CONNECTIVITY ISSUES${NC}"
+        echo ""
+        echo "Summary: ${WORKER_RESULTS[*]}"
+        echo ""
+        echo "Fix connectivity issues before starting demo."
+        return 1
+    fi
+}
+
+# ============================================
 # STATUS COMMAND
 # ============================================
 
@@ -521,6 +606,9 @@ case "${1:-status}" in
     status)
         cmd_status
         ;;
+    preflight)
+        cmd_preflight
+        ;;
     deploy)
         cmd_deploy
         ;;
@@ -540,20 +628,22 @@ case "${1:-status}" in
         cmd_logs
         ;;
     *)
-        echo "Usage: $0 {deploy|standby|demo|status|stop|logs}"
+        echo "Usage: $0 {preflight|deploy|standby|demo|status|stop|logs}"
         echo ""
         echo "Commands:"
-        echo "  deploy  - Deploy latest server code to all workers"
-        echo "  standby - Start all workers in STANDBY (wait for UI to launch)"
-        echo "  demo    - Auto-start demo in quantum mode (default 60s)"
-        echo "  status  - Check all infrastructure status"
-        echo "  stop    - Stop all workers"
-        echo "  logs    - View logs from all workers"
+        echo "  preflight - Test VFN connectivity FROM each worker (run before demo!)"
+        echo "  deploy    - Deploy latest server code to all workers"
+        echo "  standby   - Start all workers in STANDBY (wait for UI to launch)"
+        echo "  demo      - Auto-start demo in quantum mode (default 60s)"
+        echo "  status    - Check all infrastructure status"
+        echo "  stop      - Stop all workers"
+        echo "  logs      - View logs from all workers"
         echo ""
         echo "Workflow:"
-        echo "  1. ./scripts/orchestrator.sh deploy   # Deploy code"
-        echo "  2. ./scripts/orchestrator.sh standby  # Start in standby"
-        echo "  3. Open browser, ARM → LAUNCH         # Start trading from UI"
+        echo "  1. ./scripts/orchestrator.sh preflight  # Verify connectivity"
+        echo "  2. ./scripts/orchestrator.sh deploy     # Deploy code"
+        echo "  3. ./scripts/orchestrator.sh standby    # Start in standby"
+        echo "  4. Open browser, ARM → LAUNCH           # Start trading from UI"
         exit 1
         ;;
 esac
