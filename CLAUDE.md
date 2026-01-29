@@ -418,3 +418,94 @@ The trading-worker.ts uses a Semaphore to limit concurrent HTTP requests:
 - `ACCOUNT_CONCURRENCY=40` (env var or workerData)
 - With batchSize=30, this means max 1,200 concurrent HTTP requests per worker thread
 - Prevents socket exhaustion that caused 0 TPS with many accounts
+
+---
+
+## Jan 29 2026 - TPS Scaling Analysis
+
+### Systematic Testing Results
+
+Tested various configurations to find bottlenecks and path to 10x TPS.
+
+#### Baseline Established (3 workers × 4 threads × 60 concurrency)
+
+| Metric | Value |
+|--------|-------|
+| Combined Peak TPS | **~1,579** |
+| Average TPS | **~1,200** |
+| Success Rate | **100%** |
+| Total Accounts | 5,000 (split across 3 workers) |
+
+#### Per-Worker Performance
+
+| Worker | Accounts | Trades/30s | Avg TPS | Notes |
+|--------|----------|------------|---------|-------|
+| Worker 1 | 0-1666 | 4,020 | ~134 | **Underperforms** - slow to start |
+| Worker 2 | 1667-3333 | 14,310 | ~477 | Normal |
+| Worker 3 | 3334-4999 | 16,950 | ~565 | Normal |
+
+### What Was Tested
+
+| Test | Config Change | Result |
+|------|--------------|--------|
+| More accounts | 2500 vs 1667 per worker | **No improvement** - accounts not bottleneck |
+| Higher concurrency | 80 vs 60 | **Failed** - Worker 3 had 63% failure rate |
+| More threads | 8 vs 4 | **Worker 1 stuck** - others no significant improvement |
+| Single worker 5000 accounts | 1 VM, 8 threads | **~680 TPS** - lower than 3-worker combined |
+| Unfunded accounts | Range 4167-6666 | **INSUFFICIENT_BALANCE errors** |
+
+### Key Findings
+
+1. **Linear scaling with workers** - Adding VMs is the most reliable path to higher TPS
+2. **Per-worker TPS caps at ~520-550** - Regardless of accounts, threads, or concurrency
+3. **Worker 1 consistently underperforms** - ~134 TPS vs ~520 for others (accounts 0-1666 specifically)
+4. **Funded accounts: 0-4999 ONLY** - Going beyond this range causes INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE
+5. **Higher concurrency causes failures** - 80+ concurrency leads to mempool/nonce issues
+6. **More threads can cause instability** - 8 threads caused Worker 1 to get stuck
+
+### Worker 1 Slow Start Issue
+
+Worker 1 (accounts 0-1666) consistently:
+- Takes 20-25 seconds to start producing trades
+- Eventually reaches similar TPS (~400-600) but starts late
+- Higher CPU/memory usage (97% vs 83% for others)
+- Possibly related to account range 0-1666 having more prior transaction history
+
+### Path to 10K+ TPS
+
+| Approach | Details |
+|----------|---------|
+| Current baseline | ~1,200 TPS with 3 workers |
+| Per-worker TPS | ~520 TPS average (Workers 2 & 3) |
+| **Workers needed for 10K TPS** | **~20 workers** |
+| **Workers needed for 30K TPS** | **~60 workers** |
+| Accounts needed | ~33,000 funded (for 20 workers) |
+| Cost estimate | ~$80/month (20 × $4 droplets) |
+
+### Recommended Configuration
+
+For reliable demos, use this conservative config:
+```bash
+WORKER_COUNT=4
+ACCOUNT_CONCURRENCY=60  # NOT 80+
+USE_ORDERLESS=false
+RPC_MODE=custom
+FULLNODE_URL="http://aptos.cash.trading:8080/v1"
+```
+
+### Scaling Checklist
+
+To scale TPS, in order of priority:
+1. **Add more worker VMs** - Each adds ~500 TPS (linear)
+2. **Fund more accounts** - Current limit is 5,000
+3. **Investigate Worker 1** - Fixing would add ~400 TPS
+4. **Optimize fullnode** - User's own node (aptos.cash.trading) has no rate limits
+
+### Error Types Encountered
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE | Unfunded accounts | Use accounts 0-4999 only |
+| Transaction already in mempool | Sequence number conflicts | Reduce concurrency |
+| Socket exhaustion | Too many concurrent HTTP | Use ACCOUNT_CONCURRENCY semaphore |
+| Worker stuck at 0 TPS | Too many threads + high concurrency | Use 4 threads, not 8 |
