@@ -23,6 +23,9 @@ const EMPIRICAL = {
   TPS_PER_VM_WITH_SIM: 520,        // Workers 2 & 3 average (v3)
   TPS_PER_VM_NO_SIM: 690,          // Actual +33% improvement (not 2x, CPU-bound)
 
+  // 4 vCPU results (Jan 29 2026)
+  TPS_PER_4VCPU_VM: 1100,          // Peak ~1,100 TPS per 4vCPU worker
+
   // Worker 1 slow start penalty (accounts 0-1666)
   WORKER_1_PENALTY: 0.25,          // Only 25% of expected TPS
 
@@ -33,7 +36,11 @@ const EMPIRICAL = {
 
   // Scaling factors
   SMALL_VM_TPS_FACTOR: 0.5,        // 1 vCPU = ~50% of standard
-  LARGE_VM_TPS_FACTOR: 1.8,        // 4 vCPU = ~180% of standard (not 2x due to other limits)
+  LARGE_VM_TPS_FACTOR: 1.6,        // 4 vCPU = ~160% of standard (1100/690)
+
+  // CRITICAL: Fullnode bottleneck discovered Jan 29 2026
+  // aptos.cash.trading caps at ~1,600 TPS regardless of worker count
+  FULLNODE_CAPACITY: 1600,         // Single fullnode max TPS
 
   // Thread efficiency
   THREADS_OPTIMAL: 4,              // Best performance at 4 threads on 2 vCPU

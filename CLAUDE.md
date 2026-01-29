@@ -509,3 +509,62 @@ To scale TPS, in order of priority:
 | Transaction already in mempool | Sequence number conflicts | Reduce concurrency |
 | Socket exhaustion | Too many concurrent HTTP | Use ACCOUNT_CONCURRENCY semaphore |
 | Worker stuck at 0 TPS | Too many threads + high concurrency | Use 4 threads, not 8 |
+
+---
+
+## Jan 29 2026 - 4 vCPU Upgrade & Fullnode Bottleneck Discovery
+
+### CPU Upgrade Test Results
+
+Upgraded all 3 workers from 2 vCPU → 4 vCPU ($24 → $48/month each).
+
+| Config | Per-Worker Peak | Per-Worker Avg | Combined TPS |
+|--------|-----------------|----------------|--------------|
+| 2 vCPU, 4 threads | 1,064 | 690 | ~1,600 |
+| **4 vCPU, 4 threads** | **1,990** | **1,381** | ~1,600 |
+| 4 vCPU, 8 threads | 2,040 | 1,117 | - |
+
+**Key Finding:** 4 threads (1 per vCPU) is optimal. 8 threads causes context switching overhead.
+
+### Fullnode Bottleneck Discovered
+
+**CRITICAL:** Combined TPS stayed at ~1,600 despite doubling per-worker capacity.
+
+The fullnode (aptos.cash.trading) caps at ~1,600 TPS total, regardless of worker count or CPU capacity. This explains why adding more workers stopped helping.
+
+**Proof:**
+- Single 4 vCPU worker: 1,990 peak TPS
+- Three 4 vCPU workers: 1,570 combined TPS (capped by fullnode)
+
+### Current Infrastructure (after upgrade)
+
+| Worker | IP | vCPU | RAM | Cost |
+|--------|-----|------|-----|------|
+| Worker 1 | 178.128.177.88 | 4 | 8GB | $48/mo |
+| Worker 2 | 167.99.164.45 | 4 | 8GB | $48/mo |
+| Worker 3 | 138.68.0.124 | 4 | 8GB | $48/mo |
+| **Total** | | **12** | **24GB** | **$144/mo** |
+
+### Path Forward for Higher TPS
+
+Since fullnode is now the bottleneck, options are:
+
+1. **Multiple fullnodes** - Split workers across different RPC endpoints
+2. **Internal VFN** - Use Aptos Labs internal VFN if reliable
+3. **Dedicated fullnode** - Run our own high-capacity fullnode
+4. **Indexer approach** - Different architecture for higher throughput
+
+### Updated Scaling Model
+
+```
+Per-worker capacity:
+  2 vCPU: ~690 avg TPS, ~1,100 peak
+  4 vCPU: ~1,100 avg TPS, ~2,000 peak
+
+Fullnode limits:
+  aptos.cash.trading: ~1,600 TPS max
+  Internal VFN: Unknown (unreliable)
+
+To scale beyond 1,600 TPS:
+  Need multiple fullnode endpoints
+```
