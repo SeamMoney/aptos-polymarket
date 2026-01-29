@@ -943,6 +943,24 @@ export function MarketDetail() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
       JSON.stringify(market?.outcomes?.map(o => o.price))]);
 
+  // Sort outcomes by current price (highest probability first)
+  const sortedChartOutcomes = useMemo(() => {
+    if (!chartOutcomes || chartOutcomes.length === 0) return chartOutcomes;
+
+    // Don't sort binary markets (Yes/No should stay in order)
+    if (chartOutcomes.length === 2 &&
+        chartOutcomes.some(o => o.name === 'Yes') &&
+        chartOutcomes.some(o => o.name === 'No')) {
+      return chartOutcomes;
+    }
+
+    return [...chartOutcomes].sort((a, b) => {
+      const aPrice = a.prices[a.prices.length - 1] || 0;
+      const bPrice = b.prices[b.prices.length - 1] || 0;
+      return bPrice - aPrice; // Highest first
+    });
+  }, [chartOutcomes]);
+
 
   // Show loading skeleton while markets are loading
   if (!market) {
@@ -1093,14 +1111,14 @@ export function MarketDetail() {
         </div>
 
         {/* Outcome Legend - colored dots with prices (shown above chart) */}
-        {chartOutcomes && chartOutcomes.length > 0 && (
+        {sortedChartOutcomes && sortedChartOutcomes.length > 0 && (
           <div
             className={`px-4 pb-3 transition-all duration-300 delay-200 ${
               isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
             <div className="flex flex-wrap gap-x-4 gap-y-1">
-              {chartOutcomes.map((outcome, _index) => {
+              {sortedChartOutcomes.map((outcome, _index) => {
                 const price = outcome.prices[outcome.prices.length - 1] || 0;
                 const isHighlighted = highlightedOutcomeId === outcome.id;
                 const isOtherHighlighted = highlightedOutcomeId !== null && highlightedOutcomeId !== outcome.id;
@@ -1245,7 +1263,7 @@ export function MarketDetail() {
               isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
-            {chartOutcomes.map((outcome, index) => {
+            {sortedChartOutcomes.map((outcome, index) => {
               // Map "Other" to "Donald Trump Jr." for display
               const displayName = outcome.name === "Other" ? "Donald Trump Jr." : outcome.name;
 
