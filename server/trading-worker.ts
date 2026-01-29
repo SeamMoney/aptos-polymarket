@@ -8,7 +8,7 @@
  */
 
 // Version marker - updated by deploy-workers.sh
-const WORKER_VERSION = '2026-01-29-v3';
+const WORKER_VERSION = '2026-01-29-v4-skip-sim';
 console.log(`[WORKER_VERSION] ${WORKER_VERSION}`);
 
 import { parentPort, workerData } from 'worker_threads';
@@ -414,14 +414,21 @@ async function executeBatchForAccount(accState: AccountState): Promise<boolean> 
 
   // Build transactions
   const buildPromises = payloads.map(({ payload }, i) => {
+    // OPTIMIZATION: Specify gas to skip simulation (saves ~50% network round-trips)
+    // 50000 gas units is conservative (actual usage ~10-20K)
+    // 100 gas unit price is standard for testnet
     const options: any = config.useOrderless
       ? {
           replayProtectionNonce: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
           expireTimestamp: Math.floor(Date.now() / 1000) + 120,
+          maxGasAmount: 50000,
+          gasUnitPrice: 100,
         }
       : {
           accountSequenceNumber: baseSeq + BigInt(i),
           expireTimestamp: Math.floor(Date.now() / 1000) + 300, // 5 minutes instead of 60 seconds
+          maxGasAmount: 50000,
+          gasUnitPrice: 100,
         };
 
     return aptos.transaction.build.simple({
@@ -590,14 +597,19 @@ async function fireAndForgetBatch(accState: AccountState): Promise<void> {
     const market = getNextMarket();
     const { payload, isBuy, outcomeIndex } = buildPayload(market, accState.holdings);
 
+    // OPTIMIZATION: Specify gas to skip simulation (saves ~50% network round-trips)
     const options: any = config.useOrderless
       ? {
           replayProtectionNonce: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
           expireTimestamp: Math.floor(Date.now() / 1000) + 120,
+          maxGasAmount: 50000,
+          gasUnitPrice: 100,
         }
       : {
           accountSequenceNumber: baseSeq + BigInt(i),
           expireTimestamp: Math.floor(Date.now() / 1000) + 300, // 5 minutes instead of 60 seconds
+          maxGasAmount: 50000,
+          gasUnitPrice: 100,
         };
 
     aptos.transaction.build.simple({
