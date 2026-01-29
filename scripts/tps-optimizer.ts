@@ -19,8 +19,9 @@
 
 const EMPIRICAL = {
   // Observed TPS per healthy VM (standard 2vCPU, 4 threads, 60 concurrency)
-  TPS_PER_VM_WITH_SIM: 520,        // Workers 2 & 3 average
-  TPS_PER_VM_NO_SIM: 1000,         // Estimated 2x without simulation
+  // Updated Jan 29 2026 with actual test data from v4-skip-sim
+  TPS_PER_VM_WITH_SIM: 520,        // Workers 2 & 3 average (v3)
+  TPS_PER_VM_NO_SIM: 690,          // Actual +33% improvement (not 2x, CPU-bound)
 
   // Worker 1 slow start penalty (accounts 0-1666)
   WORKER_1_PENALTY: 0.25,          // Only 25% of expected TPS
@@ -337,12 +338,13 @@ function main(): void {
 
   // Key insights
   console.log('═══ KEY INSIGHTS ═══\n');
-  console.log('1. SKIP GAS SIMULATION: +90% TPS (biggest single improvement)');
-  console.log('   Add maxGasAmount & gasUnitPrice to transaction options\n');
+  console.log('1. SKIP GAS SIMULATION: +33% TPS (verified Jan 29 2026)');
+  console.log('   Add maxGasAmount & gasUnitPrice to transaction options');
+  console.log('   (Model predicted 90% but CPU is the real bottleneck)\n');
   console.log('2. OPTIMAL THREADS: Match vCPU count (4T for 2vCPU VM)');
   console.log('   More threads = CPU contention = lower TPS\n');
   console.log('3. CONCURRENCY: 60 is optimal, 80+ causes failures\n');
-  console.log('4. SCALING: Linear with VMs (~500-1000 TPS per standard VM)\n');
+  console.log('4. SCALING: Linear with VMs (~690 avg, 1064 peak per standard VM)\n');
   console.log('5. ACCOUNTS: Need ~500 funded accounts per VM\n');
   console.log('6. WORKER 1 BUG: Accounts 0-1666 are slow (investigate separately)\n');
 
