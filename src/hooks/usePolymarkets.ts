@@ -354,10 +354,7 @@ export function usePolymarkets(): PolymarketsHook {
 
   // Trading functions for binary markets
   const buyYes = useCallback(async (marketId: string, amountAPT: string) => {
-    console.log('[usePolymarkets] buyYes called:', { marketId, amountAPT, hasWallet: !!walletAddress, hasSign: !!signAndSubmitTransaction });
     if (!walletAddress) throw new Error('Wallet not connected');
-    if (!signAndSubmitTransaction) throw new Error('Wallet signing not available. Please reconnect your wallet.');
-
     const { address } = parseMarketId(marketId);
     const amountUnits = Math.floor(parseFloat(amountAPT) * 100_000_000);
 
@@ -370,10 +367,7 @@ export function usePolymarkets(): PolymarketsHook {
   }, [walletAddress, signAndSubmitTransaction]);
 
   const buyNo = useCallback(async (marketId: string, amountAPT: string) => {
-    console.log('[usePolymarkets] buyNo called:', { marketId, amountAPT, hasWallet: !!walletAddress, hasSign: !!signAndSubmitTransaction });
     if (!walletAddress) throw new Error('Wallet not connected');
-    if (!signAndSubmitTransaction) throw new Error('Wallet signing not available. Please reconnect your wallet.');
-
     const { address } = parseMarketId(marketId);
     const amountUnits = Math.floor(parseFloat(amountAPT) * 100_000_000);
 
@@ -386,10 +380,7 @@ export function usePolymarkets(): PolymarketsHook {
   }, [walletAddress, signAndSubmitTransaction]);
 
   const sellYes = useCallback(async (marketId: string, amount: string) => {
-    console.log('[usePolymarkets] sellYes called:', { marketId, amount, hasWallet: !!walletAddress, hasSign: !!signAndSubmitTransaction });
     if (!walletAddress) throw new Error('Wallet not connected');
-    if (!signAndSubmitTransaction) throw new Error('Wallet signing not available. Please reconnect your wallet.');
-
     const { address } = parseMarketId(marketId);
     const amountUnits = Math.floor(parseFloat(amount) * 100_000_000);
 
@@ -402,10 +393,7 @@ export function usePolymarkets(): PolymarketsHook {
   }, [walletAddress, signAndSubmitTransaction]);
 
   const sellNo = useCallback(async (marketId: string, amount: string) => {
-    console.log('[usePolymarkets] sellNo called:', { marketId, amount, hasWallet: !!walletAddress, hasSign: !!signAndSubmitTransaction });
     if (!walletAddress) throw new Error('Wallet not connected');
-    if (!signAndSubmitTransaction) throw new Error('Wallet signing not available. Please reconnect your wallet.');
-
     const { address } = parseMarketId(marketId);
     const amountUnits = Math.floor(parseFloat(amount) * 100_000_000);
 
@@ -419,81 +407,29 @@ export function usePolymarkets(): PolymarketsHook {
 
   // Trading functions for multi-outcome markets
   const buyOutcome = useCallback(async (marketId: string, outcomeIndex: number, amountAPT: string) => {
-    console.log('[usePolymarkets] buyOutcome called:', { marketId, outcomeIndex, amountAPT, walletAddress: !!walletAddress });
-
-    if (!walletAddress) {
-      console.error('[usePolymarkets] buyOutcome: No wallet address');
-      throw new Error('Wallet not connected');
-    }
-
-    // Mobile Safari can lose signAndSubmitTransaction even when address exists
-    if (!signAndSubmitTransaction) {
-      console.error('[usePolymarkets] buyOutcome: signAndSubmitTransaction is undefined - wallet may need reconnection');
-      throw new Error('Wallet signing not available. Please reconnect your wallet.');
-    }
-
+    if (!walletAddress) throw new Error('Wallet not connected');
     const { address } = parseMarketId(marketId);
-    console.log('[usePolymarkets] Getting payload for market:', address);
-
     const payload = await buyOutcomePayload(address, outcomeIndex, amountAPT);
-    console.log('[usePolymarkets] Payload ready, calling signAndSubmitTransaction...');
 
-    try {
-      const result = await signAndSubmitTransaction({
-        data: {
-          ...payload,
-          function: payload.function as `${string}::${string}::${string}`
-        }
-      });
-      console.log('[usePolymarkets] Transaction submitted:', result);
-      return result;
-    } catch (err) {
-      console.error('[usePolymarkets] signAndSubmitTransaction failed:', err);
-      console.error('[usePolymarkets] Error details:', {
-        name: (err as Error)?.name,
-        message: (err as Error)?.message,
-      });
-      throw err;
-    }
+    return signAndSubmitTransaction({
+      data: {
+        ...payload,
+        function: payload.function as `${string}::${string}::${string}`
+      }
+    });
   }, [walletAddress, signAndSubmitTransaction, buyOutcomePayload]);
 
   const sellOutcome = useCallback(async (marketId: string, outcomeIndex: number, amount: string) => {
-    console.log('[usePolymarkets] sellOutcome called:', { marketId, outcomeIndex, amount, walletAddress: !!walletAddress });
-
-    if (!walletAddress) {
-      console.error('[usePolymarkets] sellOutcome: No wallet address');
-      throw new Error('Wallet not connected');
-    }
-
-    // Mobile Safari can lose signAndSubmitTransaction even when address exists
-    if (!signAndSubmitTransaction) {
-      console.error('[usePolymarkets] sellOutcome: signAndSubmitTransaction is undefined - wallet may need reconnection');
-      throw new Error('Wallet signing not available. Please reconnect your wallet.');
-    }
-
+    if (!walletAddress) throw new Error('Wallet not connected');
     const { address } = parseMarketId(marketId);
-    console.log('[usePolymarkets] Getting payload for market:', address);
-
     const payload = await sellOutcomePayload(address, outcomeIndex, amount);
-    console.log('[usePolymarkets] Payload ready, calling signAndSubmitTransaction...');
 
-    try {
-      const result = await signAndSubmitTransaction({
-        data: {
-          ...payload,
-          function: payload.function as `${string}::${string}::${string}`
-        }
-      });
-      console.log('[usePolymarkets] Transaction submitted:', result);
-      return result;
-    } catch (err) {
-      console.error('[usePolymarkets] signAndSubmitTransaction failed:', err);
-      console.error('[usePolymarkets] Error details:', {
-        name: (err as Error)?.name,
-        message: (err as Error)?.message,
-      });
-      throw err;
-    }
+    return signAndSubmitTransaction({
+      data: {
+        ...payload,
+        function: payload.function as `${string}::${string}::${string}`
+      }
+    });
   }, [walletAddress, signAndSubmitTransaction, sellOutcomePayload]);
 
   // Refresh all markets
