@@ -27,12 +27,12 @@ import {
 } from '../config/seed-accounts';
 
 // Configure HTTP agents for high-throughput connections
-// Shorter timeout (15s) prevents cascading failures when VFN hangs
+// Increased from 100 to 1000 to handle 5000+ accounts
 const httpAgent = new http.Agent({
   keepAlive: true,
-  maxSockets: 1000,          // Max 1000 connections per origin
-  maxFreeSockets: 200,       // Keep more free sockets
-  timeout: 15_000,           // 15s timeout - fail fast, don't block (was 60s)
+  maxSockets: 1000,          // Max 1000 connections per origin (was 100)
+  maxFreeSockets: 200,       // Keep more free sockets (was 50)
+  timeout: 60_000,           // Longer timeout for high load (was 30s)
   scheduling: 'fifo',        // First-in-first-out for fairness
 });
 
@@ -40,7 +40,7 @@ const httpsAgent = new https.Agent({
   keepAlive: true,
   maxSockets: 1000,
   maxFreeSockets: 200,
-  timeout: 15_000,           // 15s timeout - fail fast, don't block (was 60s)
+  timeout: 60_000,
   scheduling: 'fifo',
 });
 
