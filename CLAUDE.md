@@ -568,3 +568,24 @@ Fullnode limits:
 To scale beyond 1,600 TPS:
   Need multiple fullnode endpoints
 ```
+
+### Split Fullnode Test (Jan 29 2026)
+
+Tested splitting workers across custom fullnode and internal VFN:
+
+| Config | Workers | TPS | Notes |
+|--------|---------|-----|-------|
+| All on custom | 3 | ~1,600 | Fullnode-limited |
+| All on internal VFN | 3 | ~1,500 | Worker 1 fails completely |
+| **Split (2 custom + 1 VFN)** | 3 | **~1,900** | **+21% improvement** |
+
+**Optimal Split Config:**
+```bash
+# Workers 1 & 2: Custom fullnode
+FULLNODE_URL="http://aptos.cash.trading:8080/v1"
+
+# Worker 3: Internal VFN
+FULLNODE_URL="http://vfn0.usce1-0.testnet.aptoslabs.com:80/v1"
+```
+
+**Key Finding:** Internal VFN can't handle all 3 workers simultaneously. Worker 1 (accounts 0-1666) especially fails on internal VFN. Split configuration is more reliable.
