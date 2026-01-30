@@ -397,3 +397,62 @@ The **dashboard TPS** (what the blockchain actually processes) is the authoritat
 - VFN 503 errors during throttling
 
 When dashboard shows 7K TPS but workers report 20% success rate, the blockchain is still processing 7K TPS - the "failures" are mostly client-side timeouts.
+
+---
+
+## Jan 30 2026 - Configuration Tuning Tests (Evening Session)
+
+Systematic testing of configuration changes to find the optimal TPS settings.
+
+### Test Results Summary
+
+| Test | Config Change | Success Rate | Successful TPS | Result |
+|------|--------------|--------------|----------------|--------|
+| **Baseline** | 2 threads, 10 conc, 80ms | 91.4% | **~19,790** | ✓ BEST |
+| Step 2 | 4 threads | 62.3% | ~9,265 | ✗ WORSE |
+| Step 3 | 12 concurrency | 99.9% | ~12,251 | ~ Lower TPS |
+| Step 4 | 60ms delay | 39.8% | ~4,628 | ✗ MUCH WORSE |
+
+### Key Findings
+
+1. **Baseline config (10/10/80/2) is optimal**
+   - 2 threads, 10 concurrency, 80ms delay achieves best balance
+   - ~19.8K successful TPS with 91.4% success rate
+
+2. **More threads overwhelms VFNs**
+   - 4 threads doubled submission rate but VFNs rejected more
+   - Success rate dropped from 91% to 62%
+   - Net result: WORSE TPS
+
+3. **Faster batch delay causes failures**
+   - 60ms vs 80ms overwhelmed VFNs even more
+   - W9 and W14 crashed (0 trades)
+   - Success rate dropped to 39%
+
+4. **VFN workers vs aptos.cash.trading**
+   - VFN workers get throttled under high load
+   - aptos.cash.trading (W4, W8, W12) maintain 97-100% success
+   - But lower TPS per worker (~300-500 vs ~1000)
+
+5. **Higher concurrency trades throughput for reliability**
+   - 12 concurrency: 99.9% success but lower overall TPS
+   - The VFNs have a natural throughput ceiling
+
+### Optimal Configuration (Confirmed)
+
+```bash
+WORKER_COUNT=2         # 2 threads per worker
+ACCOUNT_CONCURRENCY=10 # 10 accounts batching simultaneously
+BATCH_SIZE=10          # 10 transactions per batch
+BATCH_DELAY_MS=80      # 80ms between batches
+```
+
+### Scaling Path
+
+To increase TPS beyond ~20K, configuration changes alone won't help. Need:
+
+1. **More worker VMs** - Linear scaling with more workers
+2. **More contracts** - Contract C, D for more state parallelism
+3. **More accounts** - Fund accounts 5000-9999
+
+Current setup is hitting the VFN throughput ceiling. Config tuning can't push past this limit.
