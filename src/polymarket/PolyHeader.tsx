@@ -232,8 +232,15 @@ export function PolyHeader() {
       console.log("[USD1 Mint] Wallet type:", wallet?.name);
       console.log("[USD1 Mint] Is X-Chain:", isXChain);
 
+      // Check if mobile Safari - we must call signAndSubmitTransaction IMMEDIATELY
+      // after user click, or Safari blocks the popup
+      const isMobileSafari = /iPhone|iPad|iPod/i.test(navigator.userAgent) &&
+                             /Safari/i.test(navigator.userAgent) &&
+                             !/CriOS|FxiOS/i.test(navigator.userAgent);
+
       // For X-Chain wallets, ensure they have APT for gas fees
-      if (isXChain) {
+      // BUT skip this on mobile Safari to preserve the direct click chain
+      if (isXChain && !isMobileSafari) {
         console.log("[USD1 Mint] X-Chain wallet detected, checking APT for gas...");
         setFundStatus("funding_apt");
         const hasGas = await ensureAptForGas(address);
@@ -243,7 +250,7 @@ export function PolyHeader() {
         }
       }
 
-      // Now mint USD1
+      // Now mint USD1 - MUST be called immediately after click on mobile Safari
       setFundStatus("minting");
 
       // Call mint_to_self - anyone can mint in demo mode

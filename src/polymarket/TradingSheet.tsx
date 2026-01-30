@@ -168,12 +168,24 @@ export function TradingSheet({
     setTxHash(null);
 
     try {
-      // Ensure user has APT for gas (important for X-Chain wallets)
       const address = account.address.toString();
-      console.log("[TradingSheet] Ensuring APT for gas...", address);
-      const hasGas = await ensureAptForGas(address);
-      if (!hasGas) {
-        console.warn("[TradingSheet] Could not ensure APT for gas, proceeding anyway");
+
+      // Check if mobile Safari - we must call signAndSubmitTransaction IMMEDIATELY
+      // after user click, or Safari blocks the Aptos Connect popup
+      const isMobileSafari = /iPhone|iPad|iPod/i.test(navigator.userAgent) &&
+                             /Safari/i.test(navigator.userAgent) &&
+                             !/CriOS|FxiOS/i.test(navigator.userAgent);
+
+      // Ensure user has APT for gas (important for X-Chain wallets)
+      // BUT skip on mobile Safari to preserve the direct click -> popup chain
+      if (!isMobileSafari) {
+        console.log("[TradingSheet] Ensuring APT for gas...", address);
+        const hasGas = await ensureAptForGas(address);
+        if (!hasGas) {
+          console.warn("[TradingSheet] Could not ensure APT for gas, proceeding anyway");
+        }
+      } else {
+        console.log("[TradingSheet] Mobile Safari detected, skipping gas check to preserve popup chain");
       }
 
       // Convert amount to APT (divide by 100 to get APT from cents-based UI amount)
