@@ -153,10 +153,6 @@ export function TradingSheet({
     }
 
     if (!connected || !account?.address) {
-      // Debug: show what failed on mobile
-      if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-        alert(`Debug: connected=${connected}, address=${account?.address?.toString()?.slice(0,10) || 'undefined'}`);
-      }
       setTxStatus("error");
       setTxMessage("Please connect your wallet first");
       setTimeout(() => setTxStatus("idle"), 2000);
@@ -279,11 +275,6 @@ export function TradingSheet({
         name: error?.name,
         data: error?.data,
       });
-
-      // Debug: show exact error on mobile
-      if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-        alert(`Trade error: ${error?.message || error?.toString()?.slice(0, 200) || 'Unknown error'}`);
-      }
 
       // Provide more helpful error messages
       let errorMsg = error.message || "Transaction failed";

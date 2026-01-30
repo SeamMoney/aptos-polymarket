@@ -16,7 +16,7 @@ import { isGeomiConfigured } from '../config/geomi';
 import type { LiveTrade } from './useLiveTrades';
 
 interface UseGeomiTradesOptions {
-  pollInterval?: number;  // ms between polls (default: 5000)
+  pollInterval?: number;  // ms between polls (default: 30000 to conserve Geomi budget)
   limit?: number;         // max trades to fetch (default: 50)
   enabled?: boolean;      // whether to poll (default: true)
 }
@@ -39,7 +39,7 @@ export function useGeomiTrades(
   options: UseGeomiTradesOptions = {}
 ): UseGeomiTradesReturn {
   const {
-    pollInterval = 5000,
+    pollInterval = 30000,  // 30 sec to conserve Geomi budget
     limit = 50,
     enabled = true,
   } = options;
