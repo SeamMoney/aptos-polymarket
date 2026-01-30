@@ -287,6 +287,11 @@ export function PolyHeader() {
         accountAddress: account?.address?.toString(),
       });
 
+      // Debug: show exact error on mobile
+      if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+        alert(`Mint error: ${error instanceof Error ? error.message : String(error).slice(0, 200)}`);
+      }
+
       // Check for specific X-Chain errors
       const errorMsg = error instanceof Error ? error.message : String(error);
       if (errorMsg.includes('rejected') || errorMsg.includes('cancelled') || errorMsg.includes('denied')) {
