@@ -52,11 +52,11 @@ console.log(`[WORKER_VERSION] ${WORKER_VERSION}`);
 var httpAgent = new http.Agent({
   keepAlive: true,
   maxSockets: 1e3,
-  // Max 1000 connections per origin (was 100)
+  // Max 1000 connections per origin
   maxFreeSockets: 200,
-  // Keep more free sockets (was 50)
-  timeout: 6e4,
-  // Longer timeout for high load (was 30s)
+  // Keep more free sockets
+  timeout: 15e3,
+  // 15s timeout - fail fast, don't block (was 60s)
   scheduling: "fifo"
   // First-in-first-out for fairness
 });
@@ -64,7 +64,8 @@ var httpsAgent = new https.Agent({
   keepAlive: true,
   maxSockets: 1e3,
   maxFreeSockets: 200,
-  timeout: 6e4,
+  timeout: 15e3,
+  // 15s timeout - fail fast, don't block (was 60s)
   scheduling: "fifo"
 });
 http.globalAgent = httpAgent;
