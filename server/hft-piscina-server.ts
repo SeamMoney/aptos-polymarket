@@ -140,6 +140,18 @@ function resolveMode(): RunMode {
 const RUN_MODE = resolveMode();
 const MODE_CONFIG = MODE_CONFIGS[RUN_MODE];
 
+// Allow env var overrides for fine-tuning without changing mode
+const BATCH_SIZE_OVERRIDE = process.env.BATCH_SIZE ? parseInt(process.env.BATCH_SIZE) : null;
+const BATCH_DELAY_OVERRIDE = process.env.BATCH_DELAY_MS ? parseInt(process.env.BATCH_DELAY_MS) : null;
+
+// Apply overrides
+if (BATCH_SIZE_OVERRIDE !== null) {
+  MODE_CONFIG.batchSize = BATCH_SIZE_OVERRIDE;
+}
+if (BATCH_DELAY_OVERRIDE !== null) {
+  MODE_CONFIG.batchDelayMs = BATCH_DELAY_OVERRIDE;
+}
+
 // Account configuration
 const ACCOUNT_COUNT = parseInt(process.env.ACCOUNT_COUNT || '500');
 const ACCOUNT_START_INDEX = parseInt(process.env.ACCOUNT_START_INDEX || '0'); // Offset for parallel demos

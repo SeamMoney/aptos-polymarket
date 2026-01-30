@@ -34,7 +34,7 @@ function deriveAccount(mnemonic, index) {
 var DERIVATION_PATH_PREFIX = `m/44'/${APTOS_COIN_TYPE}'/0'/0`;
 
 // server/trading-worker.ts
-var WORKER_VERSION = "2026-01-29-v3";
+var WORKER_VERSION = "2026-01-29-v4-skip-sim";
 console.log(`[WORKER_VERSION] ${WORKER_VERSION}`);
 var httpAgent = new http.Agent({
   keepAlive: true,
@@ -261,11 +261,15 @@ async function executeBatchForAccount(accState) {
   const buildPromises = payloads.map(({ payload }, i) => {
     const options = config.useOrderless ? {
       replayProtectionNonce: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
-      expireTimestamp: Math.floor(Date.now() / 1e3) + 120
+      expireTimestamp: Math.floor(Date.now() / 1e3) + 120,
+      maxGasAmount: 5e4,
+      gasUnitPrice: 100
     } : {
       accountSequenceNumber: baseSeq + BigInt(i),
-      expireTimestamp: Math.floor(Date.now() / 1e3) + 300
+      expireTimestamp: Math.floor(Date.now() / 1e3) + 300,
       // 5 minutes instead of 60 seconds
+      maxGasAmount: 5e4,
+      gasUnitPrice: 100
     };
     return aptos.transaction.build.simple({
       sender: accState.account.accountAddress,
@@ -388,11 +392,15 @@ async function fireAndForgetBatch(accState) {
     const { payload, isBuy, outcomeIndex } = buildPayload(market, accState.holdings);
     const options = config.useOrderless ? {
       replayProtectionNonce: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
-      expireTimestamp: Math.floor(Date.now() / 1e3) + 120
+      expireTimestamp: Math.floor(Date.now() / 1e3) + 120,
+      maxGasAmount: 5e4,
+      gasUnitPrice: 100
     } : {
       accountSequenceNumber: baseSeq + BigInt(i),
-      expireTimestamp: Math.floor(Date.now() / 1e3) + 300
+      expireTimestamp: Math.floor(Date.now() / 1e3) + 300,
       // 5 minutes instead of 60 seconds
+      maxGasAmount: 5e4,
+      gasUnitPrice: 100
     };
     aptos.transaction.build.simple({
       sender: accState.account.accountAddress,
