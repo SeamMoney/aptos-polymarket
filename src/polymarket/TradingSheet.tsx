@@ -42,7 +42,7 @@ export function TradingSheet({
   onBuyOutcome,
   onSellOutcome,
 }: TradingSheetProps) {
-  const { connected, account } = useWallet();
+  const { connected, account, wallet } = useWallet();
   const [direction, setDirection] = useState<TradeDirection>("buy");
   const [tradeType, setTradeType] = useState<"yes" | "no">(initialType);
   const [amount, setAmount] = useState(0);
@@ -161,6 +161,7 @@ export function TradingSheet({
     }
 
     // Log wallet state for debugging mobile issues
+    const isMobileSafari = /iPhone|iPad|iPod/i.test(navigator.userAgent) && /Safari/i.test(navigator.userAgent) && !/CriOS|FxiOS/i.test(navigator.userAgent);
     console.log("[TradingSheet] Trade initiated:", {
       connected,
       address: account.address.toString(),
@@ -168,8 +169,26 @@ export function TradingSheet({
       amount,
       marketId: market.id,
       userAgent: navigator.userAgent,
-      isMobile: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
+      isMobileSafari,
     });
+
+    // Check for Aptos Connect (Google/Apple keyless) on mobile Safari
+    // Keyless signing uses popups that Safari blocks
+    const walletName = wallet?.name?.toLowerCase() || '';
+    const isKeylessWallet = walletName.includes('google') ||
+                            walletName.includes('apple') ||
+                            walletName.includes('continue with') ||
+                            walletName.includes('aptos connect');
+
+    console.log("[TradingSheet] Wallet check:", { walletName, isKeylessWallet, isMobileSafari });
+
+    if (isMobileSafari && isKeylessWallet) {
+      console.error("[TradingSheet] Keyless wallet on mobile Safari - popups blocked");
+      setTxStatus("error");
+      setTxMessage("Google/Apple login doesn't work on mobile Safari. Please use Petra wallet app instead.");
+      setTimeout(() => setTxStatus("idle"), 5000);
+      return;
+    }
 
     setIsLoading(true);
     setTxStatus("idle");

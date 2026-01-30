@@ -217,6 +217,26 @@ export function PolyHeader() {
       return;
     }
 
+    // Check for Aptos Connect (Google/Apple keyless) on mobile Safari
+    // Keyless signing uses popups that Safari blocks
+    const isMobileSafari = /iPhone|iPad|iPod/i.test(navigator.userAgent) && /Safari/i.test(navigator.userAgent) && !/CriOS|FxiOS/i.test(navigator.userAgent);
+    const walletName = wallet?.name?.toLowerCase() || '';
+    const isKeylessWallet = walletName.includes('google') ||
+                            walletName.includes('apple') ||
+                            walletName.includes('continue with') ||
+                            walletName.includes('aptos connect');
+
+    console.log("[USD1 Mint] Wallet check:", { walletName, isKeylessWallet, isMobileSafari });
+
+    if (isMobileSafari && isKeylessWallet) {
+      console.error("[USD1 Mint] Keyless wallet on mobile Safari - popups blocked");
+      setFundStatus("error");
+      // Show alert since status might not be visible
+      alert("Google/Apple login doesn't work on mobile Safari. Please use the Petra wallet app instead.");
+      setTimeout(() => setFundStatus("idle"), 3000);
+      return;
+    }
+
     setIsFunding(true);
     setFundStatus("idle");
 
