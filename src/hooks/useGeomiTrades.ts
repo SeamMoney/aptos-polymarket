@@ -73,17 +73,6 @@ export function useGeomiTrades(
       // Use fallback function that tries Geomi first, then Aptos API
       const result = await fetchTradesWithFallback(marketAddress, limit);
 
-      console.log('[useGeomiTrades] Fetched trades:', {
-        marketAddress,
-        source: result.source,
-        count: result.trades.length,
-        firstTrade: result.trades[0] ? {
-          tx_hash: result.trades[0].tx_hash,
-          market_address: result.trades[0].market_address,
-          timestamp: result.trades[0].timestamp,
-        } : null,
-      });
-
       setRawTrades(result.trades);
       setDataSource(result.source);
 

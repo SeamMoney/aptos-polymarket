@@ -154,23 +154,13 @@ export async function queryGeomi<T>(
 
   if (!response.ok) {
     const text = await response.text();
-    console.error(`[geomiClient] Request failed (${response.status}):`, text.slice(0, 300));
     throw new Error(`Geomi request failed (${response.status}): ${text.slice(0, 200)}`);
   }
 
   const result: GraphQLResponse<T> = await response.json();
 
   if (result.errors?.length) {
-    const errorMsg = result.errors[0].message;
-    const errorCode = (result.errors[0].extensions as { code?: string })?.code;
-    console.error('[geomiClient] GraphQL error:', { message: errorMsg, code: errorCode });
-
-    // Surface budget cap errors more prominently
-    if (errorMsg.includes('DailyBudget') || errorCode === '429') {
-      console.warn('⚠️ GEOMI DAILY BUDGET EXCEEDED - Trade data may be stale!');
-    }
-
-    throw new Error(`Geomi GraphQL error: ${errorMsg}`);
+    throw new Error(`Geomi GraphQL error: ${result.errors[0].message}`);
   }
 
   if (!result.data) {
@@ -187,12 +177,10 @@ export async function fetchLatestTrades(
   marketAddress: string,
   limit: number = 50
 ): Promise<GeomiTrade[]> {
-  console.log('[geomiClient] Fetching trades for market:', marketAddress.slice(0, 20) + '...');
   const result = await queryGeomi<TradesQueryResult>(LATEST_TRADES_QUERY, {
     market: marketAddress,
     limit,
   });
-  console.log('[geomiClient] Got', result.trades.length, 'trades from Geomi');
   return result.trades;
 }
 
@@ -296,103 +284,115 @@ const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "0xbdea15f5b0f
 const BUY_EVENT_TYPE = `${CONTRACT_ADDRESS}::multi_outcome_market::OutcomeTokenBought`;
 const SELL_EVENT_TYPE = `${CONTRACT_ADDRESS}::multi_outcome_market::OutcomeTokenSold`;
 
+const RPC_ENDPOINTS = [
+  import.meta.env.VITE_RPC_URL || "https://api.testnet.aptoslabs.com/v1",
+  "https://api.testnet.aptoslabs.com/v1",
+];
+
 /**
- * Fetch recent trades from Aptos Indexer GraphQL API (fallback when Geomi unavailable)
- * Uses the public indexer to query events by type
+ * Fetch from RPC with failover
+ */
+async function fetchRpcWithFailover(path: string): Promise<Response> {
+  for (const baseUrl of RPC_ENDPOINTS) {
+    try {
+      const res = await fetch(`${baseUrl}${path}`);
+      if (res.ok) return res;
+      if (res.status === 429) continue;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error('All RPC endpoints failed');
+}
+
+/**
+ * Convert Aptos event to GeomiTrade format
+ */
+function aptosEventToGeomiTrade(event: {
+  type: string;
+  data: {
+    buyer?: string;
+    seller?: string;
+    market_address: string;
+    outcome_index: string;
+    collateral_in?: string;
+    collateral_out?: string;
+    tokens_out?: string;
+    tokens_in?: string;
+    new_price: string;
+  };
+  sequence_number: string;
+  guid: { account_address: string };
+}, txHash: string, eventIndex: number, timestamp: string): GeomiTrade {
+  const isBuy = event.type.includes('OutcomeTokenBought');
+  return {
+    tx_hash: txHash,
+    event_index: eventIndex,
+    sequence_number: event.sequence_number,
+    event_type: event.type,
+    market_address: event.data.market_address,
+    trader: isBuy ? (event.data.buyer || '') : (event.data.seller || ''),
+    outcome_index: parseInt(event.data.outcome_index) || 0,
+    collateral_amount: isBuy ? (event.data.collateral_in || '0') : (event.data.collateral_out || '0'),
+    token_amount: isBuy ? (event.data.tokens_out || '0') : (event.data.tokens_in || '0'),
+    new_price: parseInt(event.data.new_price) || 50,
+    timestamp,
+  };
+}
+
+/**
+ * Fetch recent trades from Aptos Events API (fallback when Geomi unavailable)
+ * Queries account events for the contract module
  */
 export async function fetchTradesFromAptosApi(
   marketAddress?: string,
   limit: number = 50
 ): Promise<GeomiTrade[]> {
-  const INDEXER_URL = 'https://api.testnet.aptoslabs.com/v1/graphql';
-
-  // Query for both buy and sell events
-  const query = `
-    query GetTradeEvents($buyType: String!, $sellType: String!, $limit: Int!) {
-      events(
-        where: {
-          _or: [
-            { type: { _eq: $buyType } },
-            { type: { _eq: $sellType } }
-          ]
-        }
-        order_by: { transaction_block_height: desc }
-        limit: $limit
-      ) {
-        type
-        data
-        transaction_version
-        event_index
-        transaction_block_height
-      }
-    }
-  `;
-
   try {
-    console.log('[geomiClient] Trying Aptos Indexer fallback...');
-    const response = await fetch(INDEXER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query,
-        variables: {
-          buyType: BUY_EVENT_TYPE,
-          sellType: SELL_EVENT_TYPE,
-          limit: limit * 2, // Fetch extra to account for filtering
-        },
-      }),
-    });
+    // Fetch recent transactions that might contain trade events
+    // We query the account's transactions and look for trade events
+    const response = await fetchRpcWithFailover(
+      `/accounts/${CONTRACT_ADDRESS}/transactions?limit=${Math.min(limit * 2, 100)}`
+    );
 
     if (!response.ok) {
-      console.error('[geomiClient] Indexer request failed:', response.status);
       return [];
     }
 
-    const result = await response.json();
-    if (result.errors) {
-      console.error('[geomiClient] Indexer GraphQL error:', result.errors);
-      return [];
-    }
-
-    const events = result.data?.events || [];
-    console.log('[geomiClient] Indexer returned', events.length, 'events');
-
+    const txns = await response.json();
     const trades: GeomiTrade[] = [];
 
-    for (const event of events) {
-      // Parse the data field (it's JSON stringified)
-      let eventData;
-      try {
-        eventData = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-      } catch {
-        continue;
-      }
+    for (const tx of txns) {
+      if (!tx.success) continue;
 
-      // Filter by market if specified
-      if (marketAddress && eventData.market_address !== marketAddress) {
-        continue;
-      }
+      // Check if this transaction has trade events
+      const tradeEvents = (tx.events || []).filter((e: { type: string }) =>
+        e.type === BUY_EVENT_TYPE || e.type === SELL_EVENT_TYPE
+      );
 
-      const isBuy = event.type.includes('OutcomeTokenBought');
-      trades.push({
-        tx_hash: `v${event.transaction_version}`,
-        event_index: event.event_index || 0,
-        sequence_number: String(event.transaction_version),
-        event_type: event.type,
-        market_address: eventData.market_address || '',
-        trader: isBuy ? (eventData.buyer || '') : (eventData.seller || ''),
-        outcome_index: parseInt(eventData.outcome_index) || 0,
-        collateral_amount: isBuy ? (eventData.collateral_in || '0') : (eventData.collateral_out || '0'),
-        token_amount: isBuy ? (eventData.tokens_out || '0') : (eventData.tokens_in || '0'),
-        new_price: parseInt(eventData.new_price) || 50,
-        timestamp: new Date().toISOString(), // Indexer doesn't include timestamp directly
-      });
+      for (let i = 0; i < tradeEvents.length; i++) {
+        const event = tradeEvents[i];
+
+        // Filter by market if specified
+        if (marketAddress && event.data.market_address !== marketAddress) {
+          continue;
+        }
+
+        // Convert timestamp from microseconds to ISO
+        const timestamp = tx.timestamp
+          ? new Date(parseInt(tx.timestamp) / 1000).toISOString()
+          : new Date().toISOString();
+
+        trades.push(aptosEventToGeomiTrade(event, tx.hash, i, timestamp));
+      }
     }
 
-    console.log('[geomiClient] Filtered to', trades.length, 'trades for market');
-    return trades.slice(0, limit);
+    // Sort by timestamp descending and limit
+    return trades
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, limit);
   } catch (err) {
-    console.error('[geomiClient] Error fetching from Aptos Indexer:', err);
+    console.error('Error fetching trades from Aptos API:', err);
     return [];
   }
 }
@@ -416,13 +416,9 @@ export async function fetchTradesWithFallback(
       if (trades.length > 0) {
         return { trades, source: 'geomi' };
       }
-      console.log('[geomiClient] Geomi returned 0 trades, falling back to Aptos API');
-    } catch (err) {
-      // Fall back to Aptos API - Geomi may not have trades table indexed
-      console.log('[geomiClient] Geomi failed, falling back to Aptos API:', err);
+    } catch {
+      // Silently fall back to Aptos API - Geomi may not have trades table indexed
     }
-  } else {
-    console.log('[geomiClient] Geomi not configured, using Aptos API');
   }
 
   // Fallback to Aptos Events API

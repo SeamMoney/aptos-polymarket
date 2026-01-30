@@ -303,19 +303,6 @@ export function useLiveTrades(
   const mergedTrades = useCallback((): LiveTrade[] => {
     const allTrades = [...geomiTrades, ...localTrades];
 
-    // Debug: Log what we're merging
-    if (geomiTrades.length > 0 || localTrades.length > 0) {
-      console.log('[useLiveTrades] Merging trades:', {
-        geomiCount: geomiTrades.length,
-        localCount: localTrades.length,
-        marketAddress,
-        geomiSample: geomiTrades[0] ? {
-          id: geomiTrades[0].id,
-          marketAddress: geomiTrades[0].marketAddress,
-        } : null,
-      });
-    }
-
     // Deduplicate by id
     const seen = new Set<string>();
     const unique: LiveTrade[] = [];

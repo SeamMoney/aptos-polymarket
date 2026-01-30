@@ -201,22 +201,6 @@ export function PolyHeader() {
   const handleFundWallet = async () => {
     if (!account?.address || isFunding) return;
 
-    // Check if wallet is truly connected (mobile Safari can lose connection)
-    if (!connected) {
-      console.error("[USD1 Mint] Wallet not connected");
-      setFundStatus("error");
-      setTimeout(() => setFundStatus("idle"), 3000);
-      return;
-    }
-
-    // Verify signAndSubmitTransaction is available
-    if (!signAndSubmitTransaction) {
-      console.error("[USD1 Mint] signAndSubmitTransaction not available - wallet may need reconnection");
-      setFundStatus("error");
-      setTimeout(() => setFundStatus("idle"), 3000);
-      return;
-    }
-
     setIsFunding(true);
     setFundStatus("idle");
 
@@ -262,27 +246,13 @@ export function PolyHeader() {
       // Now mint USD1
       setFundStatus("minting");
 
-      console.log("[USD1 Mint] Calling signAndSubmitTransaction...");
-      console.log("[USD1 Mint] Payload:", {
-        function: `${CONTRACT_ADDRESS}::usd1::mint_to_self`,
-        functionArguments: [amountUnits],
-      });
-
       // Call mint_to_self - anyone can mint in demo mode
-      let response;
-      try {
-        response = await signAndSubmitTransaction({
-          data: {
-            function: `${CONTRACT_ADDRESS}::usd1::mint_to_self`,
-            functionArguments: [amountUnits],
-          },
-        });
-      } catch (signError) {
-        console.error("[USD1 Mint] signAndSubmitTransaction failed:", signError);
-        console.error("[USD1 Mint] Error type:", typeof signError);
-        console.error("[USD1 Mint] Error constructor:", (signError as Error)?.constructor?.name);
-        throw signError;
-      }
+      const response = await signAndSubmitTransaction({
+        data: {
+          function: `${CONTRACT_ADDRESS}::usd1::mint_to_self`,
+          functionArguments: [amountUnits],
+        },
+      });
 
       console.log("[USD1 Mint] Transaction submitted, hash:", response.hash);
 
