@@ -15,6 +15,7 @@ import { AptosComparison } from "./AptosComparison";
 import { ConsensusVisualizer } from "./ConsensusVisualizer";
 import { SpeedComparison } from "./SpeedComparison";
 import { OracleStatusPanel, UMAComparisonPanel, FailureMetricsPanel } from "../components/oracle";
+import { ChartTradePopups } from "../components/ChartTradePopups";
 import { mockMarkets, categories } from "./mockData";
 import { usePolymarkets } from "../hooks/usePolymarkets";
 import { useHFTConnection } from "../hooks/useHFTConnection";
@@ -1158,6 +1159,12 @@ export function MarketDetail() {
             timestamps={isKhameneiMarket ? KHAMENEI_PRICE_HISTORY.map((p: { timestamp: number }) => p.timestamp) : REAL_PRICE_HISTORY.map((p: { timestamp: number }) => p.timestamp)}
             autoScale={true}
             timeRange={timeRange}
+          />
+          {/* Floating trade popups on chart */}
+          <ChartTradePopups
+            trades={combinedTrades}
+            maxVisible={5}
+            tpsThreshold={100}
           />
         </div>
 
