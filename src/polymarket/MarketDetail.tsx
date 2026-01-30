@@ -261,6 +261,20 @@ export function MarketDetail() {
 
   // Combine HFT trades with blockchain trades - show ALL trades from both sources
   const combinedTrades: Trade[] = useMemo(() => {
+    // Debug logging
+    if (blockchainTrades.length > 0 || hftTrades.length > 0) {
+      console.log('[MarketDetail] combinedTrades input:', {
+        blockchainTradesCount: blockchainTrades.length,
+        hftTradesCount: hftTrades.length,
+        marketAddress,
+        blockchainSample: blockchainTrades[0] ? {
+          id: blockchainTrades[0].id,
+          txHash: blockchainTrades[0].txHash,
+          marketAddress: blockchainTrades[0].marketAddress,
+        } : null,
+      });
+    }
+
     // Convert blockchain trades to Trade format
     const convertedBlockchainTrades: Trade[] = blockchainTrades.map((bt) => ({
       id: bt.id,
@@ -278,11 +292,29 @@ export function MarketDetail() {
     // Merge HFT trades and blockchain trades, deduplicating by txHash
     const allTrades = [...hftTrades, ...convertedBlockchainTrades];
     const seenHashes = new Set<string>();
+    let droppedNoHash = 0;
+    let droppedDupe = 0;
     const uniqueTrades = allTrades.filter(t => {
-      if (!t.txHash || seenHashes.has(t.txHash)) return false;
+      if (!t.txHash) {
+        droppedNoHash++;
+        return false;
+      }
+      if (seenHashes.has(t.txHash)) {
+        droppedDupe++;
+        return false;
+      }
       seenHashes.add(t.txHash);
       return true;
     });
+
+    if (droppedNoHash > 0 || droppedDupe > 0) {
+      console.log('[MarketDetail] combinedTrades filtering:', {
+        total: allTrades.length,
+        droppedNoHash,
+        droppedDupe,
+        remaining: uniqueTrades.length,
+      });
+    }
 
     // Sort by timestamp descending (newest first)
     return uniqueTrades.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 100);

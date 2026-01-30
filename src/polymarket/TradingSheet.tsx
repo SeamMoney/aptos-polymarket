@@ -153,11 +153,23 @@ export function TradingSheet({
     }
 
     if (!connected || !account?.address) {
+      console.error("[TradingSheet] Wallet not connected:", { connected, address: account?.address });
       setTxStatus("error");
       setTxMessage("Please connect your wallet first");
       setTimeout(() => setTxStatus("idle"), 2000);
       return;
     }
+
+    // Log wallet state for debugging mobile issues
+    console.log("[TradingSheet] Trade initiated:", {
+      connected,
+      address: account.address.toString(),
+      direction,
+      amount,
+      marketId: market.id,
+      userAgent: navigator.userAgent,
+      isMobile: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
+    });
 
     setIsLoading(true);
     setTxStatus("idle");
@@ -167,7 +179,14 @@ export function TradingSheet({
       // Ensure user has APT for gas (important for X-Chain wallets)
       const address = account.address.toString();
       console.log("[TradingSheet] Ensuring APT for gas...", address);
-      const hasGas = await ensureAptForGas(address);
+
+      let hasGas = false;
+      try {
+        hasGas = await ensureAptForGas(address);
+      } catch (gasError) {
+        console.error("[TradingSheet] ensureAptForGas threw error:", gasError);
+      }
+
       if (!hasGas) {
         console.warn("[TradingSheet] Could not ensure APT for gas, proceeding anyway");
       }
@@ -176,23 +195,33 @@ export function TradingSheet({
       const amountAPT = (amount / 100).toString();
       let result: any;
 
-      if (isMultiOutcome && (onBuyOutcome || onSellOutcome)) {
-        // Multi-outcome market
-        const outcomeIndex = getOutcomeIndex();
+      console.log("[TradingSheet] Executing trade:", {
+        isMultiOutcome,
+        direction,
+        amountAPT,
+        marketId: market.id,
+      });
 
-        if (direction === "buy" && onBuyOutcome) {
-          result = await onBuyOutcome(market.id, outcomeIndex, amountAPT);
-        } else if (direction === "sell" && onSellOutcome) {
-          result = await onSellOutcome(market.id, outcomeIndex, amountAPT);
-        }
-      } else {
-        // Binary market
-        if (direction === "buy") {
-          if (tradeType === "yes" && onBuyYes) {
-            result = await onBuyYes(market.id, amountAPT);
-          } else if (tradeType === "no" && onBuyNo) {
-            result = await onBuyNo(market.id, amountAPT);
+      try {
+        if (isMultiOutcome && (onBuyOutcome || onSellOutcome)) {
+          // Multi-outcome market
+          const outcomeIndex = getOutcomeIndex();
+          console.log("[TradingSheet] Multi-outcome trade, index:", outcomeIndex);
+
+          if (direction === "buy" && onBuyOutcome) {
+            result = await onBuyOutcome(market.id, outcomeIndex, amountAPT);
+          } else if (direction === "sell" && onSellOutcome) {
+            result = await onSellOutcome(market.id, outcomeIndex, amountAPT);
           }
+        } else {
+          // Binary market
+          console.log("[TradingSheet] Binary trade, type:", tradeType);
+          if (direction === "buy") {
+            if (tradeType === "yes" && onBuyYes) {
+              result = await onBuyYes(market.id, amountAPT);
+            } else if (tradeType === "no" && onBuyNo) {
+              result = await onBuyNo(market.id, amountAPT);
+            }
         } else {
           if (tradeType === "yes" && onSellYes) {
             result = await onSellYes(market.id, amountAPT);
@@ -200,7 +229,18 @@ export function TradingSheet({
             result = await onSellNo(market.id, amountAPT);
           }
         }
+        }
+      } catch (tradeError) {
+        console.error("[TradingSheet] Trade function threw error:", tradeError);
+        console.error("[TradingSheet] Error details:", {
+          name: (tradeError as Error)?.name,
+          message: (tradeError as Error)?.message,
+          stack: (tradeError as Error)?.stack?.slice(0, 500),
+        });
+        throw tradeError;
       }
+
+      console.log("[TradingSheet] Trade result:", result);
 
       // Capture transaction hash
       const hash = result?.hash || result?.transaction?.hash;
