@@ -245,7 +245,10 @@ export function geomiTradeToLiveTrade(trade: GeomiTrade): {
   const tokenOctas = BigInt(trade.token_amount);
 
   // Parse ISO timestamp from Geomi (e.g., "2026-01-10T08:33:55")
-  const timestamp = trade.timestamp ? new Date(trade.timestamp).getTime() : Date.now();
+  // Geomi returns UTC timestamps without 'Z' suffix, so append it for correct parsing
+  const timestamp = trade.timestamp
+    ? new Date(trade.timestamp.endsWith('Z') ? trade.timestamp : trade.timestamp + 'Z').getTime()
+    : Date.now();
 
   return {
     id: `${trade.tx_hash}-${trade.event_index}`,

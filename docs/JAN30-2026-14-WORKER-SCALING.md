@@ -456,3 +456,63 @@ To increase TPS beyond ~20K, configuration changes alone won't help. Need:
 3. **More accounts** - Fund accounts 5000-9999
 
 Current setup is hitting the VFN throughput ceiling. Config tuning can't push past this limit.
+
+---
+
+## Jan 30 2026 - Scaling to 21 Workers (Late Night)
+
+### New Infrastructure
+
+Added 7 new workers (W15-W21) using Contract B:
+
+| Worker | Droplet | IP | Accounts | VFN |
+|--------|---------|-----|----------|-----|
+| W15 | hft-worker-15 | 178.128.176.238 | 5000-5356 | vfn0.apne1-0 |
+| W16 | hft-worker-16 | 178.128.75.159 | 5357-5713 | aptos.cash.trading |
+| W17 | hft-worker-17 | 157.245.165.252 | 5714-6070 | vfn0.usce1-0 |
+| W18 | hft-worker-18 | 64.227.62.177 | 6071-6427 | vfn0.usce1-1 |
+| W19 | hft-worker-19 | 138.68.31.100 | 6428-6784 | vfn0.apne1-0 |
+| W20 | hft-worker-21 | 64.225.127.89 | 6785-7141 | aptos.cash.trading |
+| W21 | hft-worker-22 | 134.209.6.169 | 7142-7499 | vfn0.usce1-0 |
+
+### Account Funding
+
+Funded accounts 5000-7499 (2,500 accounts):
+- APT: 2 APT per account (5,000 APT total)
+- USD1: 1,000 USD1 per account (2.5M USD1 total)
+- Time: ~30 minutes for APT + ~30 minutes for USD1
+
+### Updated VFN Distribution (21 workers)
+
+| VFN | Workers | Count |
+|-----|---------|-------|
+| vfn0.usce1-0 | W1, W5, W9, W13, W17, W21 | 6 |
+| vfn0.usce1-1 | W2, W6, W10, W14, W18 | 5 |
+| vfn0.apne1-0 | W3, W7, W11, W15, W19 | 5 |
+| aptos.cash.trading | W4, W8, W12, W16, W20 | 5 |
+
+### Contract Distribution
+
+| Contract | Workers | Accounts |
+|----------|---------|----------|
+| Contract A | W1-W7 | 0-2499 (2,500) |
+| Contract B | W8-W21 | 2500-7499 (5,000) |
+
+### Test Results (W15-W21 only, 10 seconds)
+
+| Metric | Value |
+|--------|-------|
+| Total Trades | 82,810 |
+| Successful | 82,810 |
+| Success Rate | **100%** |
+| TPS | ~8,281 |
+
+New workers verified working with 100% success rate.
+
+### Total Infrastructure
+
+- **21 workers** (14 original + 7 new)
+- **7,500 accounts** (0-7499)
+- **2 contracts** (A and B)
+- **4 VFN endpoints**
+- **Expected TPS**: ~28-30K (21 workers × ~1,400 TPS each)
