@@ -18,6 +18,19 @@ import {
   isValidBIP44Path
 } from "@aptos-labs/ts-sdk";
 var APTOS_COIN_TYPE = 637;
+var cachedSeed = null;
+var cachedMnemonic = null;
+function getCachedSeed(mnemonic) {
+  if (cachedMnemonic === mnemonic && cachedSeed) {
+    return cachedSeed;
+  }
+  console.log("[SEED] Computing mnemonic seed (one-time operation)...");
+  const startTime = Date.now();
+  cachedSeed = mnemonicToSeed(mnemonic);
+  cachedMnemonic = mnemonic;
+  console.log(`[SEED] Seed computed in ${Date.now() - startTime}ms`);
+  return cachedSeed;
+}
 function validateMnemonic2(mnemonic) {
   return bip39.validateMnemonic(mnemonic);
 }
@@ -26,7 +39,7 @@ function deriveAccount(mnemonic, index) {
   if (!isValidBIP44Path(path)) {
     throw new Error(`Invalid BIP-44 path: ${path}`);
   }
-  const seed = mnemonicToSeed(mnemonic);
+  const seed = getCachedSeed(mnemonic);
   const { key } = deriveKey(path, seed);
   const privateKey = new Ed25519PrivateKey(key);
   return Account.fromPrivateKey({ privateKey });
@@ -34,7 +47,7 @@ function deriveAccount(mnemonic, index) {
 var DERIVATION_PATH_PREFIX = `m/44'/${APTOS_COIN_TYPE}'/0'/0`;
 
 // server/trading-worker.ts
-var WORKER_VERSION = "2026-01-29-v4-skip-sim";
+var WORKER_VERSION = "2026-01-30-v5-seed-cache";
 console.log(`[WORKER_VERSION] ${WORKER_VERSION}`);
 var httpAgent = new http.Agent({
   keepAlive: true,
@@ -56,7 +69,7 @@ var httpsAgent = new https.Agent({
 });
 http.globalAgent = httpAgent;
 https.globalAgent = httpsAgent;
-var ACCOUNT_CONCURRENCY = workerData?.accountConcurrency || 20;
+var ACCOUNT_CONCURRENCY = workerData?.accountConcurrency || parseInt(process.env.ACCOUNT_CONCURRENCY || "40");
 var TX_BUFFER_SIZE = 1e5;
 var txBuffer = [];
 var txBufferIndex = 0;

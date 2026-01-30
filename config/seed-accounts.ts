@@ -20,6 +20,24 @@ import {
 // Aptos uses coin type 637 in BIP-44 path
 const APTOS_COIN_TYPE = 637;
 
+// Cache mnemonic seed to avoid expensive PBKDF2 on every derivation
+// mnemonicToSeed() does 2048 rounds of HMAC-SHA512, taking ~100-200ms per call
+// With 357 accounts per worker, caching saves ~71 seconds startup time
+let cachedSeed: Uint8Array | null = null;
+let cachedMnemonic: string | null = null;
+
+function getCachedSeed(mnemonic: string): Uint8Array {
+  if (cachedMnemonic === mnemonic && cachedSeed) {
+    return cachedSeed;
+  }
+  console.log('[SEED] Computing mnemonic seed (one-time operation)...');
+  const startTime = Date.now();
+  cachedSeed = mnemonicToSeed(mnemonic);
+  cachedMnemonic = mnemonic;
+  console.log(`[SEED] Seed computed in ${Date.now() - startTime}ms`);
+  return cachedSeed;
+}
+
 /**
  * Generate a new BIP-39 mnemonic (24 words)
  */
@@ -46,8 +64,8 @@ export function deriveAccount(mnemonic: string, index: number): Account {
     throw new Error(`Invalid BIP-44 path: ${path}`);
   }
 
-  // Convert mnemonic to seed
-  const seed = mnemonicToSeed(mnemonic);
+  // Use cached seed (avoids ~200ms PBKDF2 per call)
+  const seed = getCachedSeed(mnemonic);
 
   // Derive key at path
   const { key } = deriveKey(path, seed);

@@ -8,7 +8,7 @@
  */
 
 // Version marker - updated by deploy-workers.sh
-const WORKER_VERSION = '2026-01-29-v4-skip-sim';
+const WORKER_VERSION = '2026-01-30-v5-seed-cache';
 console.log(`[WORKER_VERSION] ${WORKER_VERSION}`);
 
 import { parentPort, workerData } from 'worker_threads';
@@ -49,9 +49,11 @@ http.globalAgent = httpAgent;
 https.globalAgent = httpsAgent;
 
 // Concurrency control: max accounts processing simultaneously per worker thread
-// With batchSize=30, 20 accounts = 600 concurrent HTTP requests (safe for 1000 sockets)
-// Can be tuned via workerData.accountConcurrency
-const ACCOUNT_CONCURRENCY = (workerData as any)?.accountConcurrency || 20;
+// With batchSize=30, 40 accounts = 1200 concurrent HTTP requests (within 1000 socket limit)
+// Increased from 20 to 40 for higher TPS (Jan 30 2026)
+// Can be tuned via workerData.accountConcurrency or env var
+const ACCOUNT_CONCURRENCY = (workerData as any)?.accountConcurrency
+  || parseInt(process.env.ACCOUNT_CONCURRENCY || '40');
 
 // Worker configuration passed via workerData
 interface WorkerConfig {
