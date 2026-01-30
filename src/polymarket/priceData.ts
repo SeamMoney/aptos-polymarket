@@ -19,7 +19,7 @@ export const TOP_CANDIDATES = [
 
 // Candidate colors matching Polymarket style
 export const CANDIDATE_COLORS: Record<string, string> = {
-  "J.D. Vance": "#2E5CFF",      // Blue (leader)
+  "J.D. Vance": "#2c9cdb",      // Cyan (leader)
   "Marco Rubio": "#00C389",      // Green
   "Donald Trump": "#FF6B35",     // Orange
   "Ron DeSantis": "#9747FF",     // Purple

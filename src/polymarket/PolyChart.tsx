@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from "react";
 
 const CHART_WIDTH = 600;
-const CHART_HEIGHT = 220;
+const CHART_HEIGHT = 260;
 const CHART_PADDING_RIGHT = 20;
 
 // RAF-based throttle for smooth 60fps updates
@@ -149,7 +149,7 @@ export const generateOutcomePrices = (
   return prices;
 };
 
-// Generate SVG path - simple linear interpolation like Polymarket
+// Generate SVG path with smooth curves using cardinal splines
 const generatePath = (
   prices: number[],
   width: number,
@@ -162,14 +162,34 @@ const generatePath = (
 
   const innerWidth = width - paddingRight;
   const priceRange = maxPrice - minPrice || 1;
-  let path = "";
 
-  for (let i = 0; i < prices.length; i++) {
-    const x = (i / (prices.length - 1)) * innerWidth;
-    const normalizedPrice = (prices[i] - minPrice) / priceRange;
-    const y = height - normalizedPrice * height;
-    path += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
+  // Convert prices to points
+  const points: { x: number; y: number }[] = prices.map((price, i) => ({
+    x: (i / (prices.length - 1)) * innerWidth,
+    y: height - ((price - minPrice) / priceRange) * height,
+  }));
+
+  // Start path at first point
+  let path = `M ${points[0].x} ${points[0].y}`;
+
+  // Tension controls curve smoothness (0 = straight lines, 1 = very smooth)
+  const tension = 0.3;
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(points.length - 1, i + 2)];
+
+    // Calculate control points using cardinal spline formula
+    const cp1x = p1.x + (p2.x - p0.x) * tension;
+    const cp1y = p1.y + (p2.y - p0.y) * tension;
+    const cp2x = p2.x - (p3.x - p1.x) * tension;
+    const cp2y = p2.y - (p3.y - p1.y) * tension;
+
+    path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
   }
+
   return path;
 };
 
@@ -362,8 +382,8 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
   }, []);
 
   return (
-    <div className="px-4">
-      <div className="flex">
+    <div className="px-4 pt-6">
+      <div className="flex overflow-visible">
         <div
           ref={containerRef}
           className="relative cursor-crosshair select-none"
@@ -373,6 +393,7 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
             touchAction: 'none', // Disable browser touch actions
             WebkitUserSelect: 'none',
             WebkitTouchCallout: 'none',
+            overflow: 'visible', // Allow watermark above chart
             // GPU acceleration hints for smoother animations
             willChange: activeIndex !== null ? 'transform' : 'auto',
             WebkitBackfaceVisibility: 'hidden',
@@ -388,6 +409,7 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
             style={{
               touchAction: 'none',
               userSelect: 'none',
+              overflow: 'visible',
             }}
           >
             {/* Grid lines - more visible */}
@@ -404,27 +426,6 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
                 opacity={0.5}
               />
             ))}
-
-            {/* Polymarket watermark - top right corner of chart grid, larger and visible */}
-            <g opacity={0.25}>
-              <image
-                href="/images/icon-white.svg"
-                x={width - 115}
-                y={6}
-                width={20}
-                height={20}
-              />
-              <text
-                x={width - 92}
-                y={20}
-                fill="#ffffff"
-                fontSize={13}
-                fontWeight={500}
-                fontFamily='"Open Sauce One", system-ui, -apple-system, sans-serif'
-              >
-                Polymarket
-              </text>
-            </g>
 
             {/* Chart lines - thicker strokes */}
             {chartPaths.map(({ id, path, color, lastX, lastY }) => {
@@ -455,6 +456,27 @@ export function PolyChart({ outcomes, onIndexChange, width = CHART_WIDTH, highli
                 </g>
               );
             })}
+
+            {/* Polymarket watermark - top right, above chart data, rendered last for highest z-index */}
+            <g opacity={0.2}>
+              <image
+                href="/images/icon-white.svg"
+                x={width - 115}
+                y={-38}
+                width={28}
+                height={28}
+              />
+              <text
+                x={width - 84}
+                y={-18}
+                fill="#ffffff"
+                fontSize={17}
+                fontWeight={500}
+                fontFamily='"Open Sauce One", system-ui, -apple-system, sans-serif'
+              >
+                Polymarket
+              </text>
+            </g>
           </svg>
 
           {/* Cursor line - GPU accelerated with transform */}

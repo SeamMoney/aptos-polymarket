@@ -87,7 +87,7 @@ export function ConsensusVisualizer({ defaultExpanded = false }: ConsensusVisual
                   <div className="text-[10px] text-[#6b7a8a]">Finality</div>
                 </div>
                 <div className="text-center p-2 bg-[#2a3d4e]/50 rounded-lg">
-                  <div className="text-lg font-bold text-[#60a5fa]">160k+</div>
+                  <div className="text-lg font-bold text-[#2c9cdb]">160k+</div>
                   <div className="text-[10px] text-[#6b7a8a]">Peak TPS</div>
                 </div>
                 <div className="text-center p-2 bg-[#2a3d4e]/50 rounded-lg">

@@ -41,7 +41,7 @@ export function HFTDemoPage() {
   // TPS color based on level
   const getTpsColor = (tps: number) => {
     if (tps > 20000) return '#22c55e';
-    if (tps > 10000) return '#60a5fa';
+    if (tps > 10000) return '#2c9cdb';
     if (tps > 1000) return '#fbbf24';
     return '#8297a3';
   };
@@ -130,7 +130,7 @@ export function HFTDemoPage() {
         {/* Stats Row */}
         <div className="grid grid-cols-3 gap-4 max-w-2xl mx-auto mb-8">
           <div className="bg-poly-card rounded-xl p-4 text-center border border-poly-border">
-            <Activity size={20} className="mx-auto mb-2 text-[#60a5fa]" />
+            <Activity size={20} className="mx-auto mb-2 text-[#2c9cdb]" />
             <div className="text-2xl font-bold text-white">{formatNumber(stats.totalTrades)}</div>
             <div className="text-xs text-pm-text-muted">Total Trades</div>
           </div>
@@ -207,7 +207,7 @@ export function HFTDemoPage() {
             </p>
             <div className="space-y-3">
               <div>
-                <div className="text-xs text-[#60a5fa] mb-1">Standby Mode (UI Control)</div>
+                <div className="text-xs text-[#2c9cdb] mb-1">Standby Mode (UI Control)</div>
                 <code className="block bg-poly-bg p-3 rounded-lg text-poly-green font-mono text-xs overflow-x-auto">
                   ULTRA_PRIVATE_KEYS="..." npx tsx server/hft-ultra-server.ts
                 </code>
@@ -255,8 +255,8 @@ function TPSGraph({ history, height }: { history: number[]; height: number }) {
     <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
       <defs>
         <linearGradient id="tpsGradient" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.4" />
-          <stop offset="100%" stopColor="#60a5fa" stopOpacity="0" />
+          <stop offset="0%" stopColor="#2c9cdb" stopOpacity="0.4" />
+          <stop offset="100%" stopColor="#2c9cdb" stopOpacity="0" />
         </linearGradient>
       </defs>
 
@@ -284,7 +284,7 @@ function TPSGraph({ history, height }: { history: number[]; height: number }) {
           <polyline
             points={points}
             fill="none"
-            stroke="#60a5fa"
+            stroke="#2c9cdb"
             strokeWidth="2"
           />
         </>

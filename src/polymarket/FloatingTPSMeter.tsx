@@ -27,7 +27,7 @@ export function FloatingTPSMeter({
   };
 
   // Color based on TPS level
-  const tpsColor = tps > 20000 ? '#22c55e' : tps > 10000 ? '#60a5fa' : tps > 1000 ? '#fbbf24' : '#8297a3';
+  const tpsColor = tps > 20000 ? '#22c55e' : tps > 10000 ? '#2c9cdb' : tps > 1000 ? '#fbbf24' : '#8297a3';
 
   return (
     <motion.div

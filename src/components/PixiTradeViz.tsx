@@ -29,7 +29,7 @@ interface PixiTradeVizProps {
 
 const OUTCOME_COLORS = [
   0x00c853, // Green
-  0x5b9cf6, // Blue
+  0x2c9cdb, // Cyan
   0xf5a623, // Orange
   0x00bcd4, // Cyan
   0xef4444, // Red

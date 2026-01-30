@@ -11,7 +11,7 @@ const features = [
     icon: '🚀',
     title: 'Parallel Execution',
     stat: '160k+ TPS',
-    color: '#60a5fa',
+    color: '#2c9cdb',
   },
   {
     icon: '💰',

@@ -10,7 +10,7 @@ const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '0xca4d40eae9f
 
 // Outcome colors for multi-outcome markets
 const OUTCOME_COLORS = [
-  '#00c853', '#5b9cf6', '#f5a623', '#00bcd4', '#ef4444',
+  '#00c853', '#2c9cdb', '#f5a623', '#00bcd4', '#ef4444',
   '#a855f7', '#ec4899', '#14b8a6', '#f97316', '#6366f1',
 ];
 

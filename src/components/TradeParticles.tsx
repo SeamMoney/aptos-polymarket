@@ -27,7 +27,7 @@ interface Particle {
 // Outcome colors matching Polymarket
 const OUTCOME_COLORS = [
   '#00c853', // Green
-  '#5b9cf6', // Blue
+  '#2c9cdb', // Cyan
   '#f5a623', // Orange
   '#00bcd4', // Cyan
   '#ef4444', // Red
@@ -144,8 +144,8 @@ export function TradeParticles({ width, height, trades, tps, className }: TradeP
       // Draw TPS counter with glow
       ctx.font = 'bold 48px "SF Mono", monospace';
       ctx.textAlign = 'center';
-      ctx.fillStyle = '#60a5fa';
-      ctx.shadowColor = '#60a5fa';
+      ctx.fillStyle = '#2c9cdb';
+      ctx.shadowColor = '#2c9cdb';
       ctx.shadowBlur = 20;
       ctx.fillText(`${tps.toLocaleString()} TPS`, width / 2, 60);
       ctx.shadowBlur = 0;

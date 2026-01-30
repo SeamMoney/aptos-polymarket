@@ -17,9 +17,9 @@ interface TradeFeedProps {
 
 const OUTCOME_COLORS = [
   '#22c55e', // Green
-  '#60a5fa', // Blue
+  '#2c9cdb', // Cyan
   '#fbbf24', // Yellow
-  '#06b6d4', // Cyan
+  '#06b6d4', // Cyan alt
   '#ef4444', // Red
   '#a855f7', // Purple
 ];

@@ -494,7 +494,7 @@ export const FED_CHAIR_CANDIDATES = ["Rick Rieder", "Kevin Warsh", "Christopher 
 // Fed Chair candidate colors
 export const FED_CHAIR_COLORS: Record<string, string> = {
   "Rick Rieder": "#4abe7a",      // Green - leading
-  "Kevin Warsh": "#5b9cf6",      // Blue
+  "Kevin Warsh": "#2c9cdb",      // Cyan
   "Christopher Waller": "#f5a623", // Orange
   "Kevin Hassett": "#00bcd4",    // Cyan
   "Scott Bessent": "#9c27b0",    // Purple

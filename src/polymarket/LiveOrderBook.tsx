@@ -26,7 +26,7 @@ interface OrderLevel {
 }
 
 const OUTCOME_COLORS = [
-  '#2E5CFF', // Blue - JD Vance
+  '#2c9cdb', // Cyan - JD Vance
   '#00C389', // Green - Marco Rubio
   '#FF6B35', // Orange - Donald Trump
   '#9747FF', // Purple - Ron DeSantis

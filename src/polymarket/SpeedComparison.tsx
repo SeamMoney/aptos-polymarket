@@ -106,7 +106,7 @@ export function SpeedComparison() {
         className="w-full px-4 py-4 flex items-center justify-between hover:bg-[#2a3d4e]/30 transition-colors"
       >
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#22c55e] to-[#60a5fa] flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#22c55e] to-[#2c9cdb] flex items-center justify-center">
             <span className="text-white text-sm">🏎️</span>
           </div>
           <div className="text-left">
@@ -141,7 +141,7 @@ export function SpeedComparison() {
                   max={100}
                   value={txCount}
                   onChange={(e) => setTxCount(parseInt(e.target.value))}
-                  className="flex-1 accent-[#60a5fa]"
+                  className="flex-1 accent-[#2c9cdb]"
                   disabled={isRunning}
                 />
                 <span className="text-white font-mono w-8 text-right">{txCount}</span>
@@ -229,7 +229,7 @@ export function SpeedComparison() {
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mx-4 mb-4 p-4 bg-gradient-to-r from-[#22c55e]/10 to-[#60a5fa]/10 border border-[#22c55e]/30 rounded-xl text-center"
+                className="mx-4 mb-4 p-4 bg-gradient-to-r from-[#22c55e]/10 to-[#2c9cdb]/10 border border-[#22c55e]/30 rounded-xl text-center"
               >
                 <div className="text-3xl font-bold text-[#22c55e] mb-1">
                   {Math.round(polygonTime / aptosTime)}x Faster

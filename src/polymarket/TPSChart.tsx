@@ -30,7 +30,7 @@ export function TPSChart({
   // Get TPS color based on value
   const getTpsColor = (tps: number) => {
     if (tps > 50) return 'text-[#22c55e]';
-    if (tps > 20) return 'text-[#60a5fa]';
+    if (tps > 20) return 'text-[#2c9cdb]';
     if (tps > 5) return 'text-yellow-400';
     return 'text-[#8297a3]';
   };
@@ -58,7 +58,7 @@ export function TPSChart({
               <path
                 d={chartPath}
                 fill="none"
-                stroke="#60a5fa"
+                stroke="#2c9cdb"
                 strokeWidth="3"
                 vectorEffect="non-scaling-stroke"
               />
@@ -100,8 +100,8 @@ export function TPSChart({
           <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
             <defs>
               <linearGradient id="tpsGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.3" />
-                <stop offset="100%" stopColor="#60a5fa" stopOpacity="0" />
+                <stop offset="0%" stopColor="#2c9cdb" stopOpacity="0.3" />
+                <stop offset="100%" stopColor="#2c9cdb" stopOpacity="0" />
               </linearGradient>
             </defs>
             {/* Grid lines */}
@@ -117,7 +117,7 @@ export function TPSChart({
             <path
               d={chartPath}
               fill="none"
-              stroke="#60a5fa"
+              stroke="#2c9cdb"
               strokeWidth="2"
               vectorEffect="non-scaling-stroke"
             />
@@ -141,7 +141,7 @@ export function TPSChart({
         </div>
         <div className="text-center">
           <div className="text-xs text-[#6b7a8a]">Speed</div>
-          <div className="text-sm font-bold text-[#60a5fa]">10-50x faster</div>
+          <div className="text-sm font-bold text-[#2c9cdb]">10-50x faster</div>
         </div>
       </div>
     </div>

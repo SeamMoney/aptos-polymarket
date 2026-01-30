@@ -100,14 +100,31 @@ const generatePriceHistory = (
   return prices;
 };
 
-// Generate path with straight lines (matches PolyChart)
+// Generate path with smooth curves using cardinal splines (matches PolyChart)
 const generatePath = (points: { x: number; y: number }[]): string => {
   if (points.length < 2) return "";
 
+  // Start path at first point
   let path = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length; i++) {
-    path += ` L ${points[i].x} ${points[i].y}`;
+
+  // Tension controls curve smoothness (0 = straight lines, 1 = very smooth)
+  const tension = 0.3;
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(points.length - 1, i + 2)];
+
+    // Calculate control points using cardinal spline formula
+    const cp1x = p1.x + (p2.x - p0.x) * tension;
+    const cp1y = p1.y + (p2.y - p0.y) * tension;
+    const cp2x = p2.x - (p3.x - p1.x) * tension;
+    const cp2y = p2.y - (p3.y - p1.y) * tension;
+
+    path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
   }
+
   return path;
 };
 
@@ -556,7 +573,7 @@ export function OutcomeDetail() {
           }`}
         >
           <div className="flex items-baseline">
-            <span className="text-2xl text-[#60a5fa] font-medium">{formatPrice(displayPrice)} chance</span>
+            <span className="text-2xl text-[#2c9cdb] font-medium">{formatPrice(displayPrice)} chance</span>
             <span className={`text-sm ml-2 font-medium ${isUp ? "text-[#3dac67]" : "text-[#e13836]"}`}>
               {isUp ? "▲" : "▼"}{Math.abs(priceChangePercent)}%
             </span>
@@ -639,7 +656,7 @@ export function OutcomeDetail() {
                 {chartPath.pathD && (
                   <path
                     d={chartPath.pathD}
-                    stroke="#60a5fa"
+                    stroke="#2c9cdb"
                     strokeWidth={2.5}
                     fill="none"
                     strokeLinecap="round"
@@ -651,7 +668,7 @@ export function OutcomeDetail() {
                 {chartPath.lastPoint && (
                   <g>
                     {/* Pulsating outer ring */}
-                    <circle cx={chartPath.lastPoint.x} cy={chartPath.lastPoint.y} r={8} fill="#60a5fa" opacity={0.3}>
+                    <circle cx={chartPath.lastPoint.x} cy={chartPath.lastPoint.y} r={8} fill="#2c9cdb" opacity={0.3}>
                       <animate attributeName="r" values="5;12;5" dur="1.5s" repeatCount="indefinite" />
                       <animate attributeName="opacity" values="0.4;0;0.4" dur="1.5s" repeatCount="indefinite" />
                     </circle>
@@ -660,7 +677,7 @@ export function OutcomeDetail() {
                       cx={chartPath.lastPoint.x}
                       cy={chartPath.lastPoint.y}
                       r={5}
-                      fill="#60a5fa"
+                      fill="#2c9cdb"
                       stroke="#1c2b3a"
                       strokeWidth={2}
                     />
@@ -688,7 +705,7 @@ export function OutcomeDetail() {
                   style={{
                     top: chartPath.points[activeIndex].y - 12,
                     left: Math.min(chartPath.points[activeIndex].x + 12, chartWidth - 100),
-                    backgroundColor: '#60a5fa',
+                    backgroundColor: '#2c9cdb',
                     color: '#fff',
                   }}
                 >

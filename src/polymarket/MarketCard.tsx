@@ -42,8 +42,8 @@ function PercentageGauge({
   const filledDeg = startDeg - (splitDeg + gapDeg / 2);
   const unfilledDeg = (splitDeg - gapDeg / 2) - endDeg;
 
-  // Color based on percentage
-  const color = percentage >= 65 ? "#43c773" : "#e9b308";
+  // Color based on percentage: red (low), yellow (mid), green (high)
+  const color = percentage > 50 ? "#43c773" : percentage >= 25 ? "#e9b308" : "#ef4444";
 
   return (
     <div className="relative flex flex-col items-center" style={{ width: 66, height: 48 }}>

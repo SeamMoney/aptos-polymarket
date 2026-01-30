@@ -541,7 +541,7 @@ export function MarketDetail() {
           {
             id: "yes",
             name: "Mar 31",
-            color: "#5b9cf6",
+            color: "#2c9cdb",
             prices: livePrices.length > 3 ? livePrices : [0.25, 0.25, 0.25], // fallback if no data
           },
         ];
@@ -571,7 +571,7 @@ export function MarketDetail() {
         {
           id: "yes",
           name: "Yes",
-          color: "#5b9cf6",
+          color: "#2c9cdb",
           prices: basePrices,
         },
       ];
@@ -650,7 +650,7 @@ export function MarketDetail() {
 
         return [
           { id: yesOutcome.id || 'yes', name: 'Yes', color: '#4abe7a', prices: yesPrices },
-          { id: noOutcome.id || 'no', name: 'No', color: '#5b9cf6', prices: noPrices },
+          { id: noOutcome.id || 'no', name: 'No', color: '#2c9cdb', prices: noPrices },
         ];
       }
 
@@ -871,7 +871,7 @@ export function MarketDetail() {
         return {
           id: outcome.id || `outcome-${outcomeIdx}`,
           name: outcome.name || `Outcome ${outcomeIdx}`,
-          color: outcome.color || ['#4abe7a', '#5b9cf6', '#f5a623', '#00bcd4', '#ef4444'][outcomeIdx % 5],
+          color: outcome.color || ['#4abe7a', '#2c9cdb', '#f5a623', '#00bcd4', '#ef4444'][outcomeIdx % 5],
           prices,
         };
       });
@@ -909,7 +909,7 @@ export function MarketDetail() {
 
       return [
         { id: "yes", name: "Yes", color: "#4abe7a", prices: yesPrices },
-        { id: "no", name: "No", color: "#5b9cf6", prices: noPrices },
+        { id: "no", name: "No", color: "#2c9cdb", prices: noPrices },
       ];
     }
 

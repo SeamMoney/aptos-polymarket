@@ -44,8 +44,8 @@ export function AptosBanner({ compact = false }: AptosBannerProps) {
             <span className="text-xs text-[#22c55e] font-medium">470ms</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <Zap size={12} className="text-[#60a5fa]" />
-            <span className="text-xs text-[#60a5fa] font-medium">160k TPS</span>
+            <Zap size={12} className="text-[#2c9cdb]" />
+            <span className="text-xs text-[#2c9cdb] font-medium">160k TPS</span>
           </div>
           <div className="flex items-center gap-1.5">
             <DollarSign size={12} className="text-[#fbbf24]" />
