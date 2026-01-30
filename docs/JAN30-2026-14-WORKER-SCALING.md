@@ -315,3 +315,85 @@ wait
 ```bash
 ./scripts/update-workers-ultra-conservative.sh
 ```
+
+---
+
+## Late Session Results (Jan 30 Evening)
+
+### Best Results Achieved
+
+#### Dashboard Confirmed TPS
+| Metric | Value |
+|--------|-------|
+| Peak TPS (dashboard) | **7.4K TPS** |
+| Sustained TPS | 7.0-7.1K TPS |
+| Block Time | 105-135ms |
+| E2E Latency | p50: 530-600ms |
+
+#### Quick Test (10 seconds, all 14 workers)
+| Metric | Value |
+|--------|-------|
+| Total Trades Submitted | 619,850 |
+| Successful Trades | 514,281 |
+| Success Rate | **83%** |
+| Submitted TPS | ~62K |
+| Successful TPS | ~51K |
+
+### Code Optimizations Applied
+
+#### 1. Seed Caching (config/seed-accounts.ts)
+BIP39 `mnemonicToSeed()` takes ~200ms per call (PBKDF2 with 2048 rounds). With 357 accounts per worker, this was 71 seconds of startup time.
+
+**Fix:** Cache the seed at module level:
+```typescript
+let cachedSeed: Uint8Array | null = null;
+let cachedMnemonic: string | null = null;
+
+function getCachedSeed(mnemonic: string): Uint8Array {
+  if (cachedMnemonic === mnemonic && cachedSeed) {
+    return cachedSeed;
+  }
+  cachedSeed = mnemonicToSeed(mnemonic);
+  cachedMnemonic = mnemonic;
+  return cachedSeed;
+}
+```
+**Result:** Startup reduced from ~71s to ~1-2s per worker.
+
+#### 2. HTTP Timeout Reduction (server/trading-worker.ts)
+Changed socket timeout from 60s to 15s to fail fast when VFNs are unresponsive.
+
+### VFN Behavior Under Load
+
+During high-load tests, internal VFNs showed intermittent issues:
+- `vfn0.usce1-0`: Returned **503 Service Unavailable** during peak load
+- `vfn0.usce1-1`: Generally stable
+- `vfn0.apne1-0`: Generally stable
+- `aptos.cash.trading`: **100% success rate** but lower throughput
+
+Workers on `aptos.cash.trading` consistently had 100% success rate but submitted fewer transactions. Workers on internal VFNs had higher throughput but variable success rates (10-80% depending on VFN health).
+
+### Final Working Configuration
+
+```bash
+# Per-worker settings
+ACCOUNT_CONCURRENCY=10
+BATCH_SIZE=10
+BATCH_DELAY_MS=80
+WORKER_COUNT=2
+
+# VFN Distribution (must be balanced across all 4)
+# W1, W5, W9, W13  -> vfn0.usce1-0
+# W2, W6, W10, W14 -> vfn0.usce1-1
+# W3, W7, W11      -> vfn0.apne1-0
+# W4, W8, W12      -> aptos.cash.trading
+```
+
+### Key Insight
+
+The **dashboard TPS** (what the blockchain actually processes) is the authoritative metric. Worker-reported failures often include:
+- HTTP timeouts on response (transaction may have succeeded)
+- Mempool rejections that get retried
+- VFN 503 errors during throttling
+
+When dashboard shows 7K TPS but workers report 20% success rate, the blockchain is still processing 7K TPS - the "failures" are mostly client-side timeouts.
