@@ -1,0 +1,18 @@
+# Build artifacts
+/target/
+
+# Environment and secrets
+.env
+*.key
+*.key.pub
+loadtestkey.txt
+
+# Output files
+markets.txt
+loadtest_results_*.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
