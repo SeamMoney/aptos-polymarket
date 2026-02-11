@@ -26,6 +26,8 @@ module prediction_market::multi_outcome_market {
     use aptos_framework::aggregator_v2::{Self, Aggregator};
     use aptos_std::table::{Self, Table};
     use prediction_market::oracle::{Self, OracleConfig};
+    use prediction_market::optimistic_oracle;
+    use prediction_market::poly_oracle;
 
     // ==================== Error Codes ====================
 
@@ -47,6 +49,9 @@ module prediction_market::multi_outcome_market {
     const E_WRONG_ORACLE_TYPE: u64 = 15;
     const E_ORACLE_PRICE_INVALID: u64 = 16;
     const E_ORACLE_PRICE_STALE: u64 = 17;
+    const E_ORACLE_NOT_FINALIZED: u64 = 18;
+    const E_ORACLE_MARKET_MISMATCH: u64 = 19;
+    const E_ORACLE_OUTCOME_MISMATCH: u64 = 20;
 
     // ==================== Constants ====================
 
@@ -622,6 +627,78 @@ module prediction_market::multi_outcome_market {
         });
     }
 
+    /// Resolve market from optimistic oracle (permissionless)
+    /// Anyone can call after the optimistic oracle has finalized a proposal.
+    public entry fun resolve_from_oracle(
+        market_addr: address,
+        winning_outcome: u64,
+        oracle_proposer_addr: address,
+    ) acquires MultiMarket {
+        let market = borrow_global_mut<MultiMarket>(market_addr);
+
+        assert!(!market.resolved, E_MARKET_ALREADY_RESOLVED);
+        assert!(timestamp::now_seconds() >= market.end_time, E_MARKET_STILL_ACTIVE);
+        assert!(winning_outcome < market.outcome_count, E_INVALID_OUTCOME);
+        assert!(option::is_some(&market.oracle_config), E_NO_ORACLE_CONFIG);
+        let config = option::borrow(&market.oracle_config);
+        assert!(oracle::is_optimistic(config), E_WRONG_ORACLE_TYPE);
+
+        // Read on-chain proposal state from optimistic_oracle
+        let (prop_market, prop_outcome, _prop_time, _deadline, _challenged, prop_finalized) =
+            optimistic_oracle::get_proposal_info(oracle_proposer_addr);
+        assert!(prop_finalized, E_ORACLE_NOT_FINALIZED);
+        assert!(prop_market == market_addr, E_ORACLE_MARKET_MISMATCH);
+        assert!(prop_outcome == winning_outcome, E_ORACLE_OUTCOME_MISMATCH);
+
+        market.resolved = true;
+        market.winning_outcome = option::some(winning_outcome);
+        market.oracle_resolved = true;
+
+        event::emit(OracleResolution {
+            market_address: market_addr,
+            oracle_type: oracle::get_oracle_type(config),
+            price: 0,
+            outcome: winning_outcome,
+            timestamp: timestamp::now_seconds(),
+        });
+    }
+
+    /// Resolve market from POLY oracle (permissionless)
+    /// Anyone can call after the POLY oracle has finalized a proposal.
+    public entry fun resolve_from_poly_oracle(
+        market_addr: address,
+        winning_outcome: u64,
+        oracle_proposer_addr: address,
+    ) acquires MultiMarket {
+        let market = borrow_global_mut<MultiMarket>(market_addr);
+
+        assert!(!market.resolved, E_MARKET_ALREADY_RESOLVED);
+        assert!(timestamp::now_seconds() >= market.end_time, E_MARKET_STILL_ACTIVE);
+        assert!(winning_outcome < market.outcome_count, E_INVALID_OUTCOME);
+        assert!(option::is_some(&market.oracle_config), E_NO_ORACLE_CONFIG);
+        let config = option::borrow(&market.oracle_config);
+        assert!(oracle::is_poly(config), E_WRONG_ORACLE_TYPE);
+
+        // Read on-chain proposal state from poly_oracle (8-field return)
+        let (_proposal_id, prop_market, prop_outcome, _deadline, _challenged, prop_finalized, _votes_for, _votes_against) =
+            poly_oracle::get_proposal_info(oracle_proposer_addr);
+        assert!(prop_finalized, E_ORACLE_NOT_FINALIZED);
+        assert!(prop_market == market_addr, E_ORACLE_MARKET_MISMATCH);
+        assert!(prop_outcome == winning_outcome, E_ORACLE_OUTCOME_MISMATCH);
+
+        market.resolved = true;
+        market.winning_outcome = option::some(winning_outcome);
+        market.oracle_resolved = true;
+
+        event::emit(OracleResolution {
+            market_address: market_addr,
+            oracle_type: oracle::get_oracle_type(config),
+            price: 0,
+            outcome: winning_outcome,
+            timestamp: timestamp::now_seconds(),
+        });
+    }
+
     /// Create a crypto price market with Pyth oracle for instant resolution
     /// Example: "Will BTC be above $100,000 on Jan 31, 2026?"
     /// Resolution: Instant (~125ms) via Pyth price feed
@@ -771,6 +848,10 @@ module prediction_market::multi_outcome_market {
             oracle::new_pyth_config(price_feed_id, target_price, condition)
         } else if (oracle_type == oracle::oracle_type_optimistic()) {
             oracle::new_optimistic_config()
+        } else if (oracle_type == oracle::oracle_type_chainlink()) {
+            oracle::new_chainlink_config(price_feed_id, target_price, condition)
+        } else if (oracle_type == oracle::oracle_type_poly()) {
+            oracle::new_poly_config()
         } else {
             oracle::new_admin_config()
         };

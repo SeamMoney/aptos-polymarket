@@ -34,6 +34,10 @@ module prediction_market::oracle {
     const ORACLE_TYPE_SWITCHBOARD: u8 = 2;
     /// Optimistic oracle (15-min challenge period)
     const ORACLE_TYPE_OPTIMISTIC: u8 = 3;
+    /// Chainlink Data Feeds (objective markets — crypto/sports/weather)
+    const ORACLE_TYPE_CHAINLINK: u8 = 4;
+    /// POLY token oracle (subjective markets — UMA replacement)
+    const ORACLE_TYPE_POLY: u8 = 5;
 
     // ==================== Price Condition Constants ====================
 
@@ -130,6 +134,34 @@ module prediction_market::oracle {
         }
     }
 
+    /// Create a new oracle config for Chainlink Data Feeds
+    public fun new_chainlink_config(
+        feed_id: vector<u8>,
+        target_price: u64,
+        condition: u8,
+    ): OracleConfig {
+        OracleConfig {
+            oracle_type: ORACLE_TYPE_CHAINLINK,
+            price_feed_id: feed_id,
+            target_price,
+            condition,
+            max_staleness_secs: 120, // 2 minutes max staleness for Chainlink
+            confidence_threshold: 0,
+        }
+    }
+
+    /// Create a new oracle config for POLY token oracle (subjective markets)
+    public fun new_poly_config(): OracleConfig {
+        OracleConfig {
+            oracle_type: ORACLE_TYPE_POLY,
+            price_feed_id: vector::empty(),
+            target_price: 0,
+            condition: CONDITION_ABOVE,
+            max_staleness_secs: 14400, // 4 hours max voting period
+            confidence_threshold: 0,
+        }
+    }
+
     /// Get the BTC/USD price feed ID
     public fun btc_usd_feed(): vector<u8> {
         BTC_USD_FEED
@@ -173,6 +205,16 @@ module prediction_market::oracle {
     /// Check if oracle type is Admin
     public fun is_admin(config: &OracleConfig): bool {
         config.oracle_type == ORACLE_TYPE_ADMIN
+    }
+
+    /// Check if oracle type is Chainlink
+    public fun is_chainlink(config: &OracleConfig): bool {
+        config.oracle_type == ORACLE_TYPE_CHAINLINK
+    }
+
+    /// Check if oracle type is POLY oracle
+    public fun is_poly(config: &OracleConfig): bool {
+        config.oracle_type == ORACLE_TYPE_POLY
     }
 
     /// Get Pyth price and validate it
@@ -268,6 +310,18 @@ module prediction_market::oracle {
     /// Get oracle type constant for Optimistic
     public fun oracle_type_optimistic(): u8 {
         ORACLE_TYPE_OPTIMISTIC
+    }
+
+    #[view]
+    /// Get oracle type constant for Chainlink
+    public fun oracle_type_chainlink(): u8 {
+        ORACLE_TYPE_CHAINLINK
+    }
+
+    #[view]
+    /// Get oracle type constant for POLY
+    public fun oracle_type_poly(): u8 {
+        ORACLE_TYPE_POLY
     }
 
     #[view]

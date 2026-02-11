@@ -1,7 +1,40 @@
 # Oracle & Privacy Layer — Design Review and Open Questions
 
-**Date:** 2026-02-10
-**Status:** Pseudo-code complete, pre-implementation review
+**Date:** 2026-02-11
+**Status:** Phase 1-2 implemented, Phase 3-4 pending
+
+### Update (Feb 11): Cardi B Super Bowl Dispute — Live Case Study
+
+The Cardi B halftime show dispute is actively happening RIGHT NOW:
+
+- **Feb 8**: Cardi B appeared on stage during Bad Bunny's Super Bowl LX halftime show, danced but unclear if she sang
+- **Polymarket**: Resolved as YES ("she performed"), immediately disputed. Accused of adding rules post-hoc.
+- **Kalshi**: Gave up — settled at last traded price ($0.74 No / $0.26 Yes)
+- **UMA dispute vote**: Expected Feb 11 (today)
+- **Separate insider trading**: Day-old account correctly predicted 17/20 halftime bets, profiting $17K
+- **Legislation**: Rep. Torres introduced "Public Integrity in Financial Prediction Markets Act of 2026"
+- **Rapper Preme lost $175K** on a "technicality"
+
+Our platform fixes every failure mode in this dispute:
+
+| Polymarket Failure | Our Fix |
+|---|---|
+| Ambiguous "perform" definition | Three outcomes: Yes/No/Ambiguous |
+| Post-hoc rule changes | Immutable evidence URLs at proposal time |
+| UMA may never resolve (57% fail rate) | 4-hour max + emergency resolve |
+| Voters hold positions in disputed market | On-chain conflict check (zero public tokens required) |
+| $750 bond = cheap griefing | $5,000 POLY bond |
+| Single whale = 25% of UMA votes | Quadratic voting: sqrt(stake) × reputation |
+
+Sources: [Fortune](https://fortune.com/2026/02/11/did-cardi-b-perform-at-super-bowl-prop-bet-kalshi-polymarket/), [CBS News](https://www.cbsnews.com/news/cardi-b-super-bowl-prediction-market-dispute/), [NBC News](https://www.nbcnews.com/business/business-news/cardi-b-cameo-bad-bunnys-super-bowl-halftime-show-leads-dispute-predi-rcna258553)
+
+### Update (Feb 11): CLOB Backup Code
+
+The `prediction_market_clob::resolution_manager` found at `contracts/sources_clob_backup/` is from an earlier CLOB-based design that was abandoned. It was replaced by the current CPMM AMM (`multi_outcome_market.move`). CLOB doesn't scale to 30K TPS due to order matching serialization. CPMM allows per-outcome parallelization (verified 3,180 TPS).
+
+### Update (Feb 11): Confidential Assets — Simpler Than We Thought
+
+Our 991 lines of CA pseudo-code (confidential_trading.move + ConfidentialTrading.ts) are mostly unnecessary. The `@aptos-labs/ts-sdk` already has `confidentialAsset.*` methods. The on-chain module handles register/deposit/withdraw natively. Real code needed: ~130 lines (wasm-init.ts + useConfidentialPosition.ts hook + 50-line oracle_conflict_check.move).
 
 ---
 
