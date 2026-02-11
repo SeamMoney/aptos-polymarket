@@ -75,8 +75,8 @@ module prediction_market::poly_token {
             string::utf8(b"POLY"),
             string::utf8(b"POLY"),
             8, // decimals
-            string::utf8(b""),  // icon
-            string::utf8(b"https://polymarket-aptos.xyz"),  // project
+            string::utf8(b"https://raw.githubusercontent.com/SeamMoney/aptos-polymarket/main/public/images/poly-token.png"),
+            string::utf8(b"https://polymarket.com"),  // project
         );
 
         // Store refs for minting/burning
