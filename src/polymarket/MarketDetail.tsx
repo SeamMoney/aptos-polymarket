@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Aptos, AptosConfig, Network } from "@aptos-labs/ts-sdk";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Link2, Bookmark, BarChart3, Settings, Clock, ChevronUp, Wallet } from "lucide-react";
+import { Link2, Bookmark, BarChart3, Settings, Clock, ChevronUp, Wallet, TrendingUp } from "lucide-react";
 import { PolyHeader } from "./PolyHeader";
 import { CategoryTabs } from "./CategoryTabs";
 import { PolyChart } from "./PolyChart";
@@ -108,6 +108,60 @@ function CountdownTimer({ endTime }: { endTime: number }) {
         <span className="text-[#8297a3] text-[10px] block uppercase">SECS</span>
       </div>
     </div>
+  );
+}
+
+// Animated Volume Display - pulses green when TVL increases during HFT
+function AnimatedVolume({
+  value,
+  updateCount,
+  className,
+  style,
+}: {
+  value: number;
+  updateCount: number;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const [isAnimating, setIsAnimating] = useState(false);
+  const prevValueRef = useRef(value);
+  const prevUpdateCountRef = useRef(updateCount);
+
+  useEffect(() => {
+    // Only animate if value increased AND updateCount changed
+    if (updateCount > prevUpdateCountRef.current && value > prevValueRef.current) {
+      setIsAnimating(true);
+      const timer = setTimeout(() => setIsAnimating(false), 500);
+      prevValueRef.current = value;
+      prevUpdateCountRef.current = updateCount;
+      return () => clearTimeout(timer);
+    }
+    prevValueRef.current = value;
+    prevUpdateCountRef.current = updateCount;
+  }, [value, updateCount]);
+
+  return (
+    <motion.span
+      className={className}
+      style={style}
+      animate={isAnimating ? {
+        color: ['#ffffff', '#22c55e', '#ffffff'],
+        textShadow: ['0 0 0px transparent', '0 0 8px rgba(34, 197, 94, 0.6)', '0 0 0px transparent'],
+      } : {}}
+      transition={{ duration: 0.5 }}
+    >
+      ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })} Vol.
+      {isAnimating && (
+        <motion.span
+          initial={{ opacity: 0, x: -5 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0 }}
+          className="ml-1 text-green-500"
+        >
+          <TrendingUp size={12} className="inline" />
+        </motion.span>
+      )}
+    </motion.span>
   );
 }
 
@@ -1067,7 +1121,11 @@ export function MarketDetail() {
                 <span className="text-base">✦</span> NEW
               </span>
             )}
-            <span style={{ fontSize: '13px', fontWeight: 500, color: '#8297a3', fontFamily: '"Open Sauce One", sans-serif' }}>{market.volume} Vol.</span>
+            <AnimatedVolume
+              value={realtimeTvl > 0 ? realtimeTvl : (tvl || 0)}
+              updateCount={priceUpdateCount}
+              style={{ fontSize: '13px', fontWeight: 500, color: '#8297a3', fontFamily: '"Open Sauce One", sans-serif' }}
+            />
             {hftConnected && (
               <TPSChart
                 currentTps={hftStats.currentTps || 0}
@@ -1175,10 +1233,13 @@ export function MarketDetail() {
           }`}
         >
           <div className="flex items-center justify-between">
-            {/* Volume display like Polymarket */}
-            <span className="text-white" style={{ fontSize: '13px', fontWeight: 500, fontFamily: '"Open Sauce One", sans-serif' }}>
-              ${tvl ? tvl.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0'} Vol.
-            </span>
+            {/* Volume display like Polymarket - uses real-time TVL for live updates */}
+            <AnimatedVolume
+              value={realtimeTvl > 0 ? realtimeTvl : (tvl || 0)}
+              updateCount={priceUpdateCount}
+              className="text-white"
+              style={{ fontSize: '13px', fontWeight: 500, fontFamily: '"Open Sauce One", sans-serif' }}
+            />
 
             {/* Timeframe buttons */}
             <div className="flex items-center gap-1">
@@ -1393,19 +1454,23 @@ export function MarketDetail() {
         >
           <h2 className="text-white text-xl font-bold mb-4">About</h2>
 
-          {/* Volume Row */}
+          {/* Volume Row - uses real-time TVL for live updates during HFT */}
           <div className="flex items-center gap-3 py-4 border-b border-[#2c3f4f]">
             <BarChart3 size={20} color="#8297a3" strokeWidth={2.5} />
             <span className="text-[#8297a3] text-base flex-1">Volume</span>
-            <span className="text-white text-base font-semibold">{market.volume}</span>
+            <span className="text-white text-base font-semibold">
+              ${(realtimeTvl > 0 ? realtimeTvl : (tvl || 0)).toLocaleString(undefined, { maximumFractionDigits: 2 })} USD1
+            </span>
           </div>
 
-          {/* TVL Row */}
+          {/* TVL Row - uses real-time TVL for live updates during HFT */}
           <div className="flex items-center gap-3 py-4 border-b border-[#2c3f4f]">
             <Wallet size={20} color="#8297a3" strokeWidth={2.5} />
             <span className="text-[#8297a3] text-base flex-1">Total Liquidity (TVL)</span>
             <span className="text-white text-base font-semibold">
-              {tvl !== null ? `${tvl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD1` : 'Loading...'}
+              {(realtimeTvl > 0 ? realtimeTvl : tvl) !== null
+                ? `${(realtimeTvl > 0 ? realtimeTvl : tvl)?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD1`
+                : 'Loading...'}
             </span>
           </div>
 
@@ -1476,8 +1541,8 @@ export function MarketDetail() {
           <OracleStatusPanel
             marketType={market?.oracleInfo?.type || 'admin'}
             price={market?.oracleInfo?.resolutionPrice ? market.oracleInfo.resolutionPrice * 100_000_000 : undefined}
-            targetPrice={market?.oracleInfo?.type === 'pyth' ? 100000_00000000 : undefined}
-            confidence={market?.oracleInfo?.type === 'pyth' ? 12.50 : undefined}
+            targetPrice={market?.oracleInfo?.type === 'chainlink' ? 100000_00000000 : undefined}
+            confidence={market?.oracleInfo?.type === 'chainlink' ? 12.50 : undefined}
           />
         </div>
 

@@ -5,10 +5,6 @@ authors = []
 
 [addresses]
 prediction_market = "_"
-# Pyth network addresses for testnet/mainnet
-pyth = "0x7e783b349d3e89cf5931af376ebeadbfab855b3fa239b7ada8f5a92fbea6b387"
-deployer = "0xb31e712b26fd295357355f6845e77c888298636609e93bc9b05f0f604049f434"
-wormhole = "0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625"
 
 [dev-addresses]
 # Per-outcome base_reserve fix - fresh deploy Jan 14, 2026
@@ -21,10 +17,5 @@ prediction_market = "0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f81
 git = "https://github.com/aptos-labs/aptos-core.git"
 rev = "mainnet"
 subdir = "aptos-move/framework/aptos-framework"
-
-[dependencies.Pyth]
-git = "https://github.com/pyth-network/pyth-crosschain.git"
-subdir = "target_chains/aptos/contracts"
-rev = "main"
 
 [dev-dependencies]

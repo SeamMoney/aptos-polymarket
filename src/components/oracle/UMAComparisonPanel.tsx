@@ -12,18 +12,11 @@ interface ComparisonRow {
 
 const comparisons: ComparisonRow[] = [
   {
-    metric: 'Crypto Market Resolution',
+    metric: 'Objective Markets',
     uma: '2+ hours',
-    aptos: '~125ms (Pyth)',
-    improvement: '57,600x faster',
+    aptos: '~1s (Chainlink)',
+    improvement: '7,200x faster',
     icon: Zap,
-  },
-  {
-    metric: 'Event Resolution',
-    uma: '2+ hours',
-    aptos: '< 5 min (Switchboard)',
-    improvement: '24x faster',
-    icon: Clock,
   },
   {
     metric: 'Subjective Markets',

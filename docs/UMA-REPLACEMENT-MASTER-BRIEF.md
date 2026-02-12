@@ -153,7 +153,7 @@ The most valuable, most subjective markets fail the most. This is exactly the pr
 | Optimistic Oracle (Tier 3) | `contracts/sources/optimistic_oracle.move` | 476 | Deployed |
 | Market + Oracle integration | `contracts/sources/multi_outcome_market.move` | 1000+ | Deployed |
 | Oracle Status UI | `src/components/oracle/OracleStatusPanel.tsx` | Built | Built |
-| POLY Token Design | `docs/UMA-ORACLE-POLYMARKET-REPORT.md` Part VI | Complete | Designed |
+| POLY Token Design | `POLYMARKET-ORACLE-RESEARCH-PACK/02-UMA-Risk-and-Replacement/UMA-Oracle-Polymarket-Architecture-Report.pdf` (Part VI) | Complete | Designed |
 
 **Contract Address (testnet):** `0xca4d40eae9f07fb28a121862d649203fb4335ece9536ee51790e19f812ff7aea`
 
@@ -268,15 +268,15 @@ This makes it **technically impossible** to vote on markets where you hold posit
 | Analysis script | `prediction-market-analysis/scripts/analyze_uma_disputes.py` | Deep analysis |
 | Patterns script | `prediction-market-analysis/scripts/analyze_dispute_patterns.py` | Statistical patterns |
 
-### Existing Architecture Docs
+### Existing Architecture Docs (Research Pack PDF Paths)
 
-| Doc | Location | Key Content |
-|-----|----------|-------------|
-| Oracle Report | `docs/UMA-ORACLE-POLYMARKET-REPORT.md` | Full architecture, POLY design, migration options |
-| Architecture Proposal | `docs/ORACLE_ARCHITECTURE_PROPOSAL.md` | Multi-tier design, UMA comparison |
-| Weakness Analysis | `docs/UMA-WEAKNESS-ANALYSIS.md` | Empirical evidence, killer stats |
-| Investigation Q&A | `docs/POLYMARKET_INVESTIGATION_QUESTIONS.md` | 36 questions for Polymarket |
-| Infrastructure Report | `docs/POLYMARKET_INFRASTRUCTURE_REPORT.md` | Polygon bottlenecks |
+| Doc | Research Pack PDF | Key Content |
+|-----|-------------------|-------------|
+| Oracle Report | `POLYMARKET-ORACLE-RESEARCH-PACK/02-UMA-Risk-and-Replacement/UMA-Oracle-Polymarket-Architecture-Report.pdf` | Full architecture, POLY design, migration options |
+| Architecture Proposal | `POLYMARKET-ORACLE-RESEARCH-PACK/03-Oracle-Architecture-and-Implementation/Oracle-Architecture-Proposal.pdf` | Multi-tier design, UMA comparison |
+| Weakness Analysis | `POLYMARKET-ORACLE-RESEARCH-PACK/02-UMA-Risk-and-Replacement/UMA-Weakness-Analysis-Full-Data.pdf` | Empirical evidence, killer stats |
+| Investigation Q&A | `POLYMARKET-ORACLE-RESEARCH-PACK/04-Polymarket-Infrastructure-and-Investigation/Polymarket-Investigation-Questions.pdf` | 36 questions for Polymarket |
+| Infrastructure Report | `POLYMARKET-ORACLE-RESEARCH-PACK/04-Polymarket-Infrastructure-and-Investigation/Polymarket-Infrastructure-Report.pdf` | Polygon bottlenecks |
 
 ### Working Code
 

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, HelpCircle, ArrowUp, ArrowDown, ExternalLink } from 'lucide-react';
 import type { Trade } from '../hooks/useHFTConnection';
 
@@ -387,87 +388,142 @@ export function LiveOrderBook({
                 <span className="text-right font-semibold uppercase tracking-wider">Tx</span>
               </div>
 
-              {/* Trade stream list - infinite scroll */}
+              {/* Trade stream list - infinite scroll with framer-motion animations */}
               <div
                 ref={tradeListRef}
                 onScroll={handleScroll}
-                className="max-h-[400px] overflow-y-auto"
+                className="max-h-[400px] overflow-y-auto overflow-x-hidden"
               >
                 {trades.length === 0 ? (
-                  <div className="px-4 py-12 text-center text-[#6b7a8a]">
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="px-4 py-12 text-center text-[#6b7a8a]"
+                  >
                     <div className="text-lg mb-2">No trades yet</div>
                     <div className="text-xs">Trades will appear here in real-time</div>
-                  </div>
+                  </motion.div>
                 ) : (
-                  trades.map((trade) => {
-                    const isBuy = trade.action?.includes('buy') || trade.actionDisplay?.includes('BUY');
-                    const isAnimated = animatedTrades.has(trade.id);
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {trades.map((trade, index) => {
+                      const isBuy = trade.action?.includes('buy') || trade.actionDisplay?.includes('BUY');
+                      const isNew = animatedTrades.has(trade.id);
 
-                    return (
-                      <div
-                        key={trade.id}
-                        className={`grid text-sm py-2 px-3 border-b border-[#2c3f4f]/30
-                          hover:bg-[#2a3d4e]/30 transition-all duration-200
-                          ${isAnimated ? (isBuy ? 'bg-[#22c55e]/20' : 'bg-red-500/20') : 'bg-transparent'}
-                          animate-fade-in items-center`}
-                        style={{
-                          animation: 'fadeSlideIn 0.2s ease-out',
-                          gridTemplateColumns: 'minmax(70px, 1fr) 65px minmax(80px, 1.2fr) minmax(75px, 1fr) 70px',
-                        }}
-                      >
-                        {/* Time */}
-                        <span className="text-[#8b98a5] tabular-nums text-xs whitespace-nowrap">
-                          {formatTime(trade.timestamp)}
-                        </span>
+                      return (
+                        <motion.div
+                          key={trade.id}
+                          layout
+                          initial={{
+                            opacity: 0,
+                            y: -50,
+                            scale: 0.8,
+                            backgroundColor: isBuy ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
+                          }}
+                          animate={{
+                            opacity: 1,
+                            y: 0,
+                            scale: 1,
+                            backgroundColor: isNew
+                              ? isBuy ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.25)'
+                              : 'rgba(0, 0, 0, 0)',
+                          }}
+                          exit={{
+                            opacity: 0,
+                            x: -100,
+                            transition: { duration: 0.2 }
+                          }}
+                          transition={{
+                            type: 'spring',
+                            stiffness: 500,
+                            damping: 30,
+                            mass: 1,
+                            layout: {
+                              type: 'spring',
+                              stiffness: 400,
+                              damping: 25,
+                            }
+                          }}
+                          className={`grid text-sm py-2 px-3 border-b border-[#2c3f4f]/30
+                            hover:bg-[#2a3d4e]/30 items-center cursor-pointer`}
+                          style={{
+                            gridTemplateColumns: 'minmax(70px, 1fr) 65px minmax(80px, 1.2fr) minmax(75px, 1fr) 70px',
+                          }}
+                          whileHover={{ backgroundColor: 'rgba(42, 61, 78, 0.5)' }}
+                        >
+                          {/* Time */}
+                          <motion.span
+                            className="text-[#8b98a5] tabular-nums text-xs whitespace-nowrap"
+                            initial={index === 0 ? { scale: 1.1 } : {}}
+                            animate={{ scale: 1 }}
+                          >
+                            {formatTime(trade.timestamp)}
+                          </motion.span>
 
-                        {/* Side indicator */}
-                        <div className="flex items-center gap-1">
-                          <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${
-                            isBuy ? 'bg-[#22c55e]/20' : 'bg-red-500/20'
-                          }`}>
-                            {isBuy ? (
-                              <ArrowUp size={12} className="text-[#22c55e]" />
+                          {/* Side indicator */}
+                          <div className="flex items-center gap-1">
+                            <motion.div
+                              className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${
+                                isBuy ? 'bg-[#22c55e]/20' : 'bg-red-500/20'
+                              }`}
+                              initial={index === 0 ? { scale: 1.3, rotate: isBuy ? -10 : 10 } : {}}
+                              animate={{ scale: 1, rotate: 0 }}
+                              transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+                            >
+                              {isBuy ? (
+                                <ArrowUp size={12} className="text-[#22c55e]" />
+                              ) : (
+                                <ArrowDown size={12} className="text-red-400" />
+                              )}
+                            </motion.div>
+                            <span className={`text-xs font-medium whitespace-nowrap ${isBuy ? 'text-[#22c55e]' : 'text-red-400'}`}>
+                              {isBuy ? 'BUY' : 'SELL'}
+                            </span>
+                          </div>
+
+                          {/* Outcome */}
+                          <motion.span
+                            className="font-medium text-xs truncate"
+                            style={{ color: getOutcomeColor(trade.outcome) }}
+                            initial={index === 0 ? { x: 10 } : {}}
+                            animate={{ x: 0 }}
+                          >
+                            {getOutcomeName(trade.outcome)}
+                          </motion.span>
+
+                          {/* Amount - prevent wrapping */}
+                          <motion.span
+                            className="text-right text-white font-medium tabular-nums whitespace-nowrap text-xs"
+                            initial={index === 0 ? { scale: 1.15, color: '#22c55e' } : {}}
+                            animate={{ scale: 1, color: '#ffffff' }}
+                            transition={{ duration: 0.3 }}
+                          >
+                            {formatTradeAmount(trade.amount)} USD1
+                          </motion.span>
+
+                          {/* Tx link */}
+                          <div className="text-right whitespace-nowrap">
+                            {trade.txHash ? (
+                              <motion.a
+                                href={`https://explorer.aptoslabs.com/txn/${trade.txHash}?network=testnet`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[#5BA3D9] hover:underline text-xs inline-flex items-center gap-0.5"
+                                initial={index === 0 ? { opacity: 0 } : { opacity: 1 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 0.1 }}
+                                whileHover={{ scale: 1.05 }}
+                              >
+                                {trade.txHash.slice(0, 6)}...
+                                <ExternalLink size={10} />
+                              </motion.a>
                             ) : (
-                              <ArrowDown size={12} className="text-red-400" />
+                              <span className="text-[#6b7a8a] text-xs">—</span>
                             )}
                           </div>
-                          <span className={`text-xs font-medium whitespace-nowrap ${isBuy ? 'text-[#22c55e]' : 'text-red-400'}`}>
-                            {isBuy ? 'BUY' : 'SELL'}
-                          </span>
-                        </div>
-
-                        {/* Outcome */}
-                        <span
-                          className="font-medium text-xs truncate"
-                          style={{ color: getOutcomeColor(trade.outcome) }}
-                        >
-                          {getOutcomeName(trade.outcome)}
-                        </span>
-
-                        {/* Amount - prevent wrapping */}
-                        <span className="text-right text-white font-medium tabular-nums whitespace-nowrap text-xs">
-                          {formatTradeAmount(trade.amount)} USD1
-                        </span>
-
-                        {/* Tx link */}
-                        <div className="text-right whitespace-nowrap">
-                          {trade.txHash ? (
-                            <a
-                              href={`https://explorer.aptoslabs.com/txn/${trade.txHash}?network=testnet`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[#5BA3D9] hover:underline text-xs inline-flex items-center gap-0.5"
-                            >
-                              {trade.txHash.slice(0, 6)}...
-                              <ExternalLink size={10} />
-                            </a>
-                          ) : (
-                            <span className="text-[#6b7a8a] text-xs">—</span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
                 )}
                 {/* Load more indicator */}
                 {trades.length > 0 && hasMore && (

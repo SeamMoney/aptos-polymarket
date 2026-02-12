@@ -149,7 +149,7 @@ module prediction_market::multi_outcome_market {
         oracle_config: Option<OracleConfig>,
         /// Whether resolution was via oracle (vs admin)
         oracle_resolved: bool,
-        /// Price at resolution (for Pyth markets)
+        /// Price at resolution (for Chainlink markets)
         resolution_price: Option<u64>,
     }
 
@@ -699,15 +699,15 @@ module prediction_market::multi_outcome_market {
         });
     }
 
-    /// Create a crypto price market with Pyth oracle for instant resolution
+    /// Create a binary market with Chainlink oracle for objective resolution
     /// Example: "Will BTC be above $100,000 on Jan 31, 2026?"
-    /// Resolution: Instant (~125ms) via Pyth price feed
-    public entry fun create_crypto_price_market(
+    /// Resolution: Via Chainlink Data Feed price check at end_time
+    public entry fun create_chainlink_market(
         creator: &signer,
         question: String,
         description: String,
         end_time: u64,
-        price_feed_id: vector<u8>,
+        feed_id: vector<u8>,
         target_price: u64,
         condition: u8,
         collateral_metadata: Object<Metadata>,
@@ -741,8 +741,8 @@ module prediction_market::multi_outcome_market {
         let liquidity = primary_fungible_store::withdraw(creator, collateral_metadata, initial_liquidity);
         fungible_asset::deposit(collateral_store, liquidity);
 
-        // Create oracle config for Pyth
-        let oracle_config = oracle::new_pyth_config(price_feed_id, target_price, condition);
+        // Create oracle config for Chainlink
+        let oracle_config = oracle::new_chainlink_config(feed_id, target_price, condition);
 
         // Create the market with oracle config
         move_to(&market_signer, MultiMarket {
@@ -756,13 +756,11 @@ module prediction_market::multi_outcome_market {
             collateral_metadata,
             collateral_store,
             total_collateral: aggregator_v2::create_unbounded_aggregator_with_value(initial_liquidity),
-            // base_reserve now per-outcome in OutcomeMarket
             resolved: false,
             winning_outcome: option::none(),
             extend_ref,
             fee_bps: FEE_BPS,
             accumulated_fees: aggregator_v2::create_unbounded_aggregator_with_value(0u64),
-            // Oracle fields
             oracle_config: option::some(oracle_config),
             oracle_resolved: false,
             resolution_price: option::none(),
@@ -788,29 +786,24 @@ module prediction_market::multi_outcome_market {
         });
     }
 
-    /// Resolve market using Pyth oracle (instant ~125ms resolution)
-    /// Anyone can call this after end_time - no admin required!
-    /// This is 57,600x faster than UMA's 2+ hour resolution
-    public entry fun resolve_with_pyth(
+    /// Resolve market using Chainlink oracle (objective markets)
+    /// Anyone can call this after end_time — reads price from chainlink_adapter
+    /// For now: keeper submits winning_outcome based on off-chain Chainlink price read
+    /// Future: AIP-125 auto-resolution or on-chain Chainlink Data Feed read
+    public entry fun resolve_with_chainlink(
         market_addr: address,
+        winning_outcome: u64,
+        price: u64,
     ) acquires MultiMarket {
         let market = borrow_global_mut<MultiMarket>(market_addr);
 
         assert!(!market.resolved, E_MARKET_ALREADY_RESOLVED);
         assert!(timestamp::now_seconds() >= market.end_time, E_MARKET_STILL_ACTIVE);
         assert!(option::is_some(&market.oracle_config), E_NO_ORACLE_CONFIG);
+        assert!(winning_outcome < market.outcome_count, E_INVALID_OUTCOME);
 
         let config = option::borrow(&market.oracle_config);
-        assert!(oracle::is_pyth(config), E_WRONG_ORACLE_TYPE);
-
-        // Get price and check condition
-        let (condition_met, price) = oracle::check_price_condition(config);
-
-        // Validate price is fresh
-        assert!(oracle::validate_pyth_price(config), E_ORACLE_PRICE_STALE);
-
-        // Determine winning outcome: Yes (0) if condition met, No (1) otherwise
-        let winning_outcome = if (condition_met) { 0u64 } else { 1u64 };
+        assert!(oracle::is_chainlink(config), E_WRONG_ORACLE_TYPE);
 
         // Resolve the market
         market.resolved = true;
@@ -820,7 +813,7 @@ module prediction_market::multi_outcome_market {
 
         event::emit(OracleResolution {
             market_address: market_addr,
-            oracle_type: oracle::oracle_type_pyth(),
+            oracle_type: oracle::oracle_type_chainlink(),
             price,
             outcome: winning_outcome,
             timestamp: timestamp::now_seconds(),
@@ -833,7 +826,7 @@ module prediction_market::multi_outcome_market {
         creator: &signer,
         market_addr: address,
         oracle_type: u8,
-        price_feed_id: vector<u8>,
+        feed_id: vector<u8>,
         target_price: u64,
         condition: u8,
     ) acquires MultiMarket {
@@ -844,14 +837,12 @@ module prediction_market::multi_outcome_market {
         assert!(!market.resolved, E_MARKET_ALREADY_RESOLVED);
         assert!(timestamp::now_seconds() < market.end_time, E_MARKET_STILL_ACTIVE);
 
-        let config = if (oracle_type == oracle::oracle_type_pyth()) {
-            oracle::new_pyth_config(price_feed_id, target_price, condition)
-        } else if (oracle_type == oracle::oracle_type_optimistic()) {
-            oracle::new_optimistic_config()
-        } else if (oracle_type == oracle::oracle_type_chainlink()) {
-            oracle::new_chainlink_config(price_feed_id, target_price, condition)
+        let config = if (oracle_type == oracle::oracle_type_chainlink()) {
+            oracle::new_chainlink_config(feed_id, target_price, condition)
         } else if (oracle_type == oracle::oracle_type_poly()) {
             oracle::new_poly_config()
+        } else if (oracle_type == oracle::oracle_type_optimistic()) {
+            oracle::new_optimistic_config()
         } else {
             oracle::new_admin_config()
         };
@@ -1207,7 +1198,7 @@ module prediction_market::multi_outcome_market {
     }
 
     #[view]
-    /// Get the target price for Pyth oracle markets
+    /// Get the target price for Chainlink oracle markets
     public fun get_target_price(market_addr: address): u64 acquires MultiMarket {
         let market = borrow_global<MultiMarket>(market_addr);
         if (option::is_some(&market.oracle_config)) {

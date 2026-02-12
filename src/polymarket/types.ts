@@ -1,5 +1,5 @@
-// Oracle types: 0=Admin, 1=Pyth, 2=Switchboard, 3=Optimistic
-export type OracleType = 'admin' | 'pyth' | 'switchboard' | 'optimistic';
+// Oracle types: 0=Admin, 1=Chainlink, 2=POLY, 3=Optimistic (legacy)
+export type OracleType = 'admin' | 'chainlink' | 'poly' | 'optimistic';
 
 export interface OracleInfo {
   type: OracleType;

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Zap, Clock, Shield, User } from 'lucide-react';
+import { ChevronDown, Zap, Shield, User, Vote } from 'lucide-react';
 
-export type OracleType = 'pyth' | 'switchboard' | 'optimistic' | 'admin';
+export type OracleType = 'chainlink' | 'poly' | 'optimistic' | 'admin';
 
 interface OracleStatusPanelProps {
   marketType: OracleType;
@@ -20,29 +20,29 @@ const oracleInfo: Record<OracleType, {
   bgColor: string;
   description: string;
 }> = {
-  pyth: {
-    name: 'Pyth Network',
-    speed: '~125ms',
+  chainlink: {
+    name: 'Chainlink Data Feeds',
+    speed: '~1s',
     icon: Zap,
     color: 'text-green-400',
     bgColor: 'bg-green-500/10',
-    description: 'Sub-second price feeds from 90+ institutional data providers. Instant resolution for crypto price markets.'
+    description: 'Chainlink Data Feeds for objective markets (crypto prices, sports, weather). Resolution via keeper or AIP-125 auto-trigger at market end time.'
   },
-  switchboard: {
-    name: 'Switchboard',
-    speed: '< 5 min',
-    icon: Clock,
+  poly: {
+    name: 'POLY Oracle',
+    speed: '15 min - 4 hr',
+    icon: Vote,
     color: 'text-blue-400',
     bgColor: 'bg-blue-500/10',
-    description: 'TEE-verified data from trusted sources like ESPN, AP, and official APIs. For sports and verifiable events.'
+    description: 'Internal oracle for subjective markets (UMA replacement). Quadratic voting with POLY token staking. Max 4-hour resolution vs UMA\'s 2+ hours that often never resolve.'
   },
   optimistic: {
     name: 'Fast Optimistic',
-    speed: '15 min - 4 hr',
+    speed: '15 min',
     icon: Shield,
     color: 'text-yellow-400',
     bgColor: 'bg-yellow-500/10',
-    description: '15-minute challenge period (vs UMA\'s 2+ hours). Committee-based disputes prevent whale manipulation.'
+    description: '15-minute challenge period. Legacy oracle deployed on testnet.'
   },
   admin: {
     name: 'Admin Resolution',
@@ -107,7 +107,7 @@ export function OracleStatusPanel({
             <div className="px-4 pb-4">
               <p className="text-gray-400 text-sm mb-4">{info.description}</p>
 
-              {marketType === 'pyth' && (
+              {marketType === 'chainlink' && (
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <div className="bg-[#1a2634] rounded-lg p-3">
                     <div className="text-gray-500 text-xs mb-1">Current Price</div>
@@ -130,6 +130,31 @@ export function OracleStatusPanel({
                 </div>
               )}
 
+              {marketType === 'poly' && (
+                <div className="bg-[#1a2634] rounded-lg p-3 text-sm space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Voting Model</span>
+                    <span className="text-blue-400 font-bold">Quadratic (sqrt(stake) x reputation)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Proposer Bond</span>
+                    <span className="text-white">5,000 POLY</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Challenge Period</span>
+                    <span className="text-yellow-400">15 minutes</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Max Resolution Time</span>
+                    <span className="text-green-400">4 hours</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Conflict Check</span>
+                    <span className="text-white">Voters must hold zero outcome tokens</span>
+                  </div>
+                </div>
+              )}
+
               {marketType === 'optimistic' && (
                 <div className="bg-[#1a2634] rounded-lg p-3 text-sm space-y-2">
                   <div className="flex justify-between">
@@ -137,33 +162,8 @@ export function OracleStatusPanel({
                     <span className="text-yellow-400 font-bold">15 minutes</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Proposer Bond</span>
-                    <span className="text-white">$5,000</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Dispute Resolution</span>
-                    <span className="text-white">Committee (4/7)</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Max Resolution Time</span>
-                    <span className="text-green-400">4 hours</span>
-                  </div>
-                </div>
-              )}
-
-              {marketType === 'switchboard' && (
-                <div className="bg-[#1a2634] rounded-lg p-3 text-sm space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Data Sources</span>
-                    <span className="text-white">3-5 TEE-verified</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Resolution</span>
-                    <span className="text-blue-400">Multi-source consensus</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Use Cases</span>
-                    <span className="text-white">Sports, Elections, Events</span>
+                    <span className="text-gray-400">Status</span>
+                    <span className="text-gray-500">Legacy (use POLY oracle for new markets)</span>
                   </div>
                 </div>
               )}
@@ -171,9 +171,9 @@ export function OracleStatusPanel({
               {/* Speed comparison badge */}
               <div className="mt-4 flex items-center gap-2">
                 <div className={`px-3 py-1.5 rounded-full ${info.bgColor} ${info.color} text-xs font-bold`}>
-                  {marketType === 'pyth' && '57,600x faster than UMA'}
-                  {marketType === 'switchboard' && '24x faster than UMA'}
-                  {marketType === 'optimistic' && '8-18x faster than UMA'}
+                  {marketType === 'chainlink' && 'Instant resolution for objective markets'}
+                  {marketType === 'poly' && 'Max 4hr vs UMA\'s 57% never-resolve rate'}
+                  {marketType === 'optimistic' && 'Legacy: 15-min challenge period'}
                   {marketType === 'admin' && 'Manual resolution'}
                 </div>
               </div>

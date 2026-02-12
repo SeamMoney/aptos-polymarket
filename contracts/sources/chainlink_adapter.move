@@ -148,19 +148,18 @@ module prediction_market::chainlink_adapter {
         BTC_USD_CHAINLINK_FEED
     }
 
-    // ==================== Comparison: Pyth vs Chainlink ====================
+    // ==================== Chainlink on Aptos ====================
     //
-    // | Aspect          | Pyth (current)              | Chainlink (new)              |
-    // |-----------------|-----------------------------|------------------------------ |
-    // | Latency         | ~125ms (pull-based)         | ~1s (Data Streams)            |
-    // | Decimals        | Variable (exponent field)    | 18 (fixed)                   |
-    // | Verification    | Wormhole VAA signatures      | Chainlink verifier contract   |
-    // | Feed count      | 50+ on Aptos                | Growing (major pairs)         |
-    // | Cost            | Pyth update fee (~0.001 APT) | Free to read after store      |
-    // | Confidence      | Built-in confidence interval | N/A (single price point)      |
+    // | Aspect          | Details                                           |
+    // |-----------------|---------------------------------------------------|
+    // | Latency         | ~1s (Data Streams, pull-based)                     |
+    // | Decimals        | 18 (fixed, convert to 8 for our system)            |
+    // | Verification    | Chainlink verifier contract                        |
+    // | Cost            | Free to read after store                           |
+    // | Feed count      | Growing (major pairs on Aptos)                     |
     //
-    // Strategy: Use Pyth for low-latency trading data, Chainlink for resolution
-    // (matches Polymarket's model: Chainlink for settlement, other feeds for trading)
+    // Chainlink is our ONLY external oracle for objective markets.
+    // Subjective markets use POLY oracle (internal system).
     //
     // ==================== AIP-125 Integration Notes ====================
     //

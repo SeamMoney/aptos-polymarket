@@ -37,8 +37,8 @@ interface Outcome {
   userBalance: number;
 }
 
-// Oracle types: 0=Admin, 1=Pyth, 2=Switchboard, 3=Optimistic
-export type OracleType = 'admin' | 'pyth' | 'switchboard' | 'optimistic';
+// Oracle types: 0=Admin, 1=Chainlink, 2=POLY, 3=Optimistic (legacy)
+export type OracleType = 'admin' | 'chainlink' | 'poly' | 'optimistic';
 
 export interface OracleInfo {
   type: OracleType;
@@ -180,8 +180,8 @@ export function useMultiMarkets() {
       // Helper to convert oracle type number to string
       const oracleTypeMap: Record<number, OracleType> = {
         0: 'admin',
-        1: 'pyth',
-        2: 'switchboard',
+        1: 'chainlink',
+        2: 'poly',
         3: 'optimistic',
       };
 
