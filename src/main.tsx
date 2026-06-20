@@ -29,7 +29,9 @@ createRoot(document.getElementById('root')!).render(
         <WalletProvider>
           <TradePollerProvider>
           <Routes>
-            <Route path="/" element={<App />} />
+            {/* Root now opens the Polymarket home directly (the old landing lives at /landing) */}
+            <Route path="/" element={<Navigate to="/polymarket" replace />} />
+            <Route path="/landing" element={<App />} />
             <Route path="/demo" element={<DemoMode />} />
             <Route path="/demo-day" element={<HFTDemoPage />} />
             <Route path="/polymarket" element={<><PolymarketHome /><BottomNav /></>} />
