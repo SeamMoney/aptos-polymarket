@@ -608,5 +608,5 @@ export {
   ConfidentialTradingClient,
   ConfidentialKeyManager,
   AuditorClient,
-  ConfidentialTradingConfig,
 };
+export type { ConfidentialTradingConfig };
