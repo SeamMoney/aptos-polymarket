@@ -2,11 +2,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Aptos, AptosConfig, Network } from '@aptos-labs/ts-sdk';
 import { PREDICTION_MARKET_ADDRESS } from '../utils/contracts';
 
-// Use QuickNode RPC to avoid Aptos Labs rate limiting
-const QUICKNODE_RPC = 'https://polished-evocative-borough.aptos-testnet.quiknode.pro/a0b08bae2dc34e4a8774d91414948d02a5ce2975/v1';
+// RPC node: set VITE_RPC_URL to a live VFN in prod; fall back to the public
+// Aptos testnet fullnode. (The old hardcoded QuickNode endpoint went dead,
+// which broke market fetching site-wide.)
+const RPC_URL = import.meta.env.VITE_RPC_URL || 'https://api.testnet.aptoslabs.com/v1';
 const aptosConfig = new AptosConfig({
   network: Network.TESTNET,
-  fullnode: QUICKNODE_RPC,
+  fullnode: RPC_URL,
 });
 const aptos = new Aptos(aptosConfig);
 
